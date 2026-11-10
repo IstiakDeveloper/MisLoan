@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { loanProductForApplication } from '@/utils/loanInterest';
 import { Head, Link } from '@inertiajs/react';
 import {
     Printer,
@@ -62,9 +63,9 @@ export default function Print({ application, initialFormId = null }: Props) {
     ];
 
     const savedForms = availableForms.filter((f) => f.hasData);
-    const previewAmount = Number(application.approved_amount || application.requested_amount || 0);
+    const previewAmount = Number(application.disbursed_amount || application.approved_amount || application.requested_amount || 0);
     const member = application.member_admission || application.memberAdmission || (application.legacy_member_snapshot ? (typeof application.legacy_member_snapshot === 'string' ? JSON.parse(application.legacy_member_snapshot) : application.legacy_member_snapshot) : null);
-    const loanProduct = application.loan_product || application.loanProduct;
+    const loanProduct = useMemo(() => loanProductForApplication(application.loan_product || application.loanProduct, application), [application]);
     const loanCategory = application.loan_category || application.loanCategory;
     const branch = application.branch || member?.branch;
 

@@ -29,6 +29,12 @@ jobs:
       - run: composer audit --locked
       - run: php artisan key:generate
       - run: npm ci
+      - name: Role-aware admin navigation regressions
+        run: npm run test:navigation
+      - name: Loan form pricing regressions
+        run: npm run test:loan-pricing
+      - name: Guided accounting voucher regressions
+        run: npm run test:accounting
       - name: Accounting and security regressions
         run: php artisan test tests/Unit/AccountingFoundationTest.php tests/Unit/PortableMigrationDataTest.php tests/Unit/ProductLoanPricingTest.php tests/Unit/LoanDisbursementDateTest.php tests/Unit/LoanAmountChangeReapprovalTest.php tests/Unit/MaintenanceRouteSecurityTest.php tests/Unit/SavingsAccessSecurityTest.php tests/Unit/PwaUpdateTest.php
       - run: npm run build

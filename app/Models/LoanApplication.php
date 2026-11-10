@@ -688,8 +688,8 @@ class LoanApplication extends Model
             $contracts = app(LoanContract::class);
             $before = $contracts->read($original);
             $after = $contracts->read($loan);
-            foreach (['principal_paisa', 'charge_paisa', 'regular_paisa', 'last_paisa', 'count', 'frequency', 'disbursed_on'] as $key) {
-                if ($before[$key] !== $after[$key]) {
+            foreach (['principal_paisa', 'charge_paisa', 'regular_paisa', 'last_paisa', 'count', 'frequency', 'disbursed_on', 'pricing'] as $key) {
+                if (($before[$key] ?? null) !== ($after[$key] ?? null)) {
                     $loan->assertNoFinancialLedger();
                 }
             }

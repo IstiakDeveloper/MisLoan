@@ -27,6 +27,9 @@ use App\Services\Accounting\Money;
 use App\Services\ApprovalService;
 use App\Services\HoSendCutoffService;
 use App\Services\LoanApplicationCloneService;
+use App\Services\Loans\FinalLoanTerms;
+use App\Services\Loans\LoanContract;
+use App\Services\Loans\LoanLedger;
 use App\Services\Loans\ProductLoanPricing;
 use App\Services\LoanWorkflowConfigService;
 use App\Services\MemberAdmissionLoanSyncService;
@@ -2272,53 +2275,9 @@ class LoanApplicationController extends Controller
         if ($amount <= 0 || ! $loanProduct) {
             return 0;
         }
+        $quote = app(ProductLoanPricing::class)->quote($loanProduct, number_format($amount, 2, '.', ''), $customMonths);
 
-        if ($loanProduct->interest_calculation_type === 'reducing') {
-            $quote = app(ProductLoanPricing::class)->quote(
-                $loanProduct, number_format($amount, 2, '.', ''), $customMonths,
-            );
-
-            return (float) Money::format($quote['service_charge_paisa']);
-        }
-
-        $scPerThousand = (float) ($loanProduct->service_charge_per_thousand ?? 0);
-        if ($scPerThousand > 0) {
-            return round(($amount / 1000) * $scPerThousand);
-        }
-
-        $rate = (float) ($loanProduct->interest_rate ?? $loanProduct->service_charge ?? 0);
-        $installmentType = strtolower((string) ($loanProduct->installment_type ?? ''));
-        $productName = strtolower((string) ($loanProduct->product_name ?? ''));
-        $productCode = strtolower((string) ($loanProduct->product_code ?? ''));
-        $isLump = $installmentType === 'lump_sum'
-            || str_contains($installmentType, 'lump')
-            || str_contains($productName, 'sufolon')
-            || str_starts_with($productCode, '4.');
-
-        // Monthly/weekly rates already include the full tenure (19.90% for 18 months).
-        // Sufolon/lump-sum rates are annual and must be scaled by months/12.
-        if ($rate > 0) {
-            if ($isLump) {
-                $months = $customMonths && $customMonths > 0
-                    ? $customMonths
-                    : (int) ($loanProduct->duration_months ?? 12);
-                if ($months <= 0) {
-                    $months = 12;
-                }
-
-                return round($amount * ($rate / 100) * ($months / 12));
-            }
-
-            return round($amount * ($rate / 100));
-        }
-
-        $intFactor = (float) ($loanProduct->interest_installment_factor ?? 0);
-        $installments = (int) ($loanProduct->number_of_installments ?? 0);
-        if ($intFactor > 0 && $installments > 0) {
-            return round($amount * $intFactor * $installments);
-        }
-
-        return 0;
+        return (float) Money::format($quote['service_charge_paisa']);
     }
 
     /**
@@ -2327,181 +2286,203 @@ class LoanApplicationController extends Controller
     public function disburse(DisburseLoanRequest $request, $id)
     {
         $user = $request->user();
-        if (! $this->isBranchUserRole($user)) {
+        abort_unless($user->is_active, 403);
+        $financialPosting = $request->boolean('financial_posting');
+        $financialAdmin = $user->is_active && $user->isSuperAdmin() && ! $user->isBranchAccount();
+        abort_if($financialPosting && ! $financialAdmin, 403);
+        if (! $this->isBranchUserRole($user) && ! $financialAdmin) {
             abort(403, 'শুধুমাত্র শাখা ব্যবহারকারী ঋণ বিতরণ করতে পারবেন।');
         }
 
-        $application = LoanApplication::with(['loanProduct', 'memberAdmission', 'submittedBy'])->findOrFail($id);
-        $this->ensureApplicationAccessibleToUser($application, $user);
+        return DB::transaction(function () use ($request, $id, $user, $financialPosting) {
+            $application = LoanApplication::with(['loanProduct', 'memberAdmission', 'submittedBy'])->lockForUpdate()->findOrFail($id);
+            $this->ensureApplicationAccessibleToUser($application, $user);
 
-        if ($application->status !== LoanApplication::STATUS_PENDING_DISBURSEMENT || $application->hasPendingAmountChange()) {
-            return back()->withErrors(['error' => $application->hasPendingAmountChange()
-                ? 'পরিমাণ পরিবর্তনের অনুমোদন না হওয়া পর্যন্ত ঋণ বিতরণ করা যাবে না।'
-                : 'শুধু বিতরণের অপেক্ষায় থাকা ঋণ বিতরণ করা যাবে।']);
-        }
+            $validated = $request->validated();
+            if ($financialPosting && $application->status === LoanApplication::STATUS_DISBURSED && $application->hasFinancialLedger()) {
+                $saved = app(LoanContract::class)->read($application);
+                $account = app(LoanLedger::class)->open($user, $application->id, (int) $validated['principal_account_id'], (int) $validated['charge_income_account_id'], (int) $validated['counter_account_id'], 'disbursement', $validated['disbursement_date'], $validated['first_due_date'], (string) ($validated['disbursed_amount'] ?? $application->disbursed_amount), Money::format($saved['charge_paisa']), $validated['posting_reference']);
 
-        $this->attachFormMeta($application, $user);
-        if (! $application->can_disburse) {
-            return back()->withErrors(['error' => LoanFormVisibility::disburseIncompleteMessage((float) ($application->requested_amount ?? 0))]);
-        }
+                return redirect()->route('loan-ledger.index', ['account_id' => $account->id])->with('success', 'This disbursement is already posted. No duplicate was created.');
+            }
 
-        $approvedAmount = (float) ($application->approved_amount ?? $application->requested_amount ?? 0);
-        $loanProduct = $application->loanProduct;
+            if ($application->status !== LoanApplication::STATUS_PENDING_DISBURSEMENT || $application->hasPendingAmountChange()) {
+                return back()->withErrors(['error' => $application->hasPendingAmountChange()
+                    ? 'পরিমাণ পরিবর্তনের অনুমোদন না হওয়া পর্যন্ত ঋণ বিতরণ করা যাবে না।'
+                    : 'শুধু বিতরণের অপেক্ষায় থাকা ঋণ বিতরণ করা যাবে।']);
+            }
 
-        $validated = $request->validated();
-        $disbursementDate = Carbon::parse($validated['disbursement_date'])->toDateString();
-        $disbursedAt = Carbon::parse($disbursementDate)->startOfDay();
+            $this->attachFormMeta($application, $user);
+            if (! $application->disburse_forms_complete) {
+                return back()->withErrors(['error' => LoanFormVisibility::disburseIncompleteMessage((float) ($application->requested_amount ?? 0))]);
+            }
 
-        $disbursedAmount = isset($validated['disbursed_amount']) && (float) $validated['disbursed_amount'] > 0
-            ? (float) $validated['disbursed_amount']
-            : $approvedAmount;
+            $quote = app(FinalLoanTerms::class)->quote($application, $validated['disbursed_amount'] ?? null);
+            $approvedAmount = $application->approved_amount;
+            $disbursementDate = Carbon::parse($validated['disbursement_date'])->toDateString();
+            $disbursedAt = Carbon::parse($disbursementDate)->startOfDay();
 
-        // Re-calculate service charge & installment amount if applicable
-        $newInstallmentAmount = $application->installment_amount;
-        if ($disbursedAmount > 0 && $application->number_of_installments > 0) {
-            $totServiceCharge = $this->calculateTotalServiceCharge($disbursedAmount, $loanProduct);
-            $totalRepayable = $disbursedAmount + $totServiceCharge;
-            $newInstallmentAmount = round($totalRepayable / $application->number_of_installments, 2);
-        }
+            $disbursedAmount = Money::format($quote['principal_paisa']);
+            $newInstallmentAmount = Money::format($quote['installment_paisa']);
+            $lastInstallmentAmount = Money::format($quote['last_installment_paisa']);
 
-        $lastInstallmentAmount = $newInstallmentAmount;
-        if ($loanProduct?->interest_calculation_type === 'reducing') {
-            $quote = app(ProductLoanPricing::class)->quote(
-                $loanProduct, number_format($disbursedAmount, 2, '.', ''),
+            // Auto-synchronize all forms with the final disbursed amount
+            $wordsDisbursed = NumberToWordsBangla::convert($disbursedAmount);
+            $totServiceCharge = Money::format($quote['service_charge_paisa']);
+            $totalRepayable = Money::format($quote['total_payable_paisa']);
+
+            // 1. Form 1 / Agreement: Loan Agreement Data
+            $agreementData = is_array($application->loan_agreement_data) ? $application->loan_agreement_data : [];
+            if (! empty($agreementData)) {
+                $agreementData['loan_amount'] = $disbursedAmount;
+                $agreementData['loan_amount_words'] = $wordsDisbursed ? $wordsDisbursed.' টাকা' : '';
+                $agreementData['service_charge'] = $totServiceCharge;
+                $agreementData['total_amount'] = $totalRepayable;
+                $agreementData['installment_amount'] = $newInstallmentAmount;
+                $agreementData['last_installment_amount'] = $lastInstallmentAmount;
+                $agreementData['number_of_installments'] = $quote['number_of_installments'];
+                $agreementData['product_pricing'] = $quote;
+            }
+
+            // 2. Form 2: Guarantor Commitment (loan_amount with service charge)
+            $guarantorInfo = is_array($application->guarantor_info) ? $application->guarantor_info : [];
+            if (! empty($guarantorInfo)) {
+                $guarantorLoanAmount = (float) round($totalRepayable);
+                $guarantorWords = NumberToWordsBangla::convert($guarantorLoanAmount);
+                $guarantorInfo['loan_amount'] = $guarantorLoanAmount;
+                $guarantorInfo['loan_amount_words'] = $guarantorWords ? $guarantorWords.' টাকা' : '';
+            }
+
+            // 3. Form 3: Death Risk Fund (loan_amount_received & words)
+            $nomineeInfo = is_array($application->nominee_info) ? $application->nominee_info : [];
+            if (! empty($nomineeInfo)) {
+                $nomineeInfo['loan_amount_received'] = $disbursedAmount;
+                $nomineeInfo['loan_amount_words'] = $wordsDisbursed ? $wordsDisbursed.' টাকা' : '';
+            }
+
+            // 4. Form 4: Field Investigation (asset_info)
+            $assetInfo = is_array($application->asset_info) ? $application->asset_info : [];
+            if (! empty($assetInfo)) {
+                $assetInfo['current_loan_demand'] = $disbursedAmount;
+                $assetInfo['recommended_loan_amount'] = $disbursedAmount;
+            }
+
+            // 5. Form 5: Agrosor Profile / Approval Form (business_plan)
+            $businessPlan = is_array($application->business_plan) ? $application->business_plan : [];
+            if (! empty($businessPlan)) {
+                $businessPlan['final_approved_loan_amount_digits'] = (string) $disbursedAmount;
+                $businessPlan['final_approved_loan_amount_words'] = $wordsDisbursed ? $wordsDisbursed.' টাকা' : '';
+                $businessPlan['applied_loan_amount'] = (string) $disbursedAmount;
+                $businessPlan['fund_applied_loan'] = (string) $disbursedAmount;
+                $businessPlan['total_principal'] = $disbursedAmount;
+                $businessPlan['total_service_charge'] = $totServiceCharge;
+                $businessPlan['total_payable'] = $totalRepayable;
+                $businessPlan['installment_total'] = $newInstallmentAmount;
+                $businessPlan['last_installment_amount'] = $lastInstallmentAmount;
+                $businessPlan['number_of_installments'] = $quote['number_of_installments'];
+                if ($split = $quote['installment_split']) {
+                    $businessPlan['installment_principal'] = Money::format($split['regular_principal_paisa']);
+                    $businessPlan['installment_service_charge'] = Money::format($split['regular_charge_paisa']);
+                    $businessPlan['last_installment_principal'] = Money::format($split['last_principal_paisa']);
+                    $businessPlan['last_installment_service_charge'] = Money::format($split['last_charge_paisa']);
+                }
+            }
+
+            $approvalDate = null;
+            if ($businessPlan !== []) {
+                $approvalDate = $application->reviewed_at?->format('Y-m-d')
+                    ?: $application->approvals()
+                        ->where('status', 'approved')
+                        ->orderByDesc('approved_at')
+                        ->value('approved_at');
+                $approvalDate = $approvalDate instanceof \DateTimeInterface
+                    ? $approvalDate->format('Y-m-d')
+                    : ($approvalDate ? Carbon::parse($approvalDate)->toDateString() : now()->toDateString());
+            }
+
+            $stamped = $application->stampDisbursementDateOnForms(
+                $disbursementDate,
+                $agreementData,
+                $guarantorInfo,
+                $nomineeInfo,
+                $assetInfo,
+                $businessPlan,
+                $approvalDate,
             );
-            $newInstallmentAmount = (float) Money::format($quote['installment_paisa']);
-            $lastInstallmentAmount = (float) Money::format($quote['last_installment_paisa']);
-        }
+            $agreementData = $stamped['loan_agreement_data'];
+            $guarantorInfo = $stamped['guarantor_info'];
+            $nomineeInfo = $stamped['nominee_info'];
+            $assetInfo = $stamped['asset_info'];
+            $businessPlan = $stamped['business_plan'];
 
-        // Auto-synchronize all forms with the final disbursed amount
-        $wordsDisbursed = NumberToWordsBangla::convert($disbursedAmount);
-        $totServiceCharge = $this->calculateTotalServiceCharge($disbursedAmount, $loanProduct);
-        $totalRepayable = $disbursedAmount + $totServiceCharge;
+            // Update application
+            $updateData = [
+                'status' => LoanApplication::STATUS_DISBURSED,
+                'disbursed_amount' => $disbursedAmount,
+                'installment_amount' => $newInstallmentAmount,
+                'number_of_installments' => $quote['number_of_installments'],
+                'loan_term_months' => $quote['duration_months'],
+                'repayment_frequency' => $quote['repayment_frequency'],
+                'disbursed_by' => $user->id,
+                'disbursed_at' => $disbursedAt,
+            ];
 
-        // 1. Form 1 / Agreement: Loan Agreement Data
-        $agreementData = is_array($application->loan_agreement_data) ? $application->loan_agreement_data : [];
-        if (! empty($agreementData)) {
-            $agreementData['loan_amount'] = $disbursedAmount;
-            $agreementData['loan_amount_words'] = $wordsDisbursed ? $wordsDisbursed.' টাকা' : '';
-            $agreementData['service_charge'] = $totServiceCharge;
-            $agreementData['total_amount'] = $totalRepayable;
-            $agreementData['installment_amount'] = $newInstallmentAmount;
-            $agreementData['last_installment_amount'] = $lastInstallmentAmount;
-        }
+            if (! empty($validated['disbursement_method'])) {
+                $updateData['disbursement_method'] = $validated['disbursement_method'];
+            }
+            if (! empty($validated['disbursement_reference'])) {
+                $updateData['disbursement_reference'] = $validated['disbursement_reference'];
+            }
+            if (! empty($agreementData)) {
+                $updateData['loan_agreement_data'] = $agreementData;
+            }
+            if (! empty($guarantorInfo)) {
+                $updateData['guarantor_info'] = $guarantorInfo;
+            }
+            if (! empty($nomineeInfo)) {
+                $updateData['nominee_info'] = $nomineeInfo;
+            }
+            if (! empty($assetInfo)) {
+                $updateData['asset_info'] = $assetInfo;
+            }
+            if (! empty($businessPlan)) {
+                $updateData['business_plan'] = $businessPlan;
+            }
 
-        // 2. Form 2: Guarantor Commitment (loan_amount with service charge)
-        $guarantorInfo = is_array($application->guarantor_info) ? $application->guarantor_info : [];
-        if (! empty($guarantorInfo)) {
-            $guarantorLoanAmount = (float) round($totalRepayable);
-            $guarantorWords = NumberToWordsBangla::convert($guarantorLoanAmount);
-            $guarantorInfo['loan_amount'] = $guarantorLoanAmount;
-            $guarantorInfo['loan_amount_words'] = $guarantorWords ? $guarantorWords.' টাকা' : '';
-        }
+            // Form metadata is attached as transient attributes; never persist it.
+            LoanApplication::findOrFail($application->id)->update($updateData);
+            $application->refresh();
+            $financialAccount = null;
+            if ($financialPosting) {
+                $financialAccount = app(LoanLedger::class)->open($user, $application->id, (int) $validated['principal_account_id'], (int) $validated['charge_income_account_id'], (int) $validated['counter_account_id'], 'disbursement', $disbursementDate, $validated['first_due_date'], $disbursedAmount, $totServiceCharge, $validated['posting_reference']);
+            }
 
-        // 3. Form 3: Death Risk Fund (loan_amount_received & words)
-        $nomineeInfo = is_array($application->nominee_info) ? $application->nominee_info : [];
-        if (! empty($nomineeInfo)) {
-            $nomineeInfo['loan_amount_received'] = $disbursedAmount;
-            $nomineeInfo['loan_amount_words'] = $wordsDisbursed ? $wordsDisbursed.' টাকা' : '';
-        }
+            // Notify submitter / member
+            if ($application->submittedBy) {
+                app(NotificationService::class)->send(
+                    users: $application->submittedBy,
+                    type: 'loan_application',
+                    title: 'ঋণ বিতরণ সফলভাবে সম্পন্ন হয়েছে',
+                    message: "ঋণ আবেদন নং {$application->application_no} ({$application->memberAdmission?->applicant_name_bn}) এর ঋণ বিতরণ করা হয়েছে। পরিমাণ: ".number_format($disbursedAmount).' টাকা।',
+                    notifiable: $application,
+                    actionUrl: "/member/loan-applications/{$application->id}",
+                    details: [
+                        'আবেদন নং' => $application->application_no,
+                        'সদস্যের নাম' => $application->memberAdmission?->applicant_name_bn ?: ($application->memberAdmission?->applicant_name_en ?? 'N/A'),
+                        'বিতরণকৃত ঋণ' => number_format($disbursedAmount).' টাকা',
+                        'অনুমোদিত ঋণ' => number_format($approvedAmount).' টাকা',
+                        'বিতরণের তারিখ' => $disbursementDate,
+                    ]
+                );
+            }
 
-        // 4. Form 4: Field Investigation (asset_info)
-        $assetInfo = is_array($application->asset_info) ? $application->asset_info : [];
-        if (! empty($assetInfo)) {
-            $assetInfo['current_loan_demand'] = $disbursedAmount;
-            $assetInfo['recommended_loan_amount'] = $disbursedAmount;
-        }
+            if ($financialAccount) {
+                return redirect()->route('loan-ledger.index', ['account_id' => $financialAccount->id])->with('success', 'Loan disbursed. The saved contract, account, schedule and general ledger were posted together.');
+            }
 
-        // 5. Form 5: Agrosor Profile / Approval Form (business_plan)
-        $businessPlan = is_array($application->business_plan) ? $application->business_plan : [];
-        if (! empty($businessPlan)) {
-            $businessPlan['final_approved_loan_amount_digits'] = (string) $disbursedAmount;
-            $businessPlan['final_approved_loan_amount_words'] = $wordsDisbursed ? $wordsDisbursed.' টাকা' : '';
-            $businessPlan['applied_loan_amount'] = (string) $disbursedAmount;
-            $businessPlan['fund_applied_loan'] = (string) $disbursedAmount;
-        }
-
-        $approvalDate = null;
-        if ($businessPlan !== []) {
-            $approvalDate = $application->reviewed_at?->format('Y-m-d')
-                ?: $application->approvals()
-                    ->where('status', 'approved')
-                    ->orderByDesc('approved_at')
-                    ->value('approved_at');
-            $approvalDate = $approvalDate instanceof \DateTimeInterface
-                ? $approvalDate->format('Y-m-d')
-                : ($approvalDate ? Carbon::parse($approvalDate)->toDateString() : now()->toDateString());
-        }
-
-        $stamped = $application->stampDisbursementDateOnForms(
-            $disbursementDate,
-            $agreementData,
-            $guarantorInfo,
-            $nomineeInfo,
-            $assetInfo,
-            $businessPlan,
-            $approvalDate,
-        );
-        $agreementData = $stamped['loan_agreement_data'];
-        $guarantorInfo = $stamped['guarantor_info'];
-        $nomineeInfo = $stamped['nominee_info'];
-        $assetInfo = $stamped['asset_info'];
-        $businessPlan = $stamped['business_plan'];
-
-        // Update application
-        $updateData = [
-            'status' => LoanApplication::STATUS_DISBURSED,
-            'disbursed_amount' => $disbursedAmount,
-            'installment_amount' => $newInstallmentAmount,
-            'disbursed_by' => $user->id,
-            'disbursed_at' => $disbursedAt,
-        ];
-
-        if (! empty($validated['disbursement_method'])) {
-            $updateData['disbursement_method'] = $validated['disbursement_method'];
-        }
-        if (! empty($validated['disbursement_reference'])) {
-            $updateData['disbursement_reference'] = $validated['disbursement_reference'];
-        }
-        if (! empty($agreementData)) {
-            $updateData['loan_agreement_data'] = $agreementData;
-        }
-        if (! empty($guarantorInfo)) {
-            $updateData['guarantor_info'] = $guarantorInfo;
-        }
-        if (! empty($nomineeInfo)) {
-            $updateData['nominee_info'] = $nomineeInfo;
-        }
-        if (! empty($assetInfo)) {
-            $updateData['asset_info'] = $assetInfo;
-        }
-        if (! empty($businessPlan)) {
-            $updateData['business_plan'] = $businessPlan;
-        }
-
-        LoanApplication::findOrFail($application->id)->update($updateData);
-
-        // Notify submitter / member
-        if ($application->submittedBy) {
-            app(NotificationService::class)->send(
-                users: $application->submittedBy,
-                type: 'loan_application',
-                title: 'ঋণ বিতরণ সফলভাবে সম্পন্ন হয়েছে',
-                message: "ঋণ আবেদন নং {$application->application_no} ({$application->memberAdmission?->applicant_name_bn}) এর ঋণ বিতরণ করা হয়েছে। পরিমাণ: ".number_format($disbursedAmount).' টাকা।',
-                notifiable: $application,
-                actionUrl: "/member/loan-applications/{$application->id}",
-                details: [
-                    'আবেদন নং' => $application->application_no,
-                    'সদস্যের নাম' => $application->memberAdmission?->applicant_name_bn ?: ($application->memberAdmission?->applicant_name_en ?? 'N/A'),
-                    'বিতরণকৃত ঋণ' => number_format($disbursedAmount).' টাকা',
-                    'অনুমোদিত ঋণ' => number_format($approvedAmount).' টাকা',
-                    'বিতরণের তারিখ' => $disbursementDate,
-                ]
-            );
-        }
-
-        return redirect()->route('member.loan-applications.show', $application->id)
-            ->with('success', 'ঋণ সফলভাবে বিতরণ করা হয়েছে। বিতরণকৃত পরিমাণ: ৳'.number_format($disbursedAmount));
+            return redirect()->route('member.loan-applications.show', $application->id)
+                ->with('success', 'ঋণ সফলভাবে বিতরণ করা হয়েছে। বিতরণকৃত পরিমাণ: ৳'.number_format($disbursedAmount));
+        }, 3);
     }
 
     /**

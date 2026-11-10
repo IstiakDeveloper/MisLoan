@@ -2,9 +2,13 @@
 
 namespace App\Models;
 
+use App\Services\Accounting\Money;
+use App\Services\Loans\ProductLoanPricing;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Validation\ValidationException;
 
 class LoanProduct extends Model
 {
@@ -86,7 +90,7 @@ class LoanProduct extends Model
         }
 
         // Check age
-        $age = \Carbon\Carbon::parse($memberAdmission->date_of_birth)->age;
+        $age = Carbon::parse($memberAdmission->date_of_birth)->age;
         if ($age < $this->min_age || $age > $this->max_age) {
             $errors[] = "Age must be between {$this->min_age} and {$this->max_age}";
         }
@@ -96,21 +100,16 @@ class LoanProduct extends Model
 
     public function calculateEMI($loanAmount): float
     {
-        if ($this->interest_calculation_type === 'flat') {
-            $interest = ($loanAmount * $this->interest_rate * $this->duration_months) / (12 * 100);
-            return ($loanAmount + $interest) / $this->number_of_installments;
-        }
-
-        if ($this->interest_calculation_type === 'reducing') {
-            $quote = app(\App\Services\Loans\ProductLoanPricing::class)->quote(
+        if (in_array($this->interest_calculation_type, ['flat', 'reducing'], true)) {
+            $quote = app(ProductLoanPricing::class)->quote(
                 $this,
                 number_format((float) $loanAmount, 2, '.', ''),
             );
 
-            return (float) \App\Services\Accounting\Money::format($quote['installment_paisa']);
+            return (float) Money::format($quote['installment_paisa']);
         }
 
-        throw \Illuminate\Validation\ValidationException::withMessages([
+        throw ValidationException::withMessages([
             'loan_product_id' => 'This product calculation method has not been configured.',
         ]);
     }
@@ -132,6 +131,7 @@ class LoanProduct extends Model
         }
 
         $name = strtoupper(trim((string) ($this->product_name ?? '')));
+
         return str_contains($name, 'SMART');
     }
 
@@ -153,7 +153,7 @@ class LoanProduct extends Model
         }
 
         $product = static::query()->find($productId, ['id', 'product_code', 'main_product_code', 'product_name']);
+
         return $product ? $product->isCode38() : false;
     }
 }
-

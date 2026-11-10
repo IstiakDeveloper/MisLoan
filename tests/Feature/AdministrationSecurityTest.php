@@ -22,11 +22,10 @@ it('does not treat all-access or shared branch flags as personal administrative 
     }
 });
 
-it('requires verified MFA for privileged account mutations before validation or persistence', function () {
-    config(['security.financial_mfa_required' => true]);
+it('allows personal administrators to reach account validation without an MFA setup redirect', function () {
     $role = Role::create(['name' => Role::SUPER_ADMIN, 'display_name' => 'Admin']);
     $actor = User::factory()->create(['role_id' => $role->id]);
     $before = User::count();
-    $this->actingAs($actor)->post('/users', [])->assertRedirect(route('two-factor.show'));
+    $this->actingAs($actor)->postJson('/users', [])->assertUnprocessable()->assertJsonValidationErrors('name');
     expect(User::count())->toBe($before);
 });

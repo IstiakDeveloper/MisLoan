@@ -15,6 +15,13 @@ class DisburseLoanRequest extends FormRequest
         return $this->user() !== null;
     }
 
+    protected function prepareForValidation(): void
+    {
+        if ($this->routeIs('loan-ledger.disburse')) {
+            $this->merge(['financial_posting' => true]);
+        }
+    }
+
     /**
      * @return array<string, ValidationRule|array<mixed>|string>
      */
@@ -25,9 +32,15 @@ class DisburseLoanRequest extends FormRequest
 
         return [
             'disbursement_date' => ['required', 'date', 'before_or_equal:today'],
-            'disbursed_amount' => ['nullable', 'numeric', 'min:1', 'max:'.$maxLimit],
+            'disbursed_amount' => ['nullable', 'numeric', 'decimal:0,2', 'min:1', 'max:'.$maxLimit],
             'disbursement_method' => ['nullable', 'string', 'max:50'],
             'disbursement_reference' => ['nullable', 'string', 'max:100'],
+            'financial_posting' => ['sometimes', 'boolean'],
+            'principal_account_id' => ['required_if:financial_posting,true', 'nullable', 'integer', 'exists:ledger_accounts,id'],
+            'charge_income_account_id' => ['required_if:financial_posting,true', 'nullable', 'integer', 'exists:ledger_accounts,id'],
+            'counter_account_id' => ['required_if:financial_posting,true', 'nullable', 'integer', 'exists:ledger_accounts,id'],
+            'first_due_date' => ['required_if:financial_posting,true', 'nullable', 'date_format:Y-m-d', 'after_or_equal:disbursement_date'],
+            'posting_reference' => ['required_if:financial_posting,true', 'nullable', 'string', 'max:255'],
         ];
     }
 

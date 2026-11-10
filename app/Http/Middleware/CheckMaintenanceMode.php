@@ -31,8 +31,6 @@ class CheckMaintenanceMode
             'home',                // root URL, used by PWA start_url
             'login',
             'login.store',
-            'two-factor.login',
-            'two-factor.login.store',
             'logout',
 
             // Super admin control endpoint

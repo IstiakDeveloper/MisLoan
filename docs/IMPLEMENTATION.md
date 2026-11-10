@@ -4,6 +4,8 @@ This branch implements the accounting/security foundation and the first transact
 
 ## Delivered
 
+- Product-linked loan operations now include a professional searchable account/disbursement work queue, exact frozen disbursement quotes, reconciled form component splits and an atomic administrator disbursement/account/schedule/GL endpoint. Existing branch operational disbursements remain visible as unposted until reconciled. Saved form/print views preserve disbursed contract pricing after product edits. See [LOAN_IMPLEMENTATION.md](LOAN_IMPLEMENTATION.md) and the complete [MICROFINANCE_MASTER_PLAN.md](MICROFINANCE_MASTER_PLAN.md).
+
 - Removed unauthenticated web commands `/migrate`, `/clear`, `/storage-link`.
 - New branch accounts receive an unguessable password. Creating a branch without an explicit PIN leaves branch login disabled; existing credentials are preserved.
 - Savings application record access checks branch scope and active identity before viewing/editing, submitting, approving, activating, settling or deleting. Activation requires approved status; settlement requires active/matured status.
@@ -53,13 +55,13 @@ The accounting workspace's manual journal submission and reversal endpoints now 
 
 Savings reversal requests now require the same independent review through the Savings Ledger approval panel. One pending request per original transaction, identity-scoped idempotency, immutable requested date/reason, rejection history and atomic GL/subledger reversal are enforced. Review rechecks current funds, holds, historical overdrafts, account status and open periods. Closed savings accounts are not automatically reopened by this workflow. Initial savings deposits/withdrawals/manual profit and initial loan postings are still immediate administrative postings; approval is not yet institution-wide.
 
-### Mandatory MFA and account administration boundaries
+### Password login and account administration boundaries
 
-Financial workspaces, portfolio/reports and statement downloads require confirmed two-factor authentication and proof in the current session. Real Fortify TOTP/recovery login and enrollment confirmation record proof bound to the user and encrypted-secret fingerprint. Merely having 2FA enabled does not grant old sessions financial access. Secret rotation/disablement invalidates proof. Unenrolled administrators are directed to settings; enabled accounts in old unverified sessions must sign in again. `FINANCIAL_MFA_REQUIRED=true` is the deployment default; do not disable it in production. Ordinary/branch/inactive identities cannot gain administrator authority even with the MFA flag disabled.
+At the user's explicit request on 2026-11-10, two-factor authentication was removed. Login uses the existing password or branch login flow, with no TOTP/recovery challenge, enrollment screen or financial session-proof requirement. Existing encrypted enrollment columns remain hidden and unused for database compatibility; no destructive migration is required. The retired `FINANCIAL_MFA_REQUIRED` environment flag has no effect. Financial workspaces, portfolio/reports and statement downloads still require an active personal super-admin through `financial.admin` middleware.
 
-Role administration and account/credential/session mutations now require a personal active super-admin with MFA. Organizational user/session directory GET access remains under its existing head-office guard; a `has_all_access` flag or Head Office role does not confer account mutation/role escalation authority. The user/roles/session UI reflects the restriction. This is a focused boundary repair, not a claim of a complete authorization audit across all modules. New personal password changes/resets/creation require at least eight characters; branch PIN rules remain separate and existing passwords are not rewritten.
+Role administration and account/credential/session mutations require a personal active super-admin. Organizational user/session directory GET access remains under its existing head-office guard; a `has_all_access` flag or Head Office role does not confer account mutation/role escalation authority. The user/roles/session UI reflects the restriction. This is a focused boundary repair, not a claim of a complete authorization audit across all modules. New personal password changes/resets/creation require at least eight characters; branch PIN rules remain separate and existing passwords are not rewritten.
 
-Deployment must run both new approval migrations before opening the workspaces, verify two personal reviewers, enroll/confirm MFA through Settings and retain recovery codes securely. Keep APP_KEY recoverable with protected backups, because it encrypts existing 2FA secrets. The general test suite disables the production MFA gate explicitly; dedicated tests exercise real enrollment, recovery/invalid-code login and stale-session/secret-rotation rejection with the gate enabled. Chromium also exercises real TOTP for two administrators and independent manual/savings approval.
+Deployment must run both approval migrations before opening the workspaces and verify two independent personal reviewers. Keep APP_KEY recoverable with protected backups. The two-factor removal requires fresh application configuration/routes and a rebuilt frontend. Current regression tests verify password login with legacy enrollment present, direct administrator workspace access, removed challenge/enrollment routes and unchanged role boundaries. Earlier TOTP verification results below describe the previous implementation.
 
 ### Posted financial reports, statement delivery and integrity checks
 
@@ -92,6 +94,8 @@ The accounting workspace is a manual administrative ledger; savings and loan tra
 
 ## Verification and limitations
 
+After the user-requested two-factor removal, the isolated SQLite feature suite passed **114 tests / 574 assertions**, including direct financial access, preserved role boundaries, password login for legacy-enrolled accounts and removal of enrollment/challenge endpoints. The navigation regression suite passed **8 tests**. The historical full-suite/MySQL and TOTP results below describe the earlier baseline.
+
 Latest verification: **499 PHP tests passed** on SQLite and **113 feature tests passed** on MySQL 8.4, covering independent manual/savings approvals, MFA session proof, account-administration guards, financial reports/exports and credential setup. Dedicated MFA settings tests also verify the mandatory-enrollment notice. `npm run types` and the production build pass. Chromium exercised savings opening, deposit, hold, rejected overdraft, release, withdrawal and control-account reconciliation, plus loan contract preview, audited opening, split collection, FIFO dues, principal GL reconciliation and receipt reversal, with no JavaScript errors. The portfolio screen also exercises branch/date filtering and pre-opening coverage exclusion. Financial-report Chromium checks also cover trial/balance-sheet agreement, account ledger, CSV download and loan/savings statement delivery. These checks do not replace production-data upgrade rehearsal or financial UAT.
 
 Affected PHP dependencies were updated within the existing version constraints (including Laravel 12.71 and PhpSpreadsheet 5.11). Composer reported no remaining security vulnerability advisories after the update. This is a dependency-audit result, not a security certification.
@@ -107,7 +111,7 @@ Affected PHP dependencies were updated within the existing version constraints (
 
 | Workstream | Next deliverable |
 | --- | --- |
-| Security | Private-document delivery, full onboarding/authorization audit and extending MFA to other sensitive modules (financial and privileged account boundaries require session-verified MFA) |
+| Security | Private-document delivery and full onboarding/authorization audit; financial and privileged account boundaries require an active personal super-admin |
 | Data compatibility | Upgrade rehearsal using an audited production database copy; legacy-data reconciliation |
 | Member identity | Permanent member master and admission/cycle mapping; duplicate identity reconciliation |
 | Products | Persist versioned product policies and unify all frontend/backend pricing paths with golden examples |

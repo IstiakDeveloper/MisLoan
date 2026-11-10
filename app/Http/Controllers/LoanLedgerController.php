@@ -3,9 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\LoanApplication;
+use App\Services\Loans\FinalLoanTerms;
 use App\Services\Loans\LoanContract;
 use App\Services\Loans\LoanCorrections;
 use App\Services\Loans\LoanLedger;
+use App\Services\Loans\LoanWorkspace;
+use App\Support\LoanFormVisibility;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -18,16 +21,39 @@ final class LoanLedgerController extends Controller
         abort_unless($request->user()?->is_active && $request->user()->isSuperAdmin() && ! $request->user()->isBranchAccount(), 403);
     }
 
-    public function index(Request $request, LoanLedger $ledger)
+    public function index(Request $request, LoanLedger $ledger, LoanWorkspace $workspace)
     {
         $this->authorizeLedger($request);
-        $filters = $request->validate(['account_id' => ['nullable', 'integer', 'exists:loan_accounts,id'], 'as_of' => ['nullable', 'date_format:Y-m-d', 'before_or_equal:today']]);
-        $account = isset($filters['account_id']) ? DB::table('loan_accounts')->find($filters['account_id']) : null;
+        $filters = $request->validate([
+            'account_id' => ['nullable', 'integer', 'exists:loan_accounts,id'], 'as_of' => ['nullable', 'date_format:Y-m-d', 'before_or_equal:today'],
+            'q' => ['nullable', 'string', 'max:100'], 'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
+            'product_id' => ['nullable', 'integer', 'exists:loan_products,id'], 'account_status' => ['nullable', Rule::in(['active', 'closed'])],
+            'view' => ['nullable', Rule::in(['accounts', 'unposted', 'ready'])],
+        ]);
+        if (! empty($filters['branch_id'])) {
+            abort_unless($request->user()->canAccessBranch((int) $filters['branch_id']), 403);
+        }
+        $account = isset($filters['account_id']) ? $workspace->accounts([])->where('account.id', $filters['account_id'])->first() : null;
+        if ($account) {
+            abort_unless($request->user()->canAccessBranch((int) $account->branch_id), 403);
+        }
         $asOf = $filters['as_of'] ?? today()->toDateString();
         $schedule = $account ? $ledger->schedule($account->id, $asOf) : [];
 
         return Inertia::render('LoanLedger/Index', [
-            'accounts' => DB::table('loan_accounts')->orderByDesc('id')->paginate(25)->withQueryString(),
+            'accounts' => $workspace->accounts($filters)->orderByDesc('account.id')->paginate(25)->withQueryString(),
+            'unpostedApplications' => $workspace->sources($filters, LoanApplication::STATUS_DISBURSED)->orderByDesc('application.id')->paginate(15, ['*'], 'unposted_page')->withQueryString(),
+            'readyApplications' => $workspace->sources($filters, LoanApplication::STATUS_PENDING_DISBURSEMENT)->orderByDesc('application.id')->paginate(15, ['*'], 'ready_page')->withQueryString(),
+            'workspaceCounts' => [
+                'active' => $workspace->accounts(array_diff_key($filters, ['account_status' => true]))->where('account.status', 'active')->count(),
+                'closed' => $workspace->accounts(array_diff_key($filters, ['account_status' => true]))->where('account.status', 'closed')->count(),
+                'unposted' => $workspace->sources($filters, LoanApplication::STATUS_DISBURSED)->count(),
+                'ready' => $workspace->sources($filters, LoanApplication::STATUS_PENDING_DISBURSEMENT)->count(),
+            ],
+            'filters' => $filters,
+            'branchesList' => DB::table('branches')->orderBy('code')->get(['id', 'code', 'name']),
+            'productsList' => DB::table('loan_products')->orderBy('product_code')->get(['id', 'product_code', 'product_name']),
+            'contractSnapshot' => $account ? json_decode($account->terms_snapshot, true, 512, JSON_THROW_ON_ERROR) : null,
             'account' => $account, 'asOf' => $asOf,
             'balances' => $account ? $ledger->balances($account->id, $asOf) : null,
             'schedule' => $schedule,
@@ -44,7 +70,21 @@ final class LoanLedgerController extends Controller
         $this->authorizeLedger($request);
         abort_unless($request->user()->canAccessBranch((int) $loan->branch_id), 403);
 
-        return response()->json($contract->read($loan));
+        if ($loan->status === LoanApplication::STATUS_PENDING_DISBURSEMENT) {
+            $quote = app(FinalLoanTerms::class)->quote($loan);
+            $saved = LoanFormVisibility::buildFormSavedMap($loan);
+            $required = LoanFormVisibility::disburseFormIds((float) $loan->requested_amount);
+
+            return response()->json([
+                'principal_paisa' => $quote['principal_paisa'], 'charge_paisa' => $quote['service_charge_paisa'],
+                'regular_paisa' => $quote['installment_paisa'], 'last_paisa' => $quote['last_installment_paisa'],
+                'count' => $quote['number_of_installments'], 'frequency' => $quote['repayment_frequency'], 'disbursed_on' => null,
+                'pricing' => $quote, 'missing_forms' => array_values(array_filter($required, fn ($id) => empty($saved[$id]))),
+                'amount_change_pending' => $loan->hasPendingAmountChange(),
+            ])->header('Cache-Control', 'private, no-store');
+        }
+
+        return response()->json($contract->read($loan))->header('Cache-Control', 'private, no-store');
     }
 
     public function open(Request $request, LoanLedger $ledger)

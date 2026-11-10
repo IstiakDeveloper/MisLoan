@@ -3,6 +3,8 @@
 use App\Models\Area;
 use App\Models\Branch;
 use App\Models\LoanApplication;
+use App\Models\LoanCategory;
+use App\Models\LoanProduct;
 use App\Models\MemberAdmission;
 use App\Models\Role;
 use App\Models\Samity;
@@ -44,6 +46,105 @@ beforeEach(function () {
     DB::table('accounting_periods')->insert(['branch_id' => $this->branch->id, 'starts_on' => today()->subYear()->toDateString(), 'ends_on' => today()->addYear()->toDateString(), 'created_at' => now(), 'updated_at' => now()]);
     $this->ledger = app(LoanLedger::class);
     $this->open = fn ($p = '50000', $c = '6350', $mode = 'disbursement') => $this->ledger->open($this->actor, $this->application->id, 1, 3, $mode === 'disbursement' ? 2 : 4, $mode, $this->date, $this->date, $p, $c, 'Verified signed contract');
+});
+
+function prepareWorkspaceDisbursement(object $test): array
+{
+    $category = LoanCategory::create(['category_name' => 'Test loans', 'category_code' => 'TEST', 'is_active' => true]);
+    $product = LoanProduct::create([
+        'loan_category_id' => $category->id, 'product_name' => 'Weekly loan', 'product_code' => '1.01',
+        'installment_type' => 'weekly', 'duration_months' => 12, 'number_of_installments' => 46,
+        'min_amount' => '1000', 'max_amount' => '100000', 'interest_rate' => '12.70', 'interest_calculation_type' => 'flat',
+        'service_charge_per_thousand' => '127', 'installment_amount_per_thousand' => '25', 'last_installment_per_thousand' => '2',
+        'loan_installment_factor' => '0.0222', 'interest_installment_factor' => '0.0028', 'is_active' => true,
+    ]);
+    $test->application->update([
+        'status' => LoanApplication::STATUS_PENDING_DISBURSEMENT, 'loan_product_id' => $product->id, 'loan_category_id' => $category->id,
+        'disbursed_at' => null, 'disbursed_amount' => null, 'number_of_installments' => 12, 'repayment_frequency' => 'monthly',
+        'loan_agreement_data' => ['loan_amount' => '50000'], 'guarantor_info' => ['loan_amount' => '50000'],
+        'nominee_info' => ['loan_amount_received' => '50000'], 'business_plan' => ['applied_loan_amount' => '50000'],
+    ]);
+
+    return ['disbursed_amount' => '50000', 'disbursement_date' => $test->date, 'first_due_date' => $test->date,
+        'principal_account_id' => 1, 'charge_income_account_id' => 3, 'counter_account_id' => 2, 'posting_reference' => 'Approved application and cash payout verified'];
+}
+
+it('posts an approved admin disbursement and its exact form contract schedule and GL atomically', function () {
+    $payload = prepareWorkspaceDisbursement($this);
+    $url = '/loan-ledger/applications/'.$this->application->id.'/disburse';
+    $this->actingAs($this->actor)->patch($url, $payload)->assertSessionHasNoErrors()->assertRedirect();
+    $loan = $this->application->fresh();
+    $account = DB::table('loan_accounts')->first();
+    expect($loan->status)->toBe(LoanApplication::STATUS_DISBURSED)
+        ->and($loan->number_of_installments)->toBe(46)->and($loan->repayment_frequency)->toBe('weekly')
+        ->and($loan->loan_agreement_data['product_pricing']['service_charge_paisa'])->toBe(635000)
+        ->and($loan->business_plan['installment_principal'])->toBe('1110.00')
+        ->and($loan->business_plan['last_installment_principal'])->toBe('50.00')
+        ->and((int) DB::table('loan_installments')->sum('due_paisa'))->toBe(5635000)
+        ->and(DB::table('journal_entries')->count())->toBe(1);
+    expect($this->ledger->reconciliation($this->actor, $account->id)['matches'])->toBeTrue();
+    $schedule = $this->ledger->schedule($account->id, $this->date);
+    expect($schedule[0]['principal_due_paisa'])->toBe(111000)->and($schedule[45]['charge_due_paisa'])->toBe(5000);
+    $this->patch($url, $payload)->assertSessionHasNoErrors()->assertRedirect();
+    expect(DB::table('loan_accounts')->count())->toBe(1)->and(DB::table('loan_transactions')->count())->toBe(1)->and(DB::table('journal_entries')->count())->toBe(1);
+});
+
+it('rolls back application disbursement and form changes when financial posting fails', function () {
+    $payload = prepareWorkspaceDisbursement($this);
+    $before = $this->application->fresh()->loan_agreement_data;
+    DB::table('accounting_periods')->update(['closed_at' => now()]);
+    $this->actingAs($this->actor)->patch('/loan-ledger/applications/'.$this->application->id.'/disburse', $payload)->assertSessionHasErrors();
+    expect($this->application->fresh()->status)->toBe(LoanApplication::STATUS_PENDING_DISBURSEMENT)
+        ->and($this->application->fresh()->loan_agreement_data)->toBe($before)
+        ->and(DB::table('loan_accounts')->count())->toBe(0)->and(DB::table('journal_entries')->count())->toBe(0);
+});
+
+it('does not disburse above approval or without the required saved forms', function () {
+    $payload = prepareWorkspaceDisbursement($this);
+    $this->actingAs($this->actor)->patch('/loan-ledger/applications/'.$this->application->id.'/disburse', [...$payload, 'disbursed_amount' => '60000'])->assertSessionHasErrors('disbursed_amount');
+    $this->application->update(['nominee_info' => null]);
+    $this->patch('/loan-ledger/applications/'.$this->application->id.'/disburse', $payload)->assertSessionHasErrors();
+    expect(DB::table('loan_accounts')->count())->toBe(0)->and($this->application->fresh()->disbursed_at)->toBeNull();
+});
+
+it('keeps the product snapshot fixed and prevents editing its form pricing after posting', function () {
+    $payload = prepareWorkspaceDisbursement($this);
+    $this->actingAs($this->actor)->patch('/loan-ledger/applications/'.$this->application->id.'/disburse', $payload)->assertSessionHasNoErrors();
+    $loan = $this->application->fresh();
+    $loan->loanProduct->update(['service_charge_per_thousand' => '150']);
+    $contract = app(LoanContract::class)->read($loan->fresh());
+    expect((string) $contract['product']['service_charge_per_thousand'])->toBe('127')->and($contract['charge_paisa'])->toBe(635000);
+    $agreement = $loan->loan_agreement_data;
+    $agreement['product_pricing']['installment_split']['regular_principal_paisa'] = 100;
+    expect(fn () => $loan->update(['loan_agreement_data' => $agreement]))->toThrow(ValidationException::class);
+});
+
+it('searches loans by member identity and separates final-approved and unposted work queues', function () {
+    $payload = prepareWorkspaceDisbursement($this);
+    $this->application->memberAdmission->update(['applicant_name_bn' => 'পরীক্ষা সদস্য']);
+    $this->actingAs($this->actor)->get('/loan-ledger?q='.urlencode('পরীক্ষা'))
+        ->assertOk()->assertInertia(fn (AssertableInertia $p) => $p->where('workspaceCounts.ready', 1)->where('workspaceCounts.unposted', 0)->where('readyApplications.data.0.application_no', 'LOAN-001'));
+    $this->get('/loan-ledger/contracts/'.$this->application->id)->assertOk()->assertJsonPath('missing_forms', [])->assertJsonPath('count', 46);
+    $this->patch('/loan-ledger/applications/'.$this->application->id.'/disburse', $payload)->assertSessionHasNoErrors();
+    $this->get('/loan-ledger?product_id='.$this->application->loan_product_id)->assertOk()->assertInertia(fn (AssertableInertia $p) => $p->where('workspaceCounts.ready', 0)->where('workspaceCounts.active', 1)->where('accounts.data.0.member_name_bn', 'পরীক্ষা সদস্য'));
+});
+
+it('rejects an invalid payout account and ordinary staff without leaving a partial disbursement', function () {
+    $payload = prepareWorkspaceDisbursement($this);
+    $url = '/loan-ledger/applications/'.$this->application->id.'/disburse';
+    $this->actingAs(User::factory()->create())->patch($url, $payload)->assertForbidden();
+    $this->actingAs($this->actor)->patch($url, [...$payload, 'counter_account_id' => 1])->assertSessionHasErrors('ledger');
+    expect($this->application->fresh()->status)->toBe(LoanApplication::STATUS_PENDING_DISBURSEMENT)
+        ->and(DB::table('loan_accounts')->count())->toBe(0)->and(DB::table('journal_entries')->count())->toBe(0);
+});
+
+it('rejects a saved pricing snapshot whose components do not reconcile with the contract', function () {
+    $loan = $this->application;
+    $agreement = $loan->loan_agreement_data;
+    $agreement['product_pricing'] = ['principal_paisa' => 5000000, 'service_charge_paisa' => 635000, 'installment_paisa' => 125000, 'last_installment_paisa' => 10000, 'number_of_installments' => 46, 'repayment_frequency' => 'weekly',
+        'installment_split' => ['regular_principal_paisa' => 111000, 'regular_charge_paisa' => 14000, 'last_principal_paisa' => 6000, 'last_charge_paisa' => 4000]];
+    $loan->loan_agreement_data = $agreement;
+    expect(fn () => app(LoanContract::class)->read($loan))->toThrow(ValidationException::class);
 });
 
 it('opens the original contract with reconciled schedule and principal GL only', function () {

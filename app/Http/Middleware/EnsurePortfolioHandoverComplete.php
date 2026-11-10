@@ -25,8 +25,6 @@ class EnsurePortfolioHandoverComplete
             'login',
             'login.store',
             'password.*',
-            'two-factor.login',
-            'two-factor.login.store',
             'verification.*',
             'profile.complete',
             'profile.complete.store',

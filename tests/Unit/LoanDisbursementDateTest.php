@@ -139,6 +139,7 @@ function createDisbursementDateTables(): void
         $table->decimal('installment_amount', 12, 2)->nullable();
         $table->integer('number_of_installments')->nullable();
         $table->integer('loan_term_months')->nullable();
+        $table->string('repayment_frequency')->nullable();
         $table->timestamp('reviewed_at')->nullable();
         $table->timestamp('submitted_at')->nullable();
         $table->unsignedBigInteger('disbursed_by')->nullable();

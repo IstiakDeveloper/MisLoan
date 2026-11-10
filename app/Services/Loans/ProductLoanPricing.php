@@ -39,7 +39,7 @@ final class ProductLoanPricing
         if ($perThousand->isPositive()) {
             $charge = $principal->multipliedBy($perThousand)->dividedBy(1000);
             $source = 'service_charge_per_thousand';
-        } elseif ($rate->isPositive() && $product->interest_calculation_type === 'reducing') {
+        } elseif ($rate->isPositive() && $product->interest_calculation_type === 'reducing' && ! $lump) {
             // The annual reducing rate does not encode a flat total tariff.
             // Require the product's approved tariff/factors rather than inventing an amortization convention.
             if (! $interestFactor->isPositive()) {
@@ -94,12 +94,33 @@ final class ProductLoanPricing
             'last_installment_paisa' => Money::toPaisa((string) $last),
             'configured_last_installment_paisa' => $configuredLast === null ? null : Money::toPaisa((string) $configuredLast),
             'last_installment_adjusted' => $configuredLast !== null && ! $configuredLast->isEqualTo($last),
+            'installment_split' => $this->formSplit($principal, $principalPaisa, Money::toPaisa((string) $charge->toScale(2)), Money::toPaisa((string) $regular->toScale(2)), Money::toPaisa((string) $last), $count, $principalFactor),
             'product_snapshot' => array_intersect_key($product->getAttributes(), array_flip([
                 'id', 'product_code', 'interest_calculation_type', 'duration_months', 'number_of_installments',
                 'installment_type', 'service_charge_per_thousand', 'interest_rate', 'service_charge',
                 'loan_installment_factor', 'interest_installment_factor', 'installment_amount_per_thousand', 'last_installment_per_thousand',
             ])),
         ];
+    }
+
+    /** The four-page form's principal factor, reconciled to exact installment totals. */
+    private function formSplit(BigRational $principal, int $principalPaisa, int $chargePaisa, int $regular, int $last, int $count, BigRational $factor): ?array
+    {
+        if ($count === 1) {
+            $p = $principalPaisa;
+        } elseif ($chargePaisa === 0) {
+            $p = $regular;
+        } else {
+            $p = Money::toPaisa((string) ($factor->isPositive() ? $principal->multipliedBy($factor) : $principal->dividedBy($count))->toScale(0, RoundingMode::HALF_UP)->toScale(2));
+        }
+        $c = $regular - $p;
+        $lastP = $principalPaisa - $p * ($count - 1);
+        $lastC = $chargePaisa - $c * ($count - 1);
+        if (min($p, $c, $lastP, $lastC) < 0 || $lastP + $lastC !== $last) {
+            return null;
+        }
+
+        return ['regular_principal_paisa' => $p, 'regular_charge_paisa' => $c, 'last_principal_paisa' => $lastP, 'last_charge_paisa' => $lastC];
     }
 
     private function isLumpSum(LoanProduct $product): bool

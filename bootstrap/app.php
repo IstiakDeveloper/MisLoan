@@ -13,7 +13,7 @@ use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\NormalizeInertiaAmounts;
 use App\Http\Middleware\ProtectUserAdministration;
-use App\Http\Middleware\RequireFinancialMfa;
+use App\Http\Middleware\RequireFinancialAdministrator;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -47,7 +47,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'ensure.profile.complete' => EnsureProfileComplete::class,
             'ensure.portfolio.handover' => EnsurePortfolioHandoverComplete::class,
             'secure.user.admin' => ProtectUserAdministration::class,
-            'financial.mfa' => RequireFinancialMfa::class,
+            'financial.admin' => RequireFinancialAdministrator::class,
             'role' => CheckRole::class,
             'permission' => CheckPermission::class,
             'branch.user' => CheckBranchUser::class,

@@ -23,7 +23,7 @@ import { triggerPrintWithAutoFit } from '@/hooks/useAutoFitPrint';
 import { getRequiredSavingsPercent } from '@/components/LoanApplications/GeneralSavingsSection';
 import { afterLoanFormSaveUrl } from '@/utils/loanFormNavigation';
 import { getLoanYears, scaleAnnualToLoanYears } from './FormPage3';
-import { calculateLoanSchedule, getReducingServiceChargeRate, installmentFormFields } from '@/utils/loanInterest';
+import { calculateLoanSchedule, getReducingServiceChargeRate, installmentFormFields, loanProductForApplication } from '@/utils/loanInterest';
 import { withLiveMemberCode, toEnglishDigits } from '@/utils/memberCodeUtils';
 import { getFamilyAssetsFromMember, mergeFamilyAssets } from './familyAssets';
 import {
@@ -159,9 +159,9 @@ function resolveBackUrl(
 
 export default function ApprovalForm({
     member,
-    loanProduct,
+    loanProduct: currentLoanProduct,
     loanCategory,
-    requestedAmount,
+    requestedAmount: currentRequestedAmount,
     branch,
     existingApplication,
     savedData,
@@ -170,6 +170,8 @@ export default function ApprovalForm({
     loanRound = 1,
     isLegacy = false,
 }: ApprovalFormProps) {
+    const loanProduct = useMemo(() => loanProductForApplication(currentLoanProduct, existingApplication), [currentLoanProduct, existingApplication]);
+    const requestedAmount = loanProduct?._saved_pricing ? Number(loanProduct._saved_pricing.principal_paisa) / 100 : currentRequestedAmount;
     const categoryName = loanCategory?.category_name_bn || loanCategory?.category_name || 'ঋণ';
 
     const [activeStep, setActiveStep] = useState<number>(1);
@@ -246,7 +248,7 @@ export default function ApprovalForm({
         loanCategory,
     );
     const initialApprovedAmount = Number(
-        existingApplication?.approved_amount ||
+        existingApplication?.disbursed_amount || existingApplication?.approved_amount ||
         (savedData as any)?.final_approved_loan_amount_digits ||
         0
     );

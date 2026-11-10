@@ -15,7 +15,7 @@ import { LoanAgreementData, LoanAgreementProps } from './Types';
 import { LoanAgreementPrintView } from './LoanAgreementPrintView';
 import { LoanAgreementForm } from './LoanAgreementForm';
 import { afterLoanFormSaveUrl } from '@/utils/loanFormNavigation';
-import { calculateLoanSchedule, isSufolonLoan } from '@/utils/loanInterest';
+import { calculateLoanSchedule, isSufolonLoan, loanProductForApplication } from '@/utils/loanInterest';
 import { numberToWordsBangla } from '../ApprovalForm/PrintPreview';
 import { withLiveMemberCode } from '@/utils/memberCodeUtils';
 
@@ -154,15 +154,17 @@ function mergeFormData<T extends Record<string, any>>(defaults: T, savedData?: a
 
 export default function LoanAgreement({
     member,
-    loanProduct,
+    loanProduct: currentLoanProduct,
     loanCategory,
-    requestedAmount,
+    requestedAmount: currentRequestedAmount,
     branch,
     existingApplication,
     savedData,
     onlyPreview,
     isLegacy = false,
 }: LoanAgreementProps) {
+    const loanProduct = useMemo(() => loanProductForApplication(currentLoanProduct, existingApplication), [currentLoanProduct, existingApplication]);
+    const requestedAmount = loanProduct?._saved_pricing ? Number(loanProduct._saved_pricing.principal_paisa) / 100 : currentRequestedAmount;
     if (onlyPreview) {
         const termMonths =
             existingApplication?.loan_term_months ||

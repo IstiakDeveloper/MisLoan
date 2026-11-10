@@ -13,7 +13,7 @@ final class FinancialReportsController extends Controller
     public function __invoke(Request $request, FinancialReports $reports)
     {
         $reports->authorize($request->user(), null);
-        $data = $request->validate(['from' => ['nullable', 'date_format:Y-m-d', 'before_or_equal:today'], 'to' => ['nullable', 'date_format:Y-m-d', 'before_or_equal:today'], 'branch_id' => ['nullable', 'integer', 'exists:branches,id'], 'account_id' => ['nullable', 'integer', 'exists:ledger_accounts,id'], 'download' => ['nullable', 'in:balances,ledger']]);
+        $data = $request->validate(['report' => ['nullable', 'in:trial,income,balance,ledger'], 'from' => ['nullable', 'date_format:Y-m-d', 'before_or_equal:today'], 'to' => ['nullable', 'date_format:Y-m-d', 'before_or_equal:today'], 'branch_id' => ['nullable', 'integer', 'exists:branches,id'], 'account_id' => ['nullable', 'integer', 'exists:ledger_accounts,id'], 'download' => ['nullable', 'in:balances,ledger']]);
         $to = $data['to'] ?? today()->toDateString();
         $from = $data['from'] ?? substr($to, 0, 4).'-01-01';
         $reports->dates($from, $to);
@@ -50,10 +50,10 @@ final class FinancialReportsController extends Controller
             }, 'posted-gl-'.$data['download'].'-'.$to.'.csv', ['Content-Type' => 'text/csv; charset=UTF-8', 'Cache-Control' => 'private, no-store', 'X-Content-Type-Options' => 'nosniff']);
         }
 
-        return DB::transaction(function () use ($request, $reports, $from, $to, $branch, $account) {
+        return DB::transaction(function () use ($request, $reports, $from, $to, $branch, $account, $data) {
             $ledger = $account !== null ? $reports->accountLedger($request->user(), $account, $from, $to, $branch) : null;
 
-            return Inertia::render('FinancialReports/Index', [...$reports->balances($request->user(), $from, $to, $branch), 'from' => $from, 'to' => $to, 'branchId' => $branch, 'accountId' => $account,
+            return Inertia::render('FinancialReports/Index', [...$reports->balances($request->user(), $from, $to, $branch), 'report' => $data['report'] ?? ($account ? 'ledger' : 'trial'), 'from' => $from, 'to' => $to, 'branchId' => $branch, 'accountId' => $account,
                 'branches' => DB::table('branches')->orderBy('code')->get(['id', 'code', 'name']), 'accounts' => DB::table('ledger_accounts')->orderBy('code')->get(['id', 'code', 'name']),
                 'ledger' => $ledger ? ['opening_paisa' => $ledger['opening_paisa'], 'entries' => $ledger['query']->paginate(50)->withQueryString()] : null]);
         });

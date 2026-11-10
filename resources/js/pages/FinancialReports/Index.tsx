@@ -1,7 +1,18 @@
-import AdminLayout from '@/layouts/admin-layout';
-import { Head, Link, router, usePage } from '@inertiajs/react';
+import {
+    FinanceEmpty,
+    FinanceErrors,
+    FinancePages,
+    FinancePanel,
+    Paisa,
+    financeButton,
+    financeInput,
+    financeSecondary,
+} from '@/components/finance/workspace';
+import { accountingUrl } from '@/lib/accounting-navigation';
+import AccountingFrame from '@/pages/Accounting/AccountingFrame';
+import { Link, router, usePage } from '@inertiajs/react';
+import { Download, Printer } from 'lucide-react';
 import { useState } from 'react';
-
 type Row = {
     id: number;
     code: string;
@@ -46,15 +57,43 @@ type Props = {
         };
     } | null;
 };
-const money = (v: string) => {
-    const n = BigInt(v);
-    const a = n < 0n ? -n : n;
-    return `${n < 0n ? '-' : ''}${a / 100n}.${String(a % 100n).padStart(2, '0')}`;
-};
-const side = (v: string) =>
-    `${money(v)}${BigInt(v) > 0n ? ' Dr' : BigInt(v) < 0n ? ' Cr (signed)' : ''}`;
-const cell = 'p-2 text-left align-top';
-export default function FinancialReports({
+const reports = [
+    {
+        id: 'trial',
+        title: 'Trial balance',
+        description: 'হিসাবের debit ও credit সমতা',
+    },
+    {
+        id: 'income',
+        title: 'আয়–ব্যয় বিবরণী',
+        description: 'নির্বাচিত সময়ের আয় ও ব্যয়',
+    },
+    {
+        id: 'balance',
+        title: 'Balance sheet',
+        description: 'শেষ তারিখে সম্পদ ও দায়',
+    },
+    { id: 'ledger', title: 'GL ledger', description: 'একটি হিসাবের লেনদেন' },
+];
+const cell = 'px-5 py-3 text-left align-top';
+function Signed({ value }: { value: string }) {
+    const n = BigInt(value);
+    return (
+        <>
+            <Paisa value={n < 0n ? -n : n} />
+            {n < 0n ? ' Cr' : n > 0n ? ' Dr' : ''}
+        </>
+    );
+}
+export default function FinancialReports(props: Props & { report: string }) {
+    return (
+        <Report
+            key={`${props.report}-${props.branchId}-${props.accountId}-${props.from}-${props.to}`}
+            {...props}
+        />
+    );
+}
+function Report({
     rows,
     totals,
     from,
@@ -64,309 +103,423 @@ export default function FinancialReports({
     branches,
     accounts,
     ledger,
-}: Props) {
+    report,
+}: Props & { report: string }) {
     const [start, setStart] = useState(from);
     const [end, setEnd] = useState(to);
-    const [branch, setBranch] = useState(branchId?.toString() ?? '');
-    const [account, setAccount] = useState(accountId?.toString() ?? '');
+    const [account, setAccount] = useState(String(accountId ?? ''));
     const { errors } = usePage<{ errors: Record<string, string> }>().props;
-    const current = new URLSearchParams({
-        from,
-        to,
-        ...(branchId ? { branch_id: String(branchId) } : {}),
-        ...(accountId ? { account_id: String(accountId) } : {}),
-    });
-    const exportUrl = (kind: string) =>
-        `/accounting/reports?${current.toString()}&download=${kind}`;
+    const filters = { from, to, report, account_id: accountId ?? undefined };
+    const url = (extra: Record<string, string | number | undefined> = {}) =>
+        accountingUrl('reports', branchId, { ...filters, ...extra });
+    const current = reports.find((item) => item.id === report) ?? reports[0];
+    const stat = (label: string, value: string) => (
+        <div className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+            <p className="text-xs text-slate-500">{label}</p>
+            <p className="mt-3 text-xl font-semibold">
+                <Paisa value={value} />
+            </p>
+        </div>
+    );
     const statement = (type: string) => (
-        <table className="w-full">
-            <tbody>
-                {rows
-                    .filter((r) => r.type === type)
-                    .map((r) => (
-                        <tr className="border-t" key={r.id}>
-                            <td className={cell}>
-                                {r.code} {r.name}
-                            </td>
-                            <td className={cell}>
-                                {money(
+        <div className="divide-y divide-slate-100 dark:divide-slate-800">
+            {rows
+                .filter((row) => row.type === type)
+                .map((row) => (
+                    <div
+                        key={row.id}
+                        className="flex items-center justify-between gap-4 px-5 py-3 text-xs"
+                    >
+                        <div>
+                            <span className="mr-2 font-mono text-slate-400">
+                                {row.code}
+                            </span>
+                            {row.name}
+                        </div>
+                        <span className="shrink-0 font-medium">
+                            <Paisa
+                                value={
                                     ['income', 'expense'].includes(type)
-                                        ? r.period_normal_paisa
-                                        : r.normal_balance_paisa,
-                                )}
-                            </td>
-                        </tr>
-                    ))}
-            </tbody>
-        </table>
+                                        ? row.period_normal_paisa
+                                        : row.normal_balance_paisa
+                                }
+                            />
+                        </span>
+                    </div>
+                ))}
+        </div>
     );
     return (
-        <AdminLayout>
-            <Head title="Financial reports" />
-            <div className="space-y-5 p-4 text-slate-900">
-                <h1 className="text-2xl font-semibold">
-                    আর্থিক প্রতিবেদন ও account ledger
-                </h1>
-                <p className="rounded border border-amber-300 bg-amber-50 p-4">
-                    শুধু posted GL-এর রিপোর্ট। সব opening balance ও ঋণ–সঞ্চয়সহ
-                    লেনদেনের integration সম্পূর্ণ যাচাই না হওয়া পর্যন্ত এটি
-                    প্রতিষ্ঠানের পূর্ণ আর্থিক অবস্থান নয়। অনাদায়ী contractual
-                    loan charge GL income হিসেবে ধরা হয়নি; আদায়ের সময় income
-                    হয়েছে। এই live report audited বা নিয়ন্ত্রক সংস্থার অনুমোদিত
-                    বিবরণী নয়।
-                </p>
-                <form
-                    className="flex flex-wrap items-end gap-3 rounded border bg-white p-4"
-                    onSubmit={(e) => {
-                        e.preventDefault();
-                        router.get('/accounting/reports', {
+        <AccountingFrame
+            section="reports"
+            branches={branches}
+            branchId={branchId}
+            allowAll
+            filters={filters}
+            actions={
+                <>
+                    <a
+                        className={financeSecondary}
+                        href={url({ download: 'balances' })}
+                    >
+                        <Download className="size-4" />
+                        GL balances CSV
+                    </a>
+                    <button
+                        className={financeSecondary}
+                        onClick={() => window.print()}
+                    >
+                        <Printer className="size-4" />
+                        Print
+                    </button>
+                </>
+            }
+        >
+            <FinanceErrors errors={errors} />
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 print:hidden">
+                {reports.map((item) => (
+                    <Link
+                        key={item.id}
+                        href={url({ report: item.id })}
+                        aria-current={report === item.id ? 'page' : undefined}
+                        className={`rounded-xl border p-4 transition ${report === item.id ? 'border-emerald-700 bg-emerald-50 dark:bg-emerald-950' : 'border-slate-200 bg-white hover:border-emerald-400 dark:border-slate-800 dark:bg-slate-900'}`}
+                    >
+                        <p className="text-sm font-semibold">{item.title}</p>
+                        <p className="mt-2 text-xs text-slate-500">
+                            {item.description}
+                        </p>
+                    </Link>
+                ))}
+            </div>
+            <form
+                className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 print:hidden"
+                onSubmit={(event) => {
+                    event.preventDefault();
+                    router.get(
+                        url({
                             from: start,
                             to: end,
-                            ...(branch ? { branch_id: branch } : {}),
-                            ...(account ? { account_id: account } : {}),
-                        });
-                    }}
-                >
-                    <label>
-                        শুরুর তারিখ
-                        <input
-                            required
-                            className="block rounded border p-2"
-                            type="date"
-                            value={start}
-                            onChange={(e) => setStart(e.target.value)}
-                        />
-                    </label>
-                    <label>
-                        শেষ তারিখ
-                        <input
-                            required
-                            className="block rounded border p-2"
-                            type="date"
-                            value={end}
-                            onChange={(e) => setEnd(e.target.value)}
-                        />
-                    </label>
-                    <label>
-                        শাখা
+                            account_id:
+                                report === 'ledger' ? account : undefined,
+                        }),
+                    );
+                }}
+            >
+                <label className="text-xs text-slate-500">
+                    শুরু
+                    <input
+                        required
+                        type="date"
+                        className={financeInput}
+                        value={start}
+                        onChange={(event) => setStart(event.target.value)}
+                    />
+                </label>
+                <label className="text-xs text-slate-500">
+                    শেষ
+                    <input
+                        required
+                        type="date"
+                        min={start}
+                        className={financeInput}
+                        value={end}
+                        onChange={(event) => setEnd(event.target.value)}
+                    />
+                </label>
+                {report === 'ledger' && (
+                    <label className="min-w-48 flex-1 text-xs text-slate-500">
+                        GL হিসাব
                         <select
-                            aria-label="শাখা"
-                            className="block rounded border p-2"
-                            value={branch}
-                            onChange={(e) => setBranch(e.target.value)}
-                        >
-                            <option value="">সব শাখা</option>
-                            {branches.map((b) => (
-                                <option key={b.id} value={b.id}>
-                                    {b.code} {b.name}
-                                </option>
-                            ))}
-                        </select>
-                    </label>
-                    <label>
-                        Ledger account
-                        <select
-                            aria-label="Ledger account"
-                            className="block rounded border p-2"
+                            required
+                            className={financeInput}
                             value={account}
-                            onChange={(e) => setAccount(e.target.value)}
+                            onChange={(event) => setAccount(event.target.value)}
                         >
-                            <option value="">Account নির্বাচন করুন</option>
-                            {accounts.map((a) => (
-                                <option key={a.id} value={a.id}>
-                                    {a.code} {a.name}
+                            <option value="">হিসাব নির্বাচন করুন</option>
+                            {accounts.map((item) => (
+                                <option key={item.id} value={item.id}>
+                                    {item.code} · {item.name}
                                 </option>
                             ))}
                         </select>
                     </label>
-                    <button className="rounded bg-emerald-700 px-4 py-2 text-white">
-                        রিপোর্ট দেখুন
-                    </button>
-                </form>
-                <div role="alert" className="text-red-700">
-                    {Object.entries(errors).map(([k, v]) => (
-                        <p key={k}>{v}</p>
-                    ))}
-                </div>
-                <div className="flex gap-4">
-                    <a
-                        className="text-emerald-800 underline"
-                        href={exportUrl('balances')}
-                    >
-                        Trial balance CSV
-                    </a>
-                    {accountId && (
-                        <a
-                            className="text-emerald-800 underline"
-                            href={exportUrl('ledger')}
-                        >
-                            Account ledger CSV
-                        </a>
-                    )}
-                </div>
-                <section className="overflow-auto rounded border bg-white p-4">
-                    <h2 className="text-xl font-semibold">
-                        Trial balance — {from} থেকে {to}
-                    </h2>
-                    <p>
-                        Opening/closing-এ debit ধনাত্মক, credit ঋণাত্মক। Period
-                        debit/credit আলাদা gross movement।
-                    </p>
-                    <table className="w-full">
-                        <thead>
-                            <tr>
-                                {[
-                                    'Account',
-                                    'Type',
-                                    'Opening',
-                                    'Period debit',
-                                    'Period credit',
-                                    'Closing',
-                                ].map((h) => (
-                                    <th className={cell} key={h}>
-                                        {h}
-                                    </th>
-                                ))}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {rows.map((r) => (
-                                <tr className="border-t" key={r.id}>
-                                    <td className={cell}>
-                                        {r.code} {r.name}
-                                        {!r.is_active ? ' (inactive)' : ''}
-                                    </td>
-                                    <td className={cell}>{r.type}</td>
-                                    <td className={cell}>
-                                        {side(r.opening_paisa)}
-                                    </td>
-                                    <td className={cell}>
-                                        {money(r.debit_paisa)}
-                                    </td>
-                                    <td className={cell}>
-                                        {money(r.credit_paisa)}
-                                    </td>
-                                    <td className={cell}>
-                                        {side(r.closing_paisa)}
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                    <p>
-                        Closing debit: {money(totals.closing_debit_paisa)} ·
-                        Closing credit: {money(totals.closing_credit_paisa)} ·
-                        Difference: {money(totals.trial_difference_paisa)}
-                    </p>
-                </section>
-                <section className="rounded border bg-white p-4">
-                    <h2 className="text-xl font-semibold">
-                        আয়–ব্যয় — {from} থেকে {to}
-                    </h2>
-                    <p>
-                        Income: ৳{money(totals.period_income_paisa)} · Expense:
-                        ৳{money(totals.period_expense_paisa)} · Surplus /
-                        deficit: ৳{money(totals.period_surplus_paisa)}
-                    </p>
-                    <p>
-                        আয়–ব্যয়ের account breakdown শুধু নির্বাচিত তারিখের
-                        movement।
-                    </p>
-                    <h3>Income accounts (period)</h3>
-                    {statement('income')}
-                    <h3>Expense accounts (period)</h3>
-                    {statement('expense')}
-                </section>
-                <section className="rounded border bg-white p-4">
-                    <h2 className="text-xl font-semibold">
-                        Balance sheet — {to}
-                    </h2>
-                    <h3>Assets: ৳{money(totals.asset_paisa)}</h3>
-                    {statement('asset')}
-                    <h3>Liabilities: ৳{money(totals.liability_paisa)}</h3>
-                    {statement('liability')}
-                    <h3>Equity accounts: ৳{money(totals.equity_paisa)}</h3>
-                    {statement('equity')}
-                    <p>
-                        Cumulative income less expenses: ৳
-                        {money(totals.cumulative_surplus_paisa)}। Equity-তে
-                        journal করা retained results আবার এখানে যোগ হয় না।
-                    </p>
-                    <p>
-                        Assets − liabilities − equity − cumulative surplus: ৳
-                        {money(totals.balance_sheet_difference_paisa)}
-                    </p>
-                </section>
-                {ledger && (
-                    <section className="overflow-auto rounded border bg-white p-4">
-                        <h2 className="text-xl font-semibold">
-                            Account ledger
-                        </h2>
-                        <p>
-                            Opening: {side(ledger.opening_paisa)}। Running
-                            balance আগের পাতার লেনদেনসহ গণনা করা হয়েছে।
-                        </p>
-                        <table className="w-full">
-                            <thead>
-                                <tr>
-                                    {[
-                                        'Date / branch',
-                                        'Journal / source',
-                                        'Description',
-                                        'Debit',
-                                        'Credit',
-                                        'Running',
-                                    ].map((h) => (
-                                        <th className={cell} key={h}>
-                                            {h}
-                                        </th>
-                                    ))}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {ledger.entries.data.map((e) => (
-                                    <tr className="border-t" key={e.id}>
-                                        <td className={cell}>
-                                            {e.business_date} / {e.branch_code}
-                                        </td>
-                                        <td className={cell}>
-                                            #{e.journal_id} · {e.reference} ·{' '}
-                                            {e.source_type}
-                                            {e.reversal_of
-                                                ? ` · reversal of #${e.reversal_of}`
-                                                : ''}
-                                        </td>
-                                        <td className={cell}>
-                                            {e.description}
-                                        </td>
-                                        <td className={cell}>
-                                            {money(e.debit_paisa)}
-                                        </td>
-                                        <td className={cell}>
-                                            {money(e.credit_paisa)}
-                                        </td>
-                                        <td className={cell}>
-                                            {side(e.running_paisa)}
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                        <div className="flex gap-4">
-                            {ledger.entries.prev_page_url && (
-                                <Link href={ledger.entries.prev_page_url}>
-                                    আগের পাতা
-                                </Link>
-                            )}
-                            {ledger.entries.next_page_url && (
-                                <Link href={ledger.entries.next_page_url}>
-                                    পরের পাতা
-                                </Link>
-                            )}
-                        </div>
-                    </section>
                 )}
+                <button className={financeButton}>রিপোর্ট দেখুন</button>
+            </form>
+            <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                    <h2 className="text-lg font-semibold">{current.title}</h2>
+                    <p className="mt-1 text-xs text-slate-500">
+                        {report === 'balance'
+                            ? `As at ${to}`
+                            : `${from} — ${to}`}{' '}
+                        ·{' '}
+                        {branches.find((item) => item.id === branchId)?.name ??
+                            'সব শাখা'}{' '}
+                        · Posted GL only
+                    </p>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                    Pending voucher এই প্রতিবেদনে অন্তর্ভুক্ত নয়।
+                </p>
             </div>
-        </AdminLayout>
+            {report === 'trial' && (
+                <>
+                    <div className="grid gap-4 sm:grid-cols-3">
+                        {stat('Period debit', totals.debit_paisa)}
+                        {stat('Period credit', totals.credit_paisa)}
+                        {stat(
+                            'Closing difference',
+                            totals.trial_difference_paisa,
+                        )}
+                    </div>
+                    <FinancePanel
+                        title="Trial balance"
+                        description="Opening ও closing-এ Dr / Cr দেখানো হয়েছে; debit ও credit নির্বাচিত সময়ের movement।"
+                    >
+                        <div className="overflow-x-auto">
+                            <table className="w-full min-w-[850px] text-xs">
+                                <thead className="bg-slate-50 text-slate-500 dark:bg-slate-950">
+                                    <tr>
+                                        {[
+                                            'হিসাব',
+                                            'Opening',
+                                            'Debit',
+                                            'Credit',
+                                            'Closing',
+                                        ].map((label) => (
+                                            <th key={label} className={cell}>
+                                                {label}
+                                            </th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                    {rows.map((row) => (
+                                        <tr key={row.id}>
+                                            <td className={cell}>
+                                                <Link
+                                                    className="font-medium text-emerald-700"
+                                                    href={url({
+                                                        report: 'ledger',
+                                                        account_id: row.id,
+                                                    })}
+                                                >
+                                                    {row.code} · {row.name}
+                                                </Link>
+                                            </td>
+                                            <td className={cell}>
+                                                <Signed
+                                                    value={row.opening_paisa}
+                                                />
+                                            </td>
+                                            <td className={cell}>
+                                                <Paisa
+                                                    value={row.debit_paisa}
+                                                />
+                                            </td>
+                                            <td className={cell}>
+                                                <Paisa
+                                                    value={row.credit_paisa}
+                                                />
+                                            </td>
+                                            <td className={cell}>
+                                                <Signed
+                                                    value={row.closing_paisa}
+                                                />
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                                <tfoot className="border-t bg-slate-50 font-semibold dark:bg-slate-950">
+                                    <tr>
+                                        <td className={cell}>মোট movement</td>
+                                        <td />
+                                        <td className={cell}>
+                                            <Paisa value={totals.debit_paisa} />
+                                        </td>
+                                        <td className={cell}>
+                                            <Paisa
+                                                value={totals.credit_paisa}
+                                            />
+                                        </td>
+                                        <td />
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                        {!rows.length && (
+                            <FinanceEmpty
+                                title="GL হিসাব নেই"
+                                description="Chart of accounts তৈরি করার পরে এখানে রিপোর্ট পাওয়া যাবে।"
+                            />
+                        )}
+                    </FinancePanel>
+                </>
+            )}
+            {report === 'income' && (
+                <>
+                    <div className="grid gap-4 sm:grid-cols-3">
+                        {stat('সময়ের আয়', totals.period_income_paisa)}
+                        {stat('সময়ের ব্যয়', totals.period_expense_paisa)}
+                        {stat(
+                            'সময়ের উদ্বৃত্ত / ঘাটতি',
+                            totals.period_surplus_paisa,
+                        )}
+                    </div>
+                    <div className="grid items-start gap-5 lg:grid-cols-2">
+                        <FinancePanel title="আয় · Income">
+                            {statement('income')}
+                        </FinancePanel>
+                        <FinancePanel title="ব্যয় · Expense">
+                            {statement('expense')}
+                        </FinancePanel>
+                    </div>
+                </>
+            )}
+            {report === 'balance' && (
+                <>
+                    <div className="grid gap-4 sm:grid-cols-3">
+                        {stat('সম্পদ', totals.asset_paisa)}
+                        {stat('দায়', totals.liability_paisa)}
+                        {stat(
+                            'সমীকরণের পার্থক্য',
+                            totals.balance_sheet_difference_paisa,
+                        )}
+                    </div>
+                    <div className="grid items-start gap-5 lg:grid-cols-2">
+                        <FinancePanel title="সম্পদ · Assets">
+                            {statement('asset')}
+                        </FinancePanel>
+                        <div className="space-y-5">
+                            <FinancePanel title="দায় · Liabilities">
+                                {statement('liability')}
+                            </FinancePanel>
+                            <FinancePanel title="মূলধন ও সঞ্চিত উদ্বৃত্ত · Equity">
+                                {statement('equity')}
+                                <div className="flex justify-between gap-3 border-t p-5 text-xs">
+                                    <span>
+                                        শেষ তারিখ পর্যন্ত সঞ্চিত উদ্বৃত্ত
+                                    </span>
+                                    <Paisa
+                                        value={totals.cumulative_surplus_paisa}
+                                    />
+                                </div>
+                            </FinancePanel>
+                        </div>
+                    </div>
+                </>
+            )}
+            {report === 'ledger' && (
+                <FinancePanel
+                    title={
+                        accounts.find((item) => item.id === accountId)?.name ??
+                        'GL ledger'
+                    }
+                    description={
+                        ledger
+                            ? 'Running balance-এ Dr / Cr দেখানো হয়েছে।'
+                            : 'উপরে একটি GL হিসাব নির্বাচন করে রিপোর্ট দেখুন।'
+                    }
+                    action={
+                        ledger && (
+                            <a
+                                className={financeSecondary}
+                                href={url({ download: 'ledger' })}
+                            >
+                                Ledger CSV
+                            </a>
+                        )
+                    }
+                >
+                    {!ledger ? (
+                        <FinanceEmpty
+                            title="একটি হিসাব নির্বাচন করুন"
+                            description="যে GL হিসাবের লেনদেন দেখতে চান সেটি বেছে নিন।"
+                        />
+                    ) : (
+                        <>
+                            <div className="border-b p-5 text-sm">
+                                Opening: <Signed value={ledger.opening_paisa} />
+                            </div>
+                            <div className="overflow-x-auto">
+                                <table className="w-full min-w-[850px] text-xs">
+                                    <thead className="bg-slate-50 dark:bg-slate-950">
+                                        <tr>
+                                            {[
+                                                'তারিখ / Reference',
+                                                'শাখা / বিবরণ',
+                                                'উৎস',
+                                                'Debit',
+                                                'Credit',
+                                                'Running',
+                                            ].map((label) => (
+                                                <th
+                                                    key={label}
+                                                    className={cell}
+                                                >
+                                                    {label}
+                                                </th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                        {ledger.entries.data.map((entry) => (
+                                            <tr key={entry.id}>
+                                                <td className={cell}>
+                                                    {entry.business_date}
+                                                    <p className="mt-1 text-slate-500">
+                                                        {entry.reference}
+                                                    </p>
+                                                </td>
+                                                <td
+                                                    className={`${cell} max-w-80`}
+                                                >
+                                                    {entry.branch_code}
+                                                    <p className="mt-1">
+                                                        {entry.description}
+                                                    </p>
+                                                </td>
+                                                <td className={cell}>
+                                                    {entry.source_type}
+                                                </td>
+                                                <td className={cell}>
+                                                    <Paisa
+                                                        value={
+                                                            entry.debit_paisa
+                                                        }
+                                                    />
+                                                </td>
+                                                <td className={cell}>
+                                                    <Paisa
+                                                        value={
+                                                            entry.credit_paisa
+                                                        }
+                                                    />
+                                                </td>
+                                                <td className={cell}>
+                                                    <Signed
+                                                        value={
+                                                            entry.running_paisa
+                                                        }
+                                                    />
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {!ledger.entries.data.length && (
+                                <FinanceEmpty
+                                    title="এই সময়ে কোনো লেনদেন নেই"
+                                    description="Opening balance উপরে দেখানো হয়েছে।"
+                                />
+                            )}
+                            <FinancePages page={ledger.entries} />
+                        </>
+                    )}
+                </FinancePanel>
+            )}
+        </AccountingFrame>
     );
 }

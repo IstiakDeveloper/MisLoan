@@ -96,6 +96,9 @@ final class LoanLedger
                 $this->fail('Disbursement posting must use the full original amount and original disbursement date. Use an audited opening for a partly repaid loan.');
             }
             $this->counter($principalAccount, 'asset');
+            if ($principalAccount === $counterAccount) {
+                $this->fail('The cash/bank offset must differ from the loan principal control account.');
+            }
             $this->counter($incomeAccount, 'income');
             $this->counter($counterAccount, $mode === 'disbursement' ? 'asset' : 'equity');
             if ($counterAccount === $principalAccount) {
@@ -139,8 +142,8 @@ final class LoanLedger
         }
         $current = $this->contracts->read($loan);
         $saved = json_decode($account->terms_snapshot, true, 512, JSON_THROW_ON_ERROR);
-        foreach (['principal_paisa', 'charge_paisa', 'regular_paisa', 'last_paisa', 'count', 'frequency', 'disbursed_on'] as $key) {
-            if ($current[$key] !== $saved[$key]) {
+        foreach (['principal_paisa', 'charge_paisa', 'regular_paisa', 'last_paisa', 'count', 'frequency', 'disbursed_on', 'pricing'] as $key) {
+            if (($current[$key] ?? null) !== ($saved[$key] ?? null)) {
                 $this->fail('The source loan terms changed after ledger opening. Reconcile the signed contract before posting.');
             }
         }
@@ -177,12 +180,18 @@ final class LoanLedger
             abort_unless($account, 404);
             $balance = $this->balances($accountId, $asOf);
             $credit = $account->contract_principal_paisa + $account->contract_charge_paisa - $balance['total_paisa'];
+            $saved = json_decode($account->terms_snapshot, true, 512, JSON_THROW_ON_ERROR);
+            $split = $saved['pricing']['installment_split'] ?? null;
 
-            return DB::table('loan_installments')->where('loan_account_id', $accountId)->orderBy('sequence')->get()->map(function ($row) use (&$credit, $asOf) {
+            return DB::table('loan_installments')->where('loan_account_id', $accountId)->orderBy('sequence')->get()->map(function ($row) use (&$credit, $asOf, $saved, $split) {
                 $paid = min((int) $row->due_paisa, max(0, $credit));
                 $credit -= $paid;
 
+                $last = (int) $row->sequence === (int) $saved['count'];
+
                 return ['sequence' => $row->sequence, 'due_on' => $row->due_on, 'due_paisa' => (int) $row->due_paisa,
+                    'principal_due_paisa' => $split[$last ? 'last_principal_paisa' : 'regular_principal_paisa'] ?? null,
+                    'charge_due_paisa' => $split[$last ? 'last_charge_paisa' : 'regular_charge_paisa'] ?? null,
                     'paid_paisa' => $paid, 'outstanding_paisa' => (int) $row->due_paisa - $paid,
                     'overdue_paisa' => $row->due_on < $asOf ? (int) $row->due_paisa - $paid : 0];
             })->all();

@@ -1,5 +1,9 @@
 # MisLoan — পরবর্তী Codex-এর handoff
 
+> Update (2026-11-10): The user explicitly requested removal of two-factor authentication. Login challenges, enrollment/recovery endpoints, financial MFA enforcement and MFA UI have been removed. Password login and active personal super-admin authorization remain. Legacy encrypted columns are preserved for database compatibility. Earlier MFA descriptions below document the previous baseline; see IMPLEMENTATION.md for current behavior.
+
+> Accounting UI update (2026-11-10): The mixed `/accounting` screen has been replaced by task-based overview, vouchers, guided creation, posted journals, chart, periods and selected-report screens. See [ACCOUNTING_UX_PLAN.md](ACCOUNTING_UX_PLAN.md) for the design, implementation and limits. Keep pending vouchers distinct from posted money; cashier/day-end and bank reconciliation remain roadmap work.
+
 এই নথি নতুন Codex session-এ প্রথমে পড়তে হবে। এটি **কাজের breakdown ও যাচাইকৃত অবস্থার বিবরণ**, production-ready বা ১০০% completion certificate নয়।
 
 ## ১. লক্ষ্য ও স্থায়ী সিদ্ধান্ত

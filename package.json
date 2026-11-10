@@ -9,7 +9,10 @@
         "format": "prettier --write resources/",
         "format:check": "prettier --check resources/",
         "lint": "eslint . --fix",
-        "types": "tsc --noEmit"
+        "types": "tsc --noEmit",
+        "test:navigation": "node --experimental-strip-types --test tests/Frontend/admin-navigation.test.mjs",
+        "test:loan-pricing": "node --test tests/Frontend/loan-pricing.test.mjs",
+        "test:accounting": "node --experimental-strip-types --test tests/Frontend/accounting-voucher.test.mjs"
     },
     "devDependencies": {
         "@eslint/js": "^9.19.0",

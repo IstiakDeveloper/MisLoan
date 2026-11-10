@@ -18,6 +18,6 @@ final class ProtectUserAdministration
         }
         abort_unless($user->isSuperAdmin(), 403);
 
-        return app(RequireFinancialMfa::class)->handle($request, $next);
+        return app(RequireFinancialAdministrator::class)->handle($request, $next);
     }
 }

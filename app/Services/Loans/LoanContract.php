@@ -50,13 +50,35 @@ final class LoanContract
         if (! $loan->disbursed_at) {
             throw ValidationException::withMessages(['contract' => 'The original disbursement date is missing.']);
         }
+        $pricing = $agreement['product_pricing'] ?? null;
+        if ($pricing !== null) {
+            $expected = ['principal_paisa' => $principal, 'service_charge_paisa' => $charge, 'installment_paisa' => $regular, 'last_installment_paisa' => $last, 'number_of_installments' => $count, 'repayment_frequency' => $frequency];
+            foreach ($expected as $key => $value) {
+                if (! is_array($pricing) || (string) ($pricing[$key] ?? '') !== (string) $value) {
+                    throw ValidationException::withMessages(['contract' => 'The saved product pricing does not match the signed contractual terms.']);
+                }
+            }
+            if (($split = $pricing['installment_split'] ?? null) !== null) {
+                $keys = ['regular_principal_paisa', 'regular_charge_paisa', 'last_principal_paisa', 'last_charge_paisa'];
+                foreach ($keys as $key) {
+                    if (! isset($split[$key]) || filter_var($split[$key], FILTER_VALIDATE_INT) === false || $split[$key] < 0 || $split[$key] > Money::MAX_PAISA) {
+                        throw ValidationException::withMessages(['contract' => 'The saved installment component split is invalid.']);
+                    }
+                }
+                [$p, $c, $lp, $lc] = array_map(fn ($key) => (int) $split[$key], $keys);
+                if ($p + $c !== $regular || $lp + $lc !== $last || $p * ($count - 1) + $lp !== $principal || $c * ($count - 1) + $lc !== $charge) {
+                    throw ValidationException::withMessages(['contract' => 'The saved principal and charge split does not reconcile with the contract.']);
+                }
+            }
+        }
 
         return [
             'principal_paisa' => $principal, 'charge_paisa' => $charge,
             'regular_paisa' => $regular, 'last_paisa' => $last,
             'count' => $count, 'frequency' => $frequency, 'disbursed_on' => $loan->disbursed_at->toDateString(),
             'agreement' => $agreement, 'business_plan' => $plan,
-            'product' => $loan->loanProduct?->getAttributes(),
+            'product' => $agreement['product_pricing']['product_snapshot'] ?? $loan->loanProduct?->getAttributes(),
+            'pricing' => $pricing,
         ];
     }
 

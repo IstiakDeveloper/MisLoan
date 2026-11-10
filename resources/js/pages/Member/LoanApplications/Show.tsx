@@ -2,7 +2,8 @@ import { ComboSelect } from '@/components/ComboSelect';
 import AdminLayout from '@/layouts/admin-layout';
 import { formatDate, formatDateTime, todayIsoDate } from '@/utils/dateUtils';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
+import { loanProductForApplication } from '@/utils/loanInterest';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -316,6 +317,7 @@ const samityLabel = (samity?: { samity_name_bn?: string | null; samity_name?: st
     samity?.samity_name_bn || samity?.samity_name || '';
 
 export default function Show({ application, routes, categories = [], can_update_samity = false, samities = [] }: Props) {
+    const formLoanProduct = useMemo(() => loanProductForApplication(application.loan_product, application), [application]);
     const pageAuth = usePage().props.auth as { user?: { role?: { name: string } } } | undefined;
     const roleName = pageAuth?.user?.role?.name;
     const isBranchUser = roleName === 'branch_user';
@@ -695,7 +697,7 @@ export default function Show({ application, routes, categories = [], can_update_
         }
     };
 
-    const previewAmount = Number(effectiveBaseAmount);
+    const previewAmount = Number(application.disbursed_amount || effectiveBaseAmount);
 
     const canFillSelected = selectedFormId != null && fillableFormIds.includes(selectedFormId);
     const selectedSaved = selectedFormId != null && isFormSaved(selectedFormId);
@@ -1328,7 +1330,7 @@ export default function Show({ application, routes, categories = [], can_update_
             savedData: saved || undefined,
             existingApplication: application,
             member: application.member_admission,
-            loanProduct: application.loan_product,
+            loanProduct: formLoanProduct,
             loanCategory: application.loan_category,
             requestedAmount: previewAmount,
             branch: application.branch,
@@ -2227,7 +2229,7 @@ export default function Show({ application, routes, categories = [], can_update_
                                                     saveButtonLabel="সংরক্ষণ করুন"
                                                     afterSaveUrl={`/member/loan-applications/${application.id}?form=2`}
                                                     member={application.member_admission}
-                                                    loanProduct={application.loan_product}
+                                                    loanProduct={formLoanProduct}
                                                     loanCategory={application.loan_category}
                                                     requestedAmount={previewAmount}
                                                     branch={application.branch}
@@ -2242,7 +2244,7 @@ export default function Show({ application, routes, categories = [], can_update_
                                                     saveButtonLabel="সংরক্ষণ করুন"
                                                     afterSaveUrl={`/member/loan-applications/${application.id}?form=3`}
                                                     member={application.member_admission}
-                                                    loanProduct={application.loan_product}
+                                                    loanProduct={formLoanProduct}
                                                     loanCategory={application.loan_category}
                                                     requestedAmount={previewAmount}
                                                     branch={application.branch}

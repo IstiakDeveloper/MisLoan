@@ -63,12 +63,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::get('loan-products/{loanProduct}/quote', LoanQuoteController::class)->name('loan-products.quote');
 
-    Route::get('loan-ledger/accounts/{account}/statement', [LedgerStatementController::class, 'loan'])->middleware('financial.mfa')->name('loan-ledger.statement');
-    Route::get('savings-ledger/accounts/{account}/statement', [LedgerStatementController::class, 'savings'])->middleware('financial.mfa')->name('savings-ledger.statement');
+    Route::get('loan-ledger/accounts/{account}/statement', [LedgerStatementController::class, 'loan'])->middleware('financial.admin')->name('loan-ledger.statement');
+    Route::get('savings-ledger/accounts/{account}/statement', [LedgerStatementController::class, 'savings'])->middleware('financial.admin')->name('savings-ledger.statement');
 
-    Route::get('loan-portfolio', LoanPortfolioController::class)->middleware('financial.mfa')->name('loan-portfolio.index');
+    Route::get('loan-portfolio', LoanPortfolioController::class)->middleware('financial.admin')->name('loan-portfolio.index');
 
-    Route::prefix('loan-ledger')->middleware('financial.mfa')->name('loan-ledger.')->controller(LoanLedgerController::class)->group(function () {
+    Route::prefix('loan-ledger')->middleware('financial.admin')->name('loan-ledger.')->controller(LoanLedgerController::class)->group(function () {
+        Route::patch('applications/{id}/disburse', [App\Http\Controllers\Member\LoanApplicationController::class, 'disburse'])->name('disburse');
         Route::get('/', 'index')->name('index');
         Route::get('contracts/{loan}', 'contract')->name('contract');
         Route::post('accounts', 'open')->name('open');
@@ -77,7 +78,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('corrections/{correction}/review', 'review')->name('review');
     });
 
-    Route::prefix('savings-ledger')->middleware('financial.mfa')->name('savings-ledger.')->controller(SavingsLedgerController::class)->group(function () {
+    Route::prefix('savings-ledger')->middleware('financial.admin')->name('savings-ledger.')->controller(SavingsLedgerController::class)->group(function () {
         Route::get('/', 'index')->name('index');
         Route::post('accounts', 'open')->name('open');
         Route::post('accounts/{account}/transactions', 'transact')->name('transact');
@@ -88,10 +89,17 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('accounts/{account}/close', 'close')->name('close');
     });
 
-    Route::get('accounting/reports', FinancialReportsController::class)->middleware('financial.mfa')->name('accounting.reports');
+    Route::get('accounting/reports', FinancialReportsController::class)->middleware('financial.admin')->name('accounting.reports');
 
-    Route::prefix('accounting')->middleware('financial.mfa')->name('accounting.')->group(function () {
+    Route::prefix('accounting')->middleware('financial.admin')->name('accounting.')->group(function () {
         Route::get('/', [AccountingController::class, 'index'])->name('index');
+        Route::get('vouchers', [AccountingController::class, 'index'])->defaults('section', 'vouchers')->name('vouchers.index');
+        Route::get('vouchers/create', [AccountingController::class, 'index'])->defaults('section', 'create')->name('vouchers.create');
+        Route::get('vouchers/{voucher}', [AccountingController::class, 'voucherDetail'])->whereNumber('voucher')->name('vouchers.show');
+        Route::get('journals', [AccountingController::class, 'index'])->defaults('section', 'journals')->name('journals.index');
+        Route::get('journals/{entry}', [AccountingController::class, 'journalDetail'])->whereNumber('entry')->name('journals.show');
+        Route::get('accounts', [AccountingController::class, 'index'])->defaults('section', 'accounts')->name('accounts.index');
+        Route::get('periods', [AccountingController::class, 'index'])->defaults('section', 'periods')->name('periods.index');
         Route::post('accounts', [AccountingController::class, 'account'])->name('accounts.store');
         Route::post('periods', [AccountingController::class, 'period'])->name('periods.store');
         Route::post('journals', [AccountingController::class, 'post'])->name('journals.store');
@@ -158,8 +166,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('zones/{zone}/branches', [OrganizationController::class, 'getBranchesByZone'])->name('zones.branches');
     });
 
-    // Role policy changes require an MFA-verified personal super-administrator.
-    Route::middleware(['head.office', 'financial.mfa'])->group(function () {
+    // Role policy changes require an active personal super-administrator.
+    Route::middleware(['head.office', 'financial.admin'])->group(function () {
         Route::get('roles', [RoleController::class, 'index'])->name('roles.index');
         Route::post('roles', [RoleController::class, 'store'])->name('roles.store');
         Route::post('roles/sync', [RoleController::class, 'sync'])->name('roles.sync');

@@ -9,7 +9,7 @@ This repository targets separately hosted institutions, not SaaS. This checklist
 - Savings accounts, deposits/withdrawals, holds, manually approved profit, reversals and zero-balance closure.
 - Posted GL income/expense, balance sheet, date/branch account ledger, exact CSV exports, loan/savings printable statements and statement CSV.
 - Removal of public maintenance routes, authenticated-data service-worker caching and common-password credential emails/default branch-PIN migration behavior.
-- Independently reviewed manual vouchers/reversals and savings corrections, session-verified financial MFA, privileged account/role mutation guards and minimum eight-character personal password changes.
+- Independently reviewed manual vouchers/reversals and savings corrections, privileged account/role mutation guards and minimum eight-character personal password changes. Two-factor authentication was removed at the user's request; personal administrators use password login.
 - SQLite/MySQL regression tests, frontend compilation/type checks and required feature-branch CI.
 
 ## Required policy decisions before the remaining financial automation
@@ -29,7 +29,7 @@ Product percentages/tariffs alone do not define all these rules. Institution-app
 
 ## Technical work still required
 
-- Private-document storage/delivery and full route/role authorization review, including remaining sensitive modules; financial workspaces and privileged account/role changes now require session-verified MFA. Existing shared branch PINs need institution-managed rotation.
+- Private-document storage/delivery and full route/role authorization review, including remaining sensitive modules. Financial workspaces and privileged account/role changes require an active personal super-admin. Existing shared branch PINs need institution-managed rotation.
 - Maker/checker approval for initial loan/savings postings and other sensitive financial operations. Manual vouchers/reversals, loan receipt corrections and savings corrections now require independent review.
 - Fiscal/project/fund dimensions, cashier day-end/handover, cash/bank reconciliation and period-close reconciliation sign-off.
 - Permanent member identity/cycle mapping and audited duplicate reconciliation.
@@ -43,7 +43,7 @@ Product percentages/tariffs alone do not define all these rules. Institution-app
 
 Run `php artisan misloan:check-ledgers --json` against a staging copy before and after any data migration. It performs read-only checks for linked loan/savings control totals, unbalanced/empty journals, source journals without receipts and current unlinked disbursed loans. Exit 0 means only these automated checks passed. It does not verify undiscovered legacy balances, all accounts, original documents, financial policy or regulatory compliance.
 
-Before deployment, run the new approval migrations, keep `FINANCIAL_MFA_REQUIRED=true`, confirm MFA for two personal reviewers, retain recovery codes and protect APP_KEY backups. Role/account mutation rights are now restricted to personal super-admins; validate the change against the institution's approved administration matrix. Rehearse upgrades on an audited production copy, reconcile opening balances and sample statements, verify independent correction reviewers, and test mail delivery/reset-token expiry without emailing passwords. The CSV exports require authenticated personal administrators and defend text cells against spreadsheet formulas. Printable statements show only verified ledger history; historical savings holds/available funds are not reconstructed.
+Before deployment, run the new approval migrations, verify two independent personal reviewers and protect APP_KEY backups. Role/account mutation rights are now restricted to personal super-admins; validate the change against the institution's approved administration matrix. Rehearse upgrades on an audited production copy, reconcile opening balances and sample statements, verify independent correction reviewers, and test mail delivery/reset-token expiry without emailing passwords. The CSV exports require authenticated personal administrators and defend text cells against spreadsheet formulas. Printable statements show only verified ledger history; historical savings holds/available funds are not reconstructed.
 
 Measure the requested 500 branches / approximately 1 million members / 2,000 concurrent users with realistic data, agreed latency and recovery targets. Perform backup restore and financial month-end UAT, then run a 2–3 branch pilot before wider rollout. These measurements and institution acceptance have not been performed.
 
