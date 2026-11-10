@@ -1,0 +1,36 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('savings_correction_requests', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('savings_transaction_id')->constrained()->restrictOnDelete();
+            $table->foreignId('savings_account_id')->constrained()->restrictOnDelete();
+            $table->foreignId('requested_by')->constrained('users')->restrictOnDelete();
+            $table->string('idempotency_key', 100);
+            $table->char('payload_hash', 64);
+            $table->date('business_date');
+            $table->string('reason', 1000);
+            $table->string('status', 16)->default('pending');
+            $table->foreignId('reviewed_by')->nullable()->constrained('users')->restrictOnDelete();
+            $table->timestamp('reviewed_at')->nullable();
+            $table->string('decision_note', 1000)->nullable();
+            $table->foreignId('reversal_transaction_id')->nullable()->unique()->constrained('savings_transactions')->restrictOnDelete();
+            $table->timestamp('created_at');
+            $table->unique(['requested_by', 'idempotency_key'], 'savings_correction_request_key');
+            $table->index(['savings_account_id', 'status']);
+            $table->index(['savings_transaction_id', 'status']);
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('savings_correction_requests');
+    }
+};

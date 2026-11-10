@@ -165,10 +165,11 @@ export default function Index({
         useState<string>('');
 
     const page = usePage() as {
-        props: { auth?: { user?: { has_all_access?: boolean } } };
+        props: { auth?: { user?: { has_all_access?: boolean; role?: { name?: string } } } };
     };
     const authUser = page.props.auth?.user;
-    const canMutate = useCanMutate();
+    const baseCanMutate = useCanMutate();
+    const canMutate = baseCanMutate && authUser?.role?.name === 'super_admin';
     const canUpdateSignature = canMutate && !!authUser?.has_all_access;
 
     const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({});

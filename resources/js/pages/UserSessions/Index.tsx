@@ -7,7 +7,7 @@ import {
     StatGrid,
 } from '@/components/configuration';
 import AdminLayout from '@/layouts/admin-layout';
-import { Head, Link, router } from '@inertiajs/react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
 import {
     Activity,
     AlertTriangle,
@@ -109,6 +109,8 @@ interface Props {
 }
 
 export default function Index({ sessions, stats, roles, branches, filters }: Props) {
+    const { auth } = usePage<{ auth: { user: { role?: { name?: string } } } }>().props;
+    const canManage = auth.user.role?.name === 'super_admin';
     const [searchQuery, setSearchQuery] = useState(filters.search || '');
     const [filterRole, setFilterRole] = useState(filters.role_id || '');
     const [filterBranch, setFilterBranch] = useState(filters.branch_id || '');
@@ -249,6 +251,7 @@ export default function Index({ sessions, stats, roles, branches, filters }: Pro
                             {sessions.length > 1 && (
                                 <button
                                     type="button"
+                                    disabled={!canManage}
                                     onClick={() => setTerminateAllOthersModalOpen(true)}
                                     className="flex min-h-10 items-center justify-center gap-2 rounded-xl bg-rose-600 px-3.5 py-2 text-xs sm:text-sm font-semibold text-white shadow-md shadow-rose-900/20 transition hover:bg-rose-700 active:scale-98"
                                 >
@@ -724,6 +727,7 @@ export default function Index({ sessions, stats, roles, branches, filters }: Pro
                                                             <>
                                                                 <button
                                                                     type="button"
+                                                                    disabled={!canManage}
                                                                     onClick={() => setSessionToTerminate(item)}
                                                                     className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50/50 px-2.5 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 active:scale-95"
                                                                     title="Force logout this device session"
@@ -735,6 +739,7 @@ export default function Index({ sessions, stats, roles, branches, filters }: Pro
                                                                 {user && (
                                                                     <button
                                                                         type="button"
+                                                                        disabled={!canManage}
                                                                         onClick={() => setUserToTerminateAll(user)}
                                                                         className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-100 hover:text-rose-600 active:scale-95"
                                                                         title="Terminate all sessions for this user"

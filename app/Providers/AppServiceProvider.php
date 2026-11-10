@@ -3,14 +3,20 @@
 namespace App\Providers;
 
 use App\Models\LoanApplication;
+use App\Services\Accounting\FinancialMfa;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Queue\Events\JobFailed;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
+use Laravel\Fortify\Events\TwoFactorAuthenticationConfirmed;
+use Laravel\Fortify\Events\TwoFactorAuthenticationDisabled;
+use Laravel\Fortify\Events\ValidTwoFactorAuthenticationCodeProvided;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -27,7 +33,21 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        Password::defaults(fn () => Password::min(4));
+        Password::defaults(fn () => Password::min(8));
+
+        Event::listen(ValidTwoFactorAuthenticationCodeProvided::class, function ($event) {
+            FinancialMfa::mark(request(), $event->user);
+        });
+        Event::listen(TwoFactorAuthenticationConfirmed::class, function ($event) {
+            if ((int) Auth::id() === (int) $event->user->id) {
+                FinancialMfa::mark(request(), $event->user);
+            }
+        });
+        Event::listen(TwoFactorAuthenticationDisabled::class, function ($event) {
+            if (request()->hasSession() && (int) Auth::id() === (int) $event->user->id) {
+                request()->session()->forget('financial_mfa');
+            }
+        });
 
         // Set JSON encoding options to handle UTF-8 properly
         // JSON_PARTIAL_OUTPUT_ON_ERROR allows partial JSON output on encoding errors

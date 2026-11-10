@@ -10,6 +10,7 @@ use App\Models\SavingsProduct;
 use App\Models\User;
 use App\Models\Zone;
 use App\Services\Accounting\JournalService;
+use App\Services\Savings\SavingsCorrections;
 use App\Services\Savings\SavingsLedger;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -196,4 +197,47 @@ it('exports savings statements with exact balances and authorization', function 
     expect($csv)->toContain("'=BAD()")->toContain('100.00')->toContain('-5.01');
     $this->actor->update(['is_active' => false]);
     $this->get('/savings-ledger/accounts/'.$this->account->id.'/statement')->assertForbidden();
+});
+
+it('requires independent savings correction approval before touching balances', function () {
+    $deposit = $this->ledger->transact($this->actor, $this->account->id, 'deposit', '100', 1, $this->date, 'approval-deposit', 'Deposit');
+    $service = app(SavingsCorrections::class);
+    $request = $service->request($this->actor, $deposit->id, $this->date, 'approval-request', 'Wrong deposit');
+    expect($this->ledger->balances($this->account->id)['balance_paisa'])->toBe(10000);
+    expect($service->request($this->actor, $deposit->id, $this->date, 'approval-request', 'Wrong deposit')->id)->toBe($request->id);
+    expect(fn () => $service->request($this->actor, $deposit->id, $this->date, 'approval-request', 'Changed reason'))->toThrow(ValidationException::class);
+    expect(fn () => $service->request($this->actor, $deposit->id, $this->date, 'another-request', 'Duplicate pending'))->toThrow(ValidationException::class);
+    expect(fn () => $service->decide($this->actor, $request->id, 'approved', 'Self review'))->toThrow(ValidationException::class);
+    $checker = User::factory()->create(['role_id' => $this->actor->role_id]);
+    $approved = $service->decide($checker, $request->id, 'approved', 'Verified deposit evidence');
+    expect($approved->status)->toBe('approved')->and($this->ledger->balances($this->account->id)['balance_paisa'])->toBe(0)
+        ->and($this->ledger->reconciliation($checker, $this->account->id)['matches'])->toBeTrue();
+    expect($service->decide($checker, $request->id, 'approved', 'Verified deposit evidence')->id)->toBe($request->id);
+    expect(DB::table('savings_transactions')->where('kind', 'reversal')->count())->toBe(1);
+});
+
+it('keeps savings corrections pending when money is spent or held and audits rejection', function () {
+    $deposit = $this->ledger->transact($this->actor, $this->account->id, 'deposit', '100', 1, $this->date, 'approval-deposit', 'Deposit');
+    $service = app(SavingsCorrections::class);
+    $request = $service->request($this->actor, $deposit->id, $this->date, 'approval-request', 'Wrong deposit');
+    $this->ledger->hold($this->actor, $this->account->id, '10', 'approval-hold', 'Held funds');
+    $checker = User::factory()->create(['role_id' => $this->actor->role_id]);
+    expect(fn () => $service->decide($checker, $request->id, 'approved', 'Verified'))->toThrow(ValidationException::class);
+    expect(DB::table('savings_correction_requests')->find($request->id)->status)->toBe('pending')->and(DB::table('savings_transactions')->count())->toBe(1);
+    $service->decide($checker, $request->id, 'rejected', 'Resolve hold before resubmission');
+    expect(DB::table('savings_correction_requests')->find($request->id)->status)->toBe('rejected');
+});
+
+it('uses savings correction requests instead of direct reversal in HTTP routes', function () {
+    $this->withoutVite();
+    $deposit = $this->ledger->transact($this->actor, $this->account->id, 'deposit', '100', 1, $this->date, 'approval-deposit', 'Deposit');
+    $this->actingAs($this->actor)->post('/savings-ledger/transactions/'.$deposit->id.'/reverse', ['business_date' => $this->date, 'idempotency_key' => 'http-savings-request', 'reason' => 'Correct deposit'])->assertSessionHasNoErrors()->assertRedirect();
+    expect($this->ledger->balances($this->account->id)['balance_paisa'])->toBe(10000);
+    $r = DB::table('savings_correction_requests')->first();
+    $this->get('/savings-ledger?account_id='.$this->account->id)->assertOk()->assertInertia(fn (AssertableInertia $p) => $p->where('corrections.data.0.status', 'pending'));
+    $staff = User::factory()->create();
+    $this->actingAs($staff)->post('/savings-ledger/corrections/'.$r->id.'/review', ['decision' => 'approved', 'note' => 'Unauthorized'])->assertForbidden();
+    $checker = User::factory()->create(['role_id' => $this->actor->role_id]);
+    $this->actingAs($checker)->post('/savings-ledger/corrections/'.$r->id.'/review', ['decision' => 'approved', 'note' => 'HTTP verified'])->assertSessionHasNoErrors()->assertRedirect();
+    expect($this->ledger->balances($this->account->id)['balance_paisa'])->toBe(0);
 });

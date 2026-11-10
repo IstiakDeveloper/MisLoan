@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Branch;
 use App\Services\Accounting\JournalService;
+use App\Services\Accounting\VoucherService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -38,6 +39,7 @@ class AccountingController extends Controller
             'periods' => DB::table('accounting_periods')->where('branch_id', $branchId)->orderByDesc('starts_on')->get(),
             'entries' => DB::table('journal_entries')->where('branch_id', $branchId)->orderByDesc('id')->paginate(25)->withQueryString(),
             'trialBalance' => $balance,
+            'vouchers' => DB::table('accounting_vouchers as v')->join('users as maker', 'maker.id', '=', 'v.requested_by')->leftJoin('users as checker', 'checker.id', '=', 'v.reviewed_by')->where('v.branch_id', $branchId)->select('v.*', 'maker.name as requested_by_name', 'checker.name as reviewed_by_name')->orderByDesc('v.id')->paginate(25, ['*'], 'vouchers_page')->withQueryString(),
         ]);
     }
 
@@ -74,7 +76,7 @@ class AccountingController extends Controller
         return back()->with('success', 'Accounting period created.');
     }
 
-    public function post(Request $request, JournalService $journals)
+    public function post(Request $request, VoucherService $vouchers)
     {
         $this->authorizeAccounting($request);
         $data = $request->validate([
@@ -88,13 +90,13 @@ class AccountingController extends Controller
             'lines.*.credit_paisa' => ['required', 'integer', 'min:0'],
         ]);
         $lines = array_map(fn ($line) => array_map('intval', $line), $data['lines']);
-        $entry = $journals->post($request->user(), (int) $data['branch_id'], $data['business_date'],
+        $entry = $vouchers->propose($request->user(), (int) $data['branch_id'], $data['business_date'],
             $data['idempotency_key'], $data['description'], $lines);
 
-        return back()->with('success', 'Journal posted: '.$entry->reference);
+        return back()->with('success', 'Voucher submitted for independent review: '.$entry->reference);
     }
 
-    public function reverse(Request $request, int $entry, JournalService $journals)
+    public function reverse(Request $request, int $entry, VoucherService $vouchers)
     {
         $this->authorizeAccounting($request);
         $data = $request->validate([
@@ -102,9 +104,9 @@ class AccountingController extends Controller
             'idempotency_key' => ['required', 'string', 'max:100'],
             'reason' => ['required', 'string', 'max:1000'],
         ]);
-        $journals->reverse($request->user(), $entry, $data['business_date'], $data['idempotency_key'], $data['reason']);
+        $vouchers->proposeReversal($request->user(), $entry, $data['business_date'], $data['idempotency_key'], $data['reason']);
 
-        return back()->with('success', 'Reversal posted. Original journal retained.');
+        return back()->with('success', 'Reversal proposed. A different administrator must approve before GL changes.');
     }
 
     public function close(Request $request, int $period, JournalService $journals)
@@ -113,5 +115,14 @@ class AccountingController extends Controller
         $journals->closePeriod($request->user(), $period);
 
         return back()->with('success', 'Accounting period closed.');
+    }
+
+    public function review(Request $request, int $voucher, VoucherService $vouchers)
+    {
+        $this->authorizeAccounting($request);
+        $data = $request->validate(['decision' => ['required', Rule::in(['approved', 'rejected'])], 'note' => ['required', 'string', 'max:1000']]);
+        $vouchers->decide($request->user(), $voucher, $data['decision'], $data['note']);
+
+        return back()->with('success', 'Voucher decision recorded. Only approved vouchers affect the GL.');
     }
 }

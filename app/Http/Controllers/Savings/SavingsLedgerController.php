@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Savings;
 
 use App\Http\Controllers\Controller;
+use App\Services\Savings\SavingsCorrections;
 use App\Services\Savings\SavingsLedger;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -30,6 +31,7 @@ final class SavingsLedgerController extends Controller
             'reconciliation' => $account ? $ledger->reconciliation($request->user(), $account->id) : null,
             'transactions' => $account ? DB::table('savings_transactions')->where('savings_account_id', $account->id)->orderByDesc('id')->paginate(50, ['*'], 'transactions_page')->withQueryString() : null,
             'holds' => $account ? DB::table('savings_holds')->where('savings_account_id', $account->id)->whereNull('released_at')->get() : [],
+            'corrections' => $account ? DB::table('savings_correction_requests as c')->join('users as maker', 'maker.id', '=', 'c.requested_by')->leftJoin('users as reviewer', 'reviewer.id', '=', 'c.reviewed_by')->where('c.savings_account_id', $account->id)->select('c.*', 'maker.name as requested_by_name', 'reviewer.name as reviewed_by_name')->orderByDesc('c.id')->paginate(25, ['*'], 'corrections_page')->withQueryString() : null,
             'ledgerAccounts' => DB::table('ledger_accounts')->where('is_active', true)->orderBy('code')->get(['id', 'code', 'name', 'type']),
         ]);
     }
@@ -66,13 +68,13 @@ final class SavingsLedgerController extends Controller
         return back()->with('success', 'Savings transaction posted: '.$entry->reference);
     }
 
-    public function reverse(Request $request, int $transaction, SavingsLedger $ledger)
+    public function reverse(Request $request, int $transaction, SavingsCorrections $corrections)
     {
         $this->authorize($request);
         $data = $request->validate(['business_date' => ['required', 'date_format:Y-m-d'], 'idempotency_key' => ['required', 'string', 'max:100'], 'reason' => ['required', 'string', 'max:1000']]);
-        $ledger->reverse($request->user(), $transaction, $data['business_date'], $data['idempotency_key'], $data['reason']);
+        $corrections->request($request->user(), $transaction, $data['business_date'], $data['idempotency_key'], $data['reason']);
 
-        return back()->with('success', 'Savings transaction reversed in the subledger and GL.');
+        return back()->with('success', 'Savings correction requested. Another administrator must approve before balances change.');
     }
 
     public function hold(Request $request, int $account, SavingsLedger $ledger)
@@ -98,5 +100,14 @@ final class SavingsLedgerController extends Controller
         $ledger->close($request->user(), $account);
 
         return back()->with('success', 'Savings ledger closed.');
+    }
+
+    public function review(Request $request, int $correction, SavingsCorrections $corrections)
+    {
+        $this->authorize($request);
+        $data = $request->validate(['decision' => ['required', Rule::in(['approved', 'rejected'])], 'note' => ['required', 'string', 'max:1000']]);
+        $corrections->decide($request->user(), $correction, $data['decision'], $data['note']);
+
+        return back()->with('success', 'Savings correction decision recorded.');
     }
 }

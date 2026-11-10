@@ -13,7 +13,7 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
 beforeEach(function () {
     // Isolate this subsystem while exercising its real migration and write service.
     Schema::disableForeignKeyConstraints();
-    foreach (['journal_lines', 'journal_entries', 'accounting_periods', 'ledger_accounts', 'users', 'branches', 'roles'] as $table) {
+    foreach (['accounting_vouchers', 'journal_lines', 'journal_entries', 'accounting_periods', 'ledger_accounts', 'users', 'branches', 'roles'] as $table) {
         Schema::dropIfExists($table);
     }
     Schema::enableForeignKeyConstraints();
@@ -29,8 +29,9 @@ beforeEach(function () {
         $t->id();
     });
     (require database_path('migrations/2026_11_09_000001_create_accounting_foundation.php'))->up();
+    (require database_path('migrations/2026_11_10_000004_create_accounting_vouchers.php'))->up();
     DB::table('branches')->insert(['id' => 1]);
-    DB::table('users')->insert(['id' => 1]);
+    DB::table('users')->insert([['id' => 1], ['id' => 2]]);
     foreach ([['code' => '100', 'name' => 'Cash', 'type' => 'asset'], ['code' => '300', 'name' => 'Capital', 'type' => 'equity']] as $a) {
         DB::table('ledger_accounts')->insert([...$a, 'created_at' => now(), 'updated_at' => now()]);
     }
@@ -47,7 +48,7 @@ beforeEach(function () {
 
 afterEach(function () {
     Schema::disableForeignKeyConstraints();
-    foreach (['journal_lines', 'journal_entries', 'accounting_periods', 'ledger_accounts'] as $table) {
+    foreach (['accounting_vouchers', 'journal_lines', 'journal_entries', 'accounting_periods', 'ledger_accounts'] as $table) {
         Schema::dropIfExists($table);
     }
     Schema::enableForeignKeyConstraints();
@@ -133,6 +134,11 @@ it('validates financial requests through the HTTP boundary', function () {
         'branch_id' => 1, 'business_date' => '2026-11-08', 'idempotency_key' => 'http-key-001',
         'description' => 'HTTP journal', 'lines' => $this->lines,
     ])->assertRedirect();
+    expect(DB::table('journal_entries')->count())->toBe(0)->and(DB::table('accounting_vouchers')->count())->toBe(1);
+    $checker = new User(['is_active' => true, 'account_type' => 'staff']);
+    $checker->id = 2;
+    $checker->setRelation('role', new Role(['name' => Role::SUPER_ADMIN]));
+    $this->actingAs($checker)->postJson('/accounting/vouchers/1/review', ['decision' => 'approved', 'note' => 'Verified'])->assertRedirect();
     expect(DB::table('journal_entries')->count())->toBe(1);
     $this->postJson('/accounting/journals', [
         'branch_id' => 1, 'business_date' => '2026-11-08', 'idempotency_key' => 'http-key-002',

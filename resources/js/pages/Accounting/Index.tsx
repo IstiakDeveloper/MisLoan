@@ -21,7 +21,26 @@ type Balance = {
     debit_paisa: string;
     credit_paisa: string;
 };
+type Voucher = {
+    id: number;
+    reference: string;
+    kind: string;
+    status: string;
+    business_date: string;
+    description: string;
+    lines: string;
+    requested_by_name: string;
+    reviewed_by_name: string | null;
+    decision_note: string | null;
+    journal_entry_id: number | null;
+    reversal_of: number | null;
+};
 type Props = {
+    vouchers: {
+        data: Voucher[];
+        prev_page_url: string | null;
+        next_page_url: string | null;
+    };
     branches: { id: number; name: string; code: string }[];
     branchId: number;
     accounts: Account[];
@@ -67,7 +86,13 @@ export default function Index({
     periods,
     entries,
     trialBalance,
+    vouchers,
 }: Props) {
+    const review = useForm<Record<string, string>>({
+        voucher_id: '',
+        decision: 'approved',
+        note: '',
+    });
     const today = new Intl.DateTimeFormat('en-CA', {
         timeZone: 'Asia/Dhaka',
     }).format(new Date());
@@ -394,10 +419,157 @@ export default function Index({
                             className={button}
                             disabled={!branchId || journal.processing}
                         >
-                            জার্নাল পোস্ট করুন
+                            অনুমোদনের জন্য voucher জমা দিন
                         </button>
                     </div>
                 </form>
+                <section className={card}>
+                    <h2 className="text-lg font-semibold">
+                        Manual voucher approvals
+                    </h2>
+                    <p>
+                        জমা দেওয়া voucher এখনো GL নয়। অন্য personal
+                        administrator অনুমোদন দেবেন। বন্ধ period বা inactive
+                        account হলে অনুমোদন ব্যর্থ হবে এবং আবেদন pending থাকবে;
+                        প্রয়োজন হলে reject করে নতুন আবেদন করুন।
+                    </p>
+                    <form
+                        className="grid gap-3 md:grid-cols-2"
+                        onSubmit={(e) => {
+                            e.preventDefault();
+                            review.post(
+                                `/accounting/vouchers/${review.data.voucher_id}/review`,
+                                {
+                                    onSuccess: () =>
+                                        review.reset('voucher_id', 'note'),
+                                },
+                            );
+                        }}
+                    >
+                        <label>
+                            Voucher ID
+                            <input
+                                required
+                                className={field}
+                                value={review.data.voucher_id}
+                                onChange={(e) =>
+                                    review.setData('voucher_id', e.target.value)
+                                }
+                            />
+                        </label>
+                        <label>
+                            Decision
+                            <select
+                                className={field}
+                                value={review.data.decision}
+                                onChange={(e) =>
+                                    review.setData('decision', e.target.value)
+                                }
+                            >
+                                <option value="approved">
+                                    Approve and post
+                                </option>
+                                <option value="rejected">
+                                    Reject without posting
+                                </option>
+                            </select>
+                        </label>
+                        <label>
+                            Review note
+                            <input
+                                required
+                                className={field}
+                                value={review.data.note}
+                                onChange={(e) =>
+                                    review.setData('note', e.target.value)
+                                }
+                            />
+                        </label>
+                        <Errors errors={review.errors} />
+                        <button className={button} disabled={review.processing}>
+                            Record voucher decision
+                        </button>
+                    </form>
+                    {vouchers.data.map((v) => (
+                        <article
+                            className="space-y-2 rounded border p-3"
+                            key={v.id}
+                        >
+                            <h3>
+                                Voucher #{v.id} · {v.status} · {v.kind}
+                                {v.reversal_of
+                                    ? ` of journal #${v.reversal_of}`
+                                    : ''}
+                            </h3>
+                            <p>
+                                {v.business_date} · {v.description} · requested
+                                by {v.requested_by_name}
+                            </p>
+                            <table className="w-full text-left">
+                                <thead>
+                                    <tr>
+                                        <th>Account</th>
+                                        <th>Debit</th>
+                                        <th>Credit</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {(
+                                        JSON.parse(v.lines) as {
+                                            account_id: number;
+                                            debit_paisa: number;
+                                            credit_paisa: number;
+                                        }[]
+                                    ).map((l, i) => (
+                                        <tr key={i}>
+                                            <td>
+                                                {accounts.find(
+                                                    (a) =>
+                                                        a.id === l.account_id,
+                                                )?.name ?? l.account_id}
+                                            </td>
+                                            <td>
+                                                {money(BigInt(l.debit_paisa))}
+                                            </td>
+                                            <td>
+                                                {money(BigInt(l.credit_paisa))}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                            {v.reviewed_by_name && (
+                                <p>
+                                    Reviewed by {v.reviewed_by_name}:{' '}
+                                    {v.decision_note}
+                                    {v.journal_entry_id
+                                        ? ` · posted journal #${v.journal_entry_id}`
+                                        : ''}
+                                </p>
+                            )}
+                        </article>
+                    ))}
+                    <div className="flex gap-4">
+                        {vouchers.prev_page_url && (
+                            <button
+                                onClick={() =>
+                                    router.get(vouchers.prev_page_url!)
+                                }
+                            >
+                                Previous vouchers
+                            </button>
+                        )}
+                        {vouchers.next_page_url && (
+                            <button
+                                onClick={() =>
+                                    router.get(vouchers.next_page_url!)
+                                }
+                            >
+                                Next vouchers
+                            </button>
+                        )}
+                    </div>
+                </section>
                 <section className={card}>
                     <h2 className="text-lg font-semibold">
                         ট্রায়াল ব্যালান্স — সকল পোস্টিং
@@ -540,7 +712,10 @@ export default function Index({
                     <h2 className="text-lg font-semibold">
                         ভুল জার্নাল সংশোধন
                     </h2>
-                    <p>মূল রেকর্ড অপরিবর্তিত রেখে বিপরীত জার্নাল পোস্ট হবে।</p>
+                    <p>
+                        অনুরোধে হিসাব বদলাবে না। অন্য personal administrator
+                        অনুমোদন দিলে মূল রেকর্ড রেখে বিপরীত জার্নাল পোস্ট হবে।
+                    </p>
                     <Errors errors={reversal.errors} />
                     <label className="grid gap-1">
                         মূল জার্নাল নম্বর
@@ -581,7 +756,7 @@ export default function Index({
                         />
                     </label>
                     <button className={button} disabled={reversal.processing}>
-                        বিপরীত জার্নাল পোস্ট
+                        Reversal অনুমোদনের আবেদন
                     </button>
                 </form>
             </main>

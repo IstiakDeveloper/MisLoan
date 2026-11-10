@@ -13,6 +13,8 @@ import { ShieldBan, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 
 interface TwoFactorProps {
+    financialMfaRequired?: boolean;
+    status?: string;
     requiresConfirmation?: boolean;
     twoFactorEnabled?: boolean;
 }
@@ -25,6 +27,8 @@ const breadcrumbs: BreadcrumbItem[] = [
 ];
 
 export default function TwoFactor({
+    financialMfaRequired = false,
+    status,
     requiresConfirmation = false,
     twoFactorEnabled = false,
 }: TwoFactorProps) {
@@ -49,6 +53,15 @@ export default function TwoFactor({
                         title="Two-Factor Authentication"
                         description="Manage your two-factor authentication settings"
                     />
+                    {financialMfaRequired && (
+                        <p className="rounded border border-amber-300 bg-amber-50 p-3 text-amber-950">
+                            Two-factor authentication is required for financial
+                            and account-administration workspaces. Confirm setup
+                            and keep your recovery codes securely. Disabling it
+                            blocks access to those workspaces.
+                        </p>
+                    )}
+                    {status && <p role="status">{status}</p>}
                     {twoFactorEnabled ? (
                         <div className="flex flex-col items-start justify-start space-y-4">
                             <Badge variant="default">Enabled</Badge>

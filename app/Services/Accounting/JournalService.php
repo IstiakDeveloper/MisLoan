@@ -34,7 +34,7 @@ final class JournalService
         if (! $parsed || $parsed->format('Y-m-d') !== $date || $parsed->isFuture()) {
             throw ValidationException::withMessages(['business_date' => 'Use a valid YYYY-MM-DD date.']);
         }
-        $lines = $this->normalize($lines);
+        $lines = $this->normalizeLines($lines);
         $hash = hash('sha256', json_encode([$branchId, $date, $description, $lines, $actor->id, $reversalOf], JSON_THROW_ON_ERROR));
 
         try {
@@ -66,7 +66,7 @@ final class JournalService
                     }
                     $expected = DB::table('journal_lines')->where('journal_entry_id', $reversalOf)->get()
                         ->map(fn ($line) => ['account_id' => (int) $line->ledger_account_id, 'debit_paisa' => (int) $line->credit_paisa, 'credit_paisa' => (int) $line->debit_paisa])->all();
-                    if ($this->normalize($expected) !== $lines) {
+                    if ($this->normalizeLines($expected) !== $lines) {
                         throw ValidationException::withMessages(['reversal' => 'Reversal lines must exactly offset the original entry.']);
                     }
                 }
@@ -131,7 +131,7 @@ final class JournalService
         return $entry;
     }
 
-    private function normalize(array $lines): array
+    public function normalizeLines(array $lines): array
     {
         if (count($lines) < 2 || count($lines) > 100) {
             throw ValidationException::withMessages(['lines' => 'A journal requires between 2 and 100 lines.']);

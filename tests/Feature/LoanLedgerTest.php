@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\Zone;
 use App\Services\Accounting\FinancialReports;
 use App\Services\Accounting\JournalService;
+use App\Services\Accounting\VoucherService;
 use App\Services\Loans\LoanContract;
 use App\Services\Loans\LoanCorrections;
 use App\Services\Loans\LoanLedger;
@@ -405,4 +406,59 @@ it('separates period income and expenses from earlier cumulative results', funct
     expect($result['totals']['period_surplus_paisa'])->toBe('-2000')->and($result['totals']['cumulative_surplus_paisa'])->toBe('8000')
         ->and($result['rows']->firstWhere('id', 3)->period_normal_paisa)->toBe('0')->and($result['rows']->firstWhere('id', 5)->period_normal_paisa)->toBe('2000');
     expect($reports->balances($this->actor, $this->date, today()->toDateString(), $this->branch->id + 100)['rows'])->toHaveCount(0);
+});
+
+it('requires a different reviewer before manual voucher posting and retains the proposed content', function () {
+    $service = app(VoucherService::class);
+    $lines = [['account_id' => 1, 'debit_paisa' => 10501, 'credit_paisa' => 0], ['account_id' => 4, 'debit_paisa' => 0, 'credit_paisa' => 10501]];
+    $v = $service->propose($this->actor, $this->branch->id, $this->date, 'voucher-0001', 'Opening', $lines);
+    expect(DB::table('journal_entries')->count())->toBe(0)->and($v->status)->toBe('pending');
+    expect($service->propose($this->actor, $this->branch->id, $this->date, 'voucher-0001', 'Opening', array_reverse($lines))->id)->toBe($v->id);
+    expect(fn () => $service->propose($this->actor, $this->branch->id, $this->date, 'voucher-0001', 'Changed', $lines))->toThrow(ValidationException::class);
+    expect(fn () => $service->decide($this->actor, $v->id, 'approved', 'Self approved'))->toThrow(ValidationException::class);
+    $checker = User::factory()->create(['role_id' => $this->actor->role_id]);
+    $approved = $service->decide($checker, $v->id, 'approved', 'Verified source');
+    expect($approved->status)->toBe('approved')->and(DB::table('journal_entries')->count())->toBe(1)
+        ->and(DB::table('journal_entries')->find($approved->journal_entry_id)->created_by)->toBe($checker->id);
+    expect($service->decide($checker, $v->id, 'approved', 'Verified source')->id)->toBe($v->id);
+    expect(fn () => $service->decide($checker, $v->id, 'rejected', 'Changed mind'))->toThrow(ValidationException::class);
+});
+
+it('revalidates voucher posting controls on approval and rolls back the decision', function () {
+    $service = app(VoucherService::class);
+    $lines = [['account_id' => 1, 'debit_paisa' => 100, 'credit_paisa' => 0], ['account_id' => 4, 'debit_paisa' => 0, 'credit_paisa' => 100]];
+    $v = $service->propose($this->actor, $this->branch->id, $this->date, 'voucher-0001', 'Opening', $lines);
+    $checker = User::factory()->create(['role_id' => $this->actor->role_id]);
+    DB::table('accounting_periods')->update(['closed_at' => now(), 'closed_by' => $checker->id]);
+    expect(fn () => $service->decide($checker, $v->id, 'approved', 'Verified'))->toThrow(ValidationException::class);
+    expect(DB::table('accounting_vouchers')->find($v->id)->status)->toBe('pending')->and(DB::table('journal_entries')->count())->toBe(0);
+    $service->decide($checker, $v->id, 'rejected', 'Period closed; resubmit for an open date');
+    expect(DB::table('accounting_vouchers')->find($v->id)->status)->toBe('rejected');
+});
+
+it('routes manual reversal through approval and refuses source-ledger bypasses', function () {
+    $service = app(VoucherService::class);
+    $original = app(JournalService::class)->post($this->actor, $this->branch->id, $this->date, 'manual-original', 'Manual opening', [['account_id' => 1, 'debit_paisa' => 100, 'credit_paisa' => 0], ['account_id' => 4, 'debit_paisa' => 0, 'credit_paisa' => 100]]);
+    $v = $service->proposeReversal($this->actor, $original->id, $this->date, 'reverse-proposal', 'Correct manual opening');
+    expect(DB::table('journal_entries')->count())->toBe(1);
+    expect(fn () => $service->proposeReversal($this->actor, $original->id, $this->date, 'another-proposal', 'Duplicate'))->toThrow(ValidationException::class);
+    $checker = User::factory()->create(['role_id' => $this->actor->role_id]);
+    $approved = $service->decide($checker, $v->id, 'approved', 'Verified');
+    expect(DB::table('journal_entries')->find($approved->journal_entry_id)->reversal_of)->toBe($original->id);
+    $a = ($this->open)();
+    $source = DB::table('loan_transactions')->where('loan_account_id', $a->id)->first();
+    expect(fn () => $service->proposeReversal($this->actor, $source->journal_entry_id, $this->date, 'bypass-proposal', 'Bypass loan ledger'))->toThrow(ValidationException::class);
+});
+
+it('serves voucher proposals and review through the accounting workspace', function () {
+    $this->withoutVite();
+    $this->actingAs($this->actor)->post('/accounting/journals', ['branch_id' => $this->branch->id, 'business_date' => $this->date, 'idempotency_key' => 'http-voucher-001', 'description' => 'HTTP voucher', 'lines' => [['account_id' => 1, 'debit_paisa' => 100, 'credit_paisa' => 0], ['account_id' => 4, 'debit_paisa' => 0, 'credit_paisa' => 100]]])->assertSessionHasNoErrors()->assertRedirect();
+    expect(DB::table('journal_entries')->count())->toBe(0);
+    $v = DB::table('accounting_vouchers')->first();
+    $this->get('/accounting?branch_id='.$this->branch->id)->assertOk()->assertInertia(fn (AssertableInertia $p) => $p->component('Accounting/Index')->where('vouchers.data.0.status', 'pending'));
+    $checker = User::factory()->create(['role_id' => $this->actor->role_id]);
+    $this->actingAs($checker)->post('/accounting/vouchers/'.$v->id.'/review', ['decision' => 'approved', 'note' => 'HTTP verified'])->assertSessionHasNoErrors()->assertRedirect();
+    expect(DB::table('journal_entries')->count())->toBe(1);
+    $this->actor->update(['is_active' => false]);
+    $this->actingAs($this->actor)->post('/accounting/vouchers/'.$v->id.'/review', ['decision' => 'approved', 'note' => 'Unauthorized'])->assertForbidden();
 });

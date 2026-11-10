@@ -12,6 +12,8 @@ use App\Http\Middleware\EnsureProfileComplete;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\NormalizeInertiaAmounts;
+use App\Http\Middleware\ProtectUserAdministration;
+use App\Http\Middleware\RequireFinancialMfa;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -44,6 +46,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'ensure.profile.complete' => EnsureProfileComplete::class,
             'ensure.portfolio.handover' => EnsurePortfolioHandoverComplete::class,
+            'secure.user.admin' => ProtectUserAdministration::class,
+            'financial.mfa' => RequireFinancialMfa::class,
             'role' => CheckRole::class,
             'permission' => CheckPermission::class,
             'branch.user' => CheckBranchUser::class,

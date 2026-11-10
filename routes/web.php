@@ -63,12 +63,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::get('loan-products/{loanProduct}/quote', LoanQuoteController::class)->name('loan-products.quote');
 
-    Route::get('loan-ledger/accounts/{account}/statement', [LedgerStatementController::class, 'loan'])->name('loan-ledger.statement');
-    Route::get('savings-ledger/accounts/{account}/statement', [LedgerStatementController::class, 'savings'])->name('savings-ledger.statement');
+    Route::get('loan-ledger/accounts/{account}/statement', [LedgerStatementController::class, 'loan'])->middleware('financial.mfa')->name('loan-ledger.statement');
+    Route::get('savings-ledger/accounts/{account}/statement', [LedgerStatementController::class, 'savings'])->middleware('financial.mfa')->name('savings-ledger.statement');
 
-    Route::get('loan-portfolio', LoanPortfolioController::class)->name('loan-portfolio.index');
+    Route::get('loan-portfolio', LoanPortfolioController::class)->middleware('financial.mfa')->name('loan-portfolio.index');
 
-    Route::prefix('loan-ledger')->name('loan-ledger.')->controller(LoanLedgerController::class)->group(function () {
+    Route::prefix('loan-ledger')->middleware('financial.mfa')->name('loan-ledger.')->controller(LoanLedgerController::class)->group(function () {
         Route::get('/', 'index')->name('index');
         Route::get('contracts/{loan}', 'contract')->name('contract');
         Route::post('accounts', 'open')->name('open');
@@ -77,24 +77,26 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('corrections/{correction}/review', 'review')->name('review');
     });
 
-    Route::prefix('savings-ledger')->name('savings-ledger.')->controller(SavingsLedgerController::class)->group(function () {
+    Route::prefix('savings-ledger')->middleware('financial.mfa')->name('savings-ledger.')->controller(SavingsLedgerController::class)->group(function () {
         Route::get('/', 'index')->name('index');
         Route::post('accounts', 'open')->name('open');
         Route::post('accounts/{account}/transactions', 'transact')->name('transact');
         Route::post('transactions/{transaction}/reverse', 'reverse')->name('reverse');
+        Route::post('corrections/{correction}/review', 'review')->name('review');
         Route::post('accounts/{account}/holds', 'hold')->name('hold');
         Route::post('holds/{hold}/release', 'release')->name('release');
         Route::post('accounts/{account}/close', 'close')->name('close');
     });
 
-    Route::get('accounting/reports', FinancialReportsController::class)->name('accounting.reports');
+    Route::get('accounting/reports', FinancialReportsController::class)->middleware('financial.mfa')->name('accounting.reports');
 
-    Route::prefix('accounting')->name('accounting.')->group(function () {
+    Route::prefix('accounting')->middleware('financial.mfa')->name('accounting.')->group(function () {
         Route::get('/', [AccountingController::class, 'index'])->name('index');
         Route::post('accounts', [AccountingController::class, 'account'])->name('accounts.store');
         Route::post('periods', [AccountingController::class, 'period'])->name('periods.store');
         Route::post('journals', [AccountingController::class, 'post'])->name('journals.store');
         Route::post('journals/{entry}/reverse', [AccountingController::class, 'reverse'])->name('journals.reverse');
+        Route::post('vouchers/{voucher}/review', [AccountingController::class, 'review'])->name('vouchers.review');
         Route::post('periods/{period}/close', [AccountingController::class, 'close'])->name('periods.close');
     });
 
@@ -156,8 +158,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('zones/{zone}/branches', [OrganizationController::class, 'getBranchesByZone'])->name('zones.branches');
     });
 
-    // Role Management Routes - Only for SuperAdmin/Head Office
-    Route::middleware('head.office')->group(function () {
+    // Role policy changes require an MFA-verified personal super-administrator.
+    Route::middleware(['head.office', 'financial.mfa'])->group(function () {
         Route::get('roles', [RoleController::class, 'index'])->name('roles.index');
         Route::post('roles', [RoleController::class, 'store'])->name('roles.store');
         Route::post('roles/sync', [RoleController::class, 'sync'])->name('roles.sync');
@@ -165,8 +167,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::delete('roles/{role}', [RoleController::class, 'destroy'])->name('roles.destroy');
     });
 
-    // User Management Routes - Only for SuperAdmin/Head Office
-    Route::middleware('head.office')->group(function () {
+    // Organizational viewers can read; personal super-admins control account mutations.
+    Route::middleware(['head.office', 'secure.user.admin'])->group(function () {
         Route::get('users', [UserController::class, 'index'])->name('users.index');
         Route::post('users/sync-from-hrm', [UserController::class, 'syncFromHrm'])->name('users.sync-from-hrm');
         Route::post('users', [UserController::class, 'store'])->name('users.store');

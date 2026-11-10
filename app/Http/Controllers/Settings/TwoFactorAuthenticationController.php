@@ -30,6 +30,8 @@ class TwoFactorAuthenticationController extends Controller implements HasMiddlew
         $request->ensureStateIsValid();
 
         return Inertia::render('settings/two-factor', [
+            'financialMfaRequired' => (bool) config('security.financial_mfa_required') && $request->user()->isSuperAdmin() && ! $request->user()->isBranchAccount(),
+            'status' => $request->session()->get('status'),
             'twoFactorEnabled' => $request->user()->hasEnabledTwoFactorAuthentication(),
             'requiresConfirmation' => Features::optionEnabled(Features::twoFactorAuthentication(), 'confirm'),
         ]);

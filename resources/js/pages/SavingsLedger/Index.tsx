@@ -26,7 +26,19 @@ type Paginated<T> = {
     prev_page_url: string | null;
     next_page_url: string | null;
 };
+type Correction = {
+    id: number;
+    savings_transaction_id: number;
+    status: string;
+    business_date: string;
+    reason: string;
+    requested_by_name: string;
+    reviewed_by_name: string | null;
+    decision_note: string | null;
+    reversal_transaction_id: number | null;
+};
 type Props = {
+    corrections: Paginated<Correction> | null;
     accounts: Paginated<Account>;
     account: Account | null;
     balances: {
@@ -83,10 +95,16 @@ export default function Index({
     account,
     balances,
     transactions,
+    corrections,
     holds,
     ledgerAccounts,
     reconciliation,
 }: Props) {
+    const review = useForm<Record<string, string>>({
+        correction_id: '',
+        decision: 'approved',
+        note: '',
+    });
     const today = new Intl.DateTimeFormat('en-CA', {
         timeZone: 'Asia/Dhaka',
     }).format(new Date());
@@ -330,6 +348,114 @@ export default function Index({
                                 Download statement CSV
                             </a>
                         </div>
+                        <section className={card}>
+                            <h2 className="text-lg font-semibold">
+                                Savings correction approvals
+                            </h2>
+                            <p>
+                                আবেদনে টাকা বদলাবে না। অন্য personal
+                                administrator অনুমোদন দিলে savings ledger ও GL
+                                একসঙ্গে reverse হবে। বর্তমান hold, স্থিতি ও
+                                accounting period-এর শর্তও মানতে হবে।
+                            </p>
+                            <form
+                                className="grid gap-3 md:grid-cols-2"
+                                onSubmit={(e) => {
+                                    e.preventDefault();
+                                    review.post(
+                                        `/savings-ledger/corrections/${review.data.correction_id}/review`,
+                                        {
+                                            onSuccess: () =>
+                                                review.reset(
+                                                    'correction_id',
+                                                    'note',
+                                                ),
+                                        },
+                                    );
+                                }}
+                            >
+                                <label>
+                                    Correction ID
+                                    <input
+                                        required
+                                        className={field}
+                                        value={review.data.correction_id}
+                                        onChange={(e) =>
+                                            review.setData(
+                                                'correction_id',
+                                                e.target.value,
+                                            )
+                                        }
+                                    />
+                                </label>
+                                <label>
+                                    Decision
+                                    <select
+                                        className={field}
+                                        value={review.data.decision}
+                                        onChange={(e) =>
+                                            review.setData(
+                                                'decision',
+                                                e.target.value,
+                                            )
+                                        }
+                                    >
+                                        <option value="approved">
+                                            Approve and reverse
+                                        </option>
+                                        <option value="rejected">
+                                            Reject without posting
+                                        </option>
+                                    </select>
+                                </label>
+                                <label>
+                                    Review note
+                                    <input
+                                        required
+                                        className={field}
+                                        value={review.data.note}
+                                        onChange={(e) =>
+                                            review.setData(
+                                                'note',
+                                                e.target.value,
+                                            )
+                                        }
+                                    />
+                                </label>
+                                <Errors errors={review.errors} />
+                                <button
+                                    className={button}
+                                    disabled={review.processing}
+                                >
+                                    Record savings correction decision
+                                </button>
+                            </form>
+                            {corrections?.data.map((c) => (
+                                <article
+                                    className="rounded border p-3"
+                                    key={c.id}
+                                >
+                                    <p>
+                                        Request #{c.id} · transaction #
+                                        {c.savings_transaction_id} · {c.status}
+                                    </p>
+                                    <p>
+                                        {c.reason} · {c.business_date} ·
+                                        requested by {c.requested_by_name}
+                                    </p>
+                                    {c.reviewed_by_name && (
+                                        <p>
+                                            Reviewed by {c.reviewed_by_name}:{' '}
+                                            {c.decision_note}
+                                            {c.reversal_transaction_id
+                                                ? ` · reversal #${c.reversal_transaction_id}`
+                                                : ''}
+                                        </p>
+                                    )}
+                                </article>
+                            ))}
+                            {corrections && <Pages page={corrections} />}
+                        </section>
                         <section className={card}>
                             <h2 className="text-lg font-semibold">
                                 লেজার #{account.id} —{' '}
@@ -708,7 +834,7 @@ export default function Index({
                                         className={button}
                                         disabled={reversal.processing}
                                     >
-                                        Reversal পোস্ট করুন
+                                        Reversal অনুমোদনের আবেদন
                                     </button>
                                 </form>
                             )}

@@ -350,7 +350,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         { name: 'Member Categories', href: '/member-categories', icon: Users },
         { name: 'Users', href: '/users', icon: CircleUser },
         { name: 'Active Sessions', href: '/user-sessions', icon: Activity },
-        { name: 'Roles', href: '/roles', icon: Shield },
+        ...(isSuperAdmin ? [{ name: 'Roles', href: '/roles', icon: Shield }] : []),
     ];
 
     const handleLogout = () => {
