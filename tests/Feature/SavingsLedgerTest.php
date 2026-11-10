@@ -187,3 +187,13 @@ it('validates decimal strings at the HTTP boundary and renders the reconciled st
         ->assertInertia(fn (AssertableInertia $page) => $page->component('SavingsLedger/Index')
             ->where('balances.balance_paisa', 1234)->where('reconciliation.matches', true));
 });
+
+it('exports savings statements with exact balances and authorization', function () {
+    $this->ledger->transact($this->actor, $this->account->id, 'deposit', '105.01', 1, $this->date, 'export-deposit', '=BAD()');
+    $this->ledger->transact($this->actor, $this->account->id, 'withdrawal', '5.01', 1, $this->date, 'export-withdraw', 'Withdrawal');
+    $this->actingAs($this->actor)->get('/savings-ledger/accounts/'.$this->account->id.'/statement')->assertOk()->assertSee('Historical holds/available balance are not reconstructed', false);
+    $csv = $this->get('/savings-ledger/accounts/'.$this->account->id.'/statement?format=csv')->assertOk()->streamedContent();
+    expect($csv)->toContain("'=BAD()")->toContain('100.00')->toContain('-5.01');
+    $this->actor->update(['is_active' => false]);
+    $this->get('/savings-ledger/accounts/'.$this->account->id.'/statement')->assertForbidden();
+});

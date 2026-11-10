@@ -354,6 +354,22 @@ export default function LoanLedger({
                                 (all accounts sharing this control account).
                             </p>
                         </section>
+                        <div className="flex gap-4">
+                            <a
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-emerald-800 underline"
+                                href={`/loan-ledger/accounts/${account.id}/statement?to=${asOf}`}
+                            >
+                                Print / Save PDF statement
+                            </a>
+                            <a
+                                className="text-emerald-800 underline"
+                                href={`/loan-ledger/accounts/${account.id}/statement?to=${asOf}&format=csv`}
+                            >
+                                Download statement CSV
+                            </a>
+                        </div>
                         <section className="space-y-3 rounded border bg-white p-4">
                             <h2 className="text-xl">Collect repayment</h2>
                             <form

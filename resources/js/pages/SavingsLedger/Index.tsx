@@ -314,6 +314,22 @@ export default function Index({
                 )}
                 {account && balances && (
                     <>
+                        <div className="flex gap-4">
+                            <a
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-emerald-800 underline"
+                                href={`/savings-ledger/accounts/${account.id}/statement`}
+                            >
+                                Print / Save PDF statement
+                            </a>
+                            <a
+                                className="text-emerald-800 underline"
+                                href={`/savings-ledger/accounts/${account.id}/statement?format=csv`}
+                            >
+                                Download statement CSV
+                            </a>
+                        </div>
                         <section className={card}>
                             <h2 className="text-lg font-semibold">
                                 লেজার #{account.id} —{' '}

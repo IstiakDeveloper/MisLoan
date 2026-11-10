@@ -5,6 +5,7 @@ use App\Http\Controllers\AppRegistrationController;
 use App\Http\Controllers\ApprovalController;
 use App\Http\Controllers\ClusterHandoverController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\FinancialReportsController;
 use App\Http\Controllers\HeadOffice\ApproverLoanApprovalReportController;
 use App\Http\Controllers\HeadOffice\BranchLoanPendingReportController;
 use App\Http\Controllers\HeadOffice\CsoDutyRosterController;
@@ -18,6 +19,7 @@ use App\Http\Controllers\HeadOfficeSavingsController;
 use App\Http\Controllers\HeadOfficeTeamBasedApprovalController;
 use App\Http\Controllers\HeadOfficeVerificationController;
 use App\Http\Controllers\IssueProcessingController;
+use App\Http\Controllers\LedgerStatementController;
 use App\Http\Controllers\LoanApplicationController;
 use App\Http\Controllers\LoanCategoryController;
 use App\Http\Controllers\LoanLedgerController;
@@ -61,6 +63,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::get('loan-products/{loanProduct}/quote', LoanQuoteController::class)->name('loan-products.quote');
 
+    Route::get('loan-ledger/accounts/{account}/statement', [LedgerStatementController::class, 'loan'])->name('loan-ledger.statement');
+    Route::get('savings-ledger/accounts/{account}/statement', [LedgerStatementController::class, 'savings'])->name('savings-ledger.statement');
+
     Route::get('loan-portfolio', LoanPortfolioController::class)->name('loan-portfolio.index');
 
     Route::prefix('loan-ledger')->name('loan-ledger.')->controller(LoanLedgerController::class)->group(function () {
@@ -81,6 +86,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('holds/{hold}/release', 'release')->name('release');
         Route::post('accounts/{account}/close', 'close')->name('close');
     });
+
+    Route::get('accounting/reports', FinancialReportsController::class)->name('accounting.reports');
 
     Route::prefix('accounting')->name('accounting.')->group(function () {
         Route::get('/', [AccountingController::class, 'index'])->name('index');

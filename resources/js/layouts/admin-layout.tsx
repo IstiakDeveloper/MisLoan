@@ -336,7 +336,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     ];
 
     const headOfficeSetupItems = [
-        ...(isSuperAdmin ? [{ name: 'Accounting', href: '/accounting', icon: Landmark }, { name: 'Savings Ledger', href: '/savings-ledger', icon: Wallet }, { name: 'Loan Ledger', href: '/loan-ledger', icon: Banknote }, { name: 'Loan Portfolio', href: '/loan-portfolio', icon: BarChart3 }] : []),
+        ...(isSuperAdmin ? [{ name: 'Accounting', href: '/accounting', icon: Landmark }, { name: 'Financial Reports', href: '/accounting/reports', icon: BarChart3 }, { name: 'Savings Ledger', href: '/savings-ledger', icon: Wallet }, { name: 'Loan Ledger', href: '/loan-ledger', icon: Banknote }, { name: 'Loan Portfolio', href: '/loan-portfolio', icon: BarChart3 }] : []),
         { name: 'Recent Deletions (7 Days)', href: '/head-office/recent-deletions', icon: Trash2 },
         { name: 'CSO Duty Roster', href: '/head-office/cso-duty-roster', icon: CalendarDays },
         { name: 'Send Deadline', href: '/head-office/send-cutoff', icon: Clock },

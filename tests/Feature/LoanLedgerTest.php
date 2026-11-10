@@ -8,13 +8,16 @@ use App\Models\Role;
 use App\Models\Samity;
 use App\Models\User;
 use App\Models\Zone;
+use App\Services\Accounting\FinancialReports;
 use App\Services\Accounting\JournalService;
 use App\Services\Loans\LoanContract;
 use App\Services\Loans\LoanCorrections;
 use App\Services\Loans\LoanLedger;
 use App\Services\Loans\LoanPortfolio;
+use App\Services\Reporting\LedgerStatements;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -294,4 +297,112 @@ it('blocks ordinary or inactive reviewers and proposals against opening transact
         expect(fn () => $service->decide($checker, $r->id, 'approved', 'Verified'))->toThrow(HttpException::class);
     }
     expect(DB::table('loan_transactions')->where('kind', 'reversal')->count())->toBe(0);
+});
+
+it('reconciles posted financial statements with loan collections and historical opening', function () {
+    $a = ($this->open)('50000', '6350', 'opening_balance');
+    $this->ledger->repay($this->actor, $a->id, '1000', '250', 2, today()->toDateString(), 'financial-report', 'Collection');
+    $reports = app(FinancialReports::class);
+    $all = $reports->balances($this->actor, $this->date, today()->toDateString(), $this->branch->id);
+    expect($all['totals']['asset_paisa'])->toBe('5025000')->and($all['totals']['equity_paisa'])->toBe('5000000')
+        ->and($all['totals']['period_income_paisa'])->toBe('25000')->and($all['totals']['balance_sheet_difference_paisa'])->toBe('0')->and($all['totals']['trial_difference_paisa'])->toBe('0');
+    $today = $reports->balances($this->actor, today()->toDateString(), today()->toDateString());
+    $principal = $today['rows']->firstWhere('id', 1);
+    expect($principal->opening_paisa)->toBe('5000000')->and($principal->credit_paisa)->toBe('100000')->and($principal->closing_paisa)->toBe('4900000');
+    $historic = $reports->balances($this->actor, $this->date, $this->date);
+    expect($historic['totals']['income_paisa'])->toBe('0');
+});
+
+it('computes account running balances before pagination including opening and reversals', function () {
+    $a = ($this->open)('50000', '6350', 'opening_balance');
+    $t = $this->ledger->repay($this->actor, $a->id, '1000', '250', 2, today()->toDateString(), 'financial-report', 'Collection');
+    $this->ledger->reverse($this->actor, $t->id, today()->toDateString(), 'report-reverse', 'Reverse collection');
+    $reports = app(FinancialReports::class);
+    $ledger = $reports->accountLedger($this->actor, 1, today()->toDateString(), today()->toDateString(), $this->branch->id);
+    expect($ledger['opening_paisa'])->toBe('5000000');
+    $second = $ledger['query']->paginate(1, ['*'], 'page', 2)->items()[0];
+    expect((string) $second->running_paisa)->toBe('5000000')->and((string) $second->debit_paisa)->toBe('100000');
+});
+
+it('serves financial reports and formula-safe exact CSV exports', function () {
+    $this->withoutVite();
+    ($this->open)('50000', '6350', 'opening_balance');
+    DB::table('ledger_accounts')->where('id', 1)->update(['name' => '=HYPERLINK("bad")']);
+    $this->actingAs($this->actor)->get('/accounting/reports?account_id=1')->assertOk()->assertInertia(fn (AssertableInertia $p) => $p->component('FinancialReports/Index')->where('totals.trial_difference_paisa', '0'));
+    $csv = $this->get('/accounting/reports?download=balances')->assertOk()->assertHeader('Cache-Control', 'no-store, private')->streamedContent();
+    expect($csv)->toContain("'=HYPERLINK")->toContain('50000.00');
+    $ledger = $this->get('/accounting/reports?download=ledger&account_id=1')->assertOk()->streamedContent();
+    expect($ledger)->toContain('Verified signed contract');
+    $this->get('/accounting/reports?download=ledger')->assertStatus(422);
+    $this->actor->update(['is_active' => false]);
+    $this->get('/accounting/reports')->assertForbidden();
+});
+
+it('validates financial report dates and preserves inactive account history', function () {
+    ($this->open)();
+    DB::table('ledger_accounts')->where('id', 1)->update(['is_active' => false]);
+    $reports = app(FinancialReports::class);
+    expect($reports->balances($this->actor, $this->date, $this->date)['rows']->firstWhere('id', 1)->closing_paisa)->toBe('5000000');
+    expect(fn () => $reports->balances($this->actor, '2026-02-30', $this->date))->toThrow(ValidationException::class);
+    expect(fn () => $reports->balances($this->actor, today()->toDateString(), $this->date))->toThrow(ValidationException::class);
+});
+
+it('exports loan statements with as-of reversal history and safe descriptions', function () {
+    $a = ($this->open)('50000', '6350', 'opening_balance');
+    $t = $this->ledger->repay($this->actor, $a->id, '100', '10', 2, $this->date, 'export-statement', '=SUM(1,2)');
+    $this->ledger->reverse($this->actor, $t->id, today()->toDateString(), 'export-reverse', '<script>alert(1)</script>');
+    $statements = app(LedgerStatements::class);
+    expect($statements->read($this->actor, 'loan', $a->id, null, $this->date)['closing_paisa'])->toBe('5624000');
+    $this->actingAs($this->actor)->get('/loan-ledger/accounts/'.$a->id.'/statement')->assertOk()->assertHeader('Cache-Control', 'no-store, private')->assertSee('&lt;script&gt;alert(1)&lt;/script&gt;', false)->assertDontSee('<script>alert(1)</script>', false);
+    $csv = $this->get('/loan-ledger/accounts/'.$a->id.'/statement?format=csv')->assertOk()->streamedContent();
+    expect($csv)->toContain("'=SUM(1,2)")->toContain('56350.00');
+    $this->get('/loan-ledger/accounts/'.$a->id.'/statement?from=2000-01-01')->assertSessionHasErrors('from');
+    $this->actingAs(User::factory()->create())->get('/loan-ledger/accounts/'.$a->id.'/statement')->assertForbidden();
+});
+
+it('keeps financial report totals and running balances exact above JavaScript safe integers', function () {
+    $entry = app(JournalService::class)->post($this->actor, $this->branch->id, $this->date, 'precision-seed', 'Precision seed', [
+        ['account_id' => 1, 'debit_paisa' => 99999999999999, 'credit_paisa' => 0],
+        ['account_id' => 4, 'debit_paisa' => 0, 'credit_paisa' => 99999999999999],
+    ]);
+    $template = (array) DB::table('journal_entries')->find($entry->id);
+    unset($template['id']);
+    // Create immutable test rows in bulk to exercise aggregation beyond an individual posting limit.
+    for ($i = 0; $i < 100; $i++) {
+        $id = DB::table('journal_entries')->insertGetId([...$template, 'reference' => (string) Str::uuid(), 'idempotency_key' => 'precision-'.$i]);
+        DB::table('journal_lines')->insert([
+            ['journal_entry_id' => $id, 'ledger_account_id' => 1, 'debit_paisa' => 99999999999999, 'credit_paisa' => 0],
+            ['journal_entry_id' => $id, 'ledger_account_id' => 4, 'debit_paisa' => 0, 'credit_paisa' => 99999999999999],
+        ]);
+    }
+    $reports = app(FinancialReports::class);
+    expect($reports->balances($this->actor, $this->date, $this->date)['totals']['asset_paisa'])->toBe('10099999999999899');
+    $last = $reports->accountLedger($this->actor, 1, $this->date, $this->date)['query']->get()->last();
+    expect((string) $last->running_paisa)->toBe('10099999999999899');
+});
+
+it('checks ledger coverage and catches unmatched manual control-account adjustments', function () {
+    $this->artisan('misloan:check-ledgers', ['--json' => true])->assertExitCode(1);
+    ($this->open)();
+    $this->artisan('misloan:check-ledgers', ['--json' => true])->assertExitCode(0);
+    app(JournalService::class)->post($this->actor, $this->branch->id, $this->date, 'unmatched-control', 'Unmatched manual adjustment', [
+        ['account_id' => 1, 'debit_paisa' => 1, 'credit_paisa' => 0], ['account_id' => 4, 'debit_paisa' => 0, 'credit_paisa' => 1],
+    ]);
+    $this->artisan('misloan:check-ledgers', ['--json' => true])->assertExitCode(1);
+});
+
+it('separates period income and expenses from earlier cumulative results', function () {
+    DB::table('ledger_accounts')->insert(['id' => 5, 'code' => 'EXP', 'name' => 'Expense', 'type' => 'expense', 'created_at' => now(), 'updated_at' => now()]);
+    $journals = app(JournalService::class);
+    $journals->post($this->actor, $this->branch->id, $this->date, 'earlier-income', 'Prior income', [
+        ['account_id' => 2, 'debit_paisa' => 10000, 'credit_paisa' => 0], ['account_id' => 3, 'debit_paisa' => 0, 'credit_paisa' => 10000],
+    ]);
+    $journals->post($this->actor, $this->branch->id, today()->toDateString(), 'current-expense', 'Current expense', [
+        ['account_id' => 5, 'debit_paisa' => 2000, 'credit_paisa' => 0], ['account_id' => 2, 'debit_paisa' => 0, 'credit_paisa' => 2000],
+    ]);
+    $reports = app(FinancialReports::class);
+    $result = $reports->balances($this->actor, today()->toDateString(), today()->toDateString(), $this->branch->id);
+    expect($result['totals']['period_surplus_paisa'])->toBe('-2000')->and($result['totals']['cumulative_surplus_paisa'])->toBe('8000')
+        ->and($result['rows']->firstWhere('id', 3)->period_normal_paisa)->toBe('0')->and($result['rows']->firstWhere('id', 5)->period_normal_paisa)->toBe('2000');
+    expect($reports->balances($this->actor, $this->date, today()->toDateString(), $this->branch->id + 100)['rows'])->toHaveCount(0);
 });
