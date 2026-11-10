@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\LoanApplication;
 use App\Services\Loans\LoanContract;
+use App\Services\Loans\LoanCorrections;
 use App\Services\Loans\LoanLedger;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -33,6 +34,7 @@ final class LoanLedgerController extends Controller
             'overduePaisa' => array_sum(array_column($schedule, 'overdue_paisa')),
             'reconciliation' => $account ? $ledger->reconciliation($request->user(), $account->id) : null,
             'transactions' => $account ? DB::table('loan_transactions')->where('loan_account_id', $account->id)->where('business_date', '<=', $asOf)->orderByDesc('business_date')->orderByDesc('id')->paginate(50, ['*'], 'transactions_page')->withQueryString() : null,
+            'corrections' => $account ? DB::table('loan_correction_requests as c')->join('users as maker', 'maker.id', '=', 'c.requested_by')->leftJoin('users as reviewer', 'reviewer.id', '=', 'c.reviewed_by')->where('c.loan_account_id', $account->id)->select('c.*', 'maker.name as requested_by_name', 'reviewer.name as reviewed_by_name')->orderByDesc('c.id')->paginate(25, ['*'], 'corrections_page')->withQueryString() : null,
             'ledgerAccounts' => DB::table('ledger_accounts')->where('is_active', true)->orderBy('code')->get(['id', 'code', 'name', 'type']),
         ]);
     }
@@ -76,12 +78,21 @@ final class LoanLedgerController extends Controller
         return back()->with('success', 'Loan collection posted: '.$transaction->reference);
     }
 
-    public function reverse(Request $request, int $transaction, LoanLedger $ledger)
+    public function reverse(Request $request, int $transaction, LoanCorrections $corrections)
     {
         $this->authorizeLedger($request);
         $data = $request->validate(['business_date' => ['required', 'date_format:Y-m-d'], 'idempotency_key' => ['required', 'string', 'max:100'], 'reason' => ['required', 'string', 'max:1000']]);
-        $ledger->reverse($request->user(), $transaction, $data['business_date'], $data['idempotency_key'], $data['reason']);
+        $corrections->request($request->user(), $transaction, $data['business_date'], $data['idempotency_key'], $data['reason']);
 
-        return back()->with('success', 'Loan receipt reversed in the loan ledger and GL.');
+        return back()->with('success', 'Correction requested. A different administrator must approve before money changes.');
+    }
+
+    public function review(Request $request, int $correction, LoanCorrections $corrections)
+    {
+        $this->authorizeLedger($request);
+        $data = $request->validate(['decision' => ['required', Rule::in(['approved', 'rejected'])], 'note' => ['required', 'string', 'max:1000']]);
+        $corrections->decide($request->user(), $correction, $data['decision'], $data['note']);
+
+        return back()->with('success', 'Correction decision recorded. Approved receipts and GL are reversed together.');
     }
 }

@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\Zone;
 use App\Services\Accounting\JournalService;
 use App\Services\Loans\LoanContract;
+use App\Services\Loans\LoanCorrections;
 use App\Services\Loans\LoanLedger;
 use App\Services\Loans\LoanPortfolio;
 use Carbon\CarbonImmutable;
@@ -159,6 +160,10 @@ it('posts collection and reversal through authenticated HTTP endpoints', functio
     $receipt = DB::table('loan_transactions')->where('kind', 'repayment')->first();
     expect($receipt)->not->toBeNull();
     $this->post('/loan-ledger/transactions/'.$receipt->id.'/reverse', ['business_date' => $this->date, 'idempotency_key' => 'http-reverse', 'reason' => 'Correct HTTP receipt'])->assertSessionHasNoErrors()->assertRedirect();
+    expect($this->ledger->balances($a->id)['total_paisa'])->toBe(5624000);
+    $request = DB::table('loan_correction_requests')->first();
+    $checker = User::factory()->create(['role_id' => $this->actor->role_id]);
+    $this->actingAs($checker)->post('/loan-ledger/corrections/'.$request->id.'/review', ['decision' => 'approved', 'note' => 'Verified correction'])->assertSessionHasNoErrors()->assertRedirect();
     expect($this->ledger->balances($a->id)['total_paisa'])->toBe(5635000);
 });
 
@@ -234,4 +239,59 @@ it('combines branches without multiplying balances by installment rows', functio
     $single = $portfolio->summary($portfolio->accounts($this->actor, $date, $branch->id), $date);
     expect($all['totals']['principal_paisa'])->toBe('9000000')->and($all['totals']['account_count'])->toBe(2)
         ->and($all['branches'])->toHaveCount(2)->and($single['totals']['principal_paisa'])->toBe('4000000');
+});
+
+it('requires a distinct reviewer and posts an approved correction exactly once', function () {
+    $a = ($this->open)();
+    $receipt = $this->ledger->repay($this->actor, $a->id, '100', '10', 2, $this->date, 'review-receipt', 'Receipt');
+    $service = app(LoanCorrections::class);
+    $request = $service->request($this->actor, $receipt->id, $this->date, 'review-request', 'Wrong member receipt');
+    expect($this->ledger->balances($a->id)['total_paisa'])->toBe(5624000);
+    expect($service->request($this->actor, $receipt->id, $this->date, 'review-request', 'Wrong member receipt')->id)->toBe($request->id);
+    expect(fn () => $service->request($this->actor, $receipt->id, $this->date, 'review-request', 'Different reason'))->toThrow(ValidationException::class);
+    expect(fn () => $service->request($this->actor, $receipt->id, $this->date, 'another-request', 'Duplicate pending'))->toThrow(ValidationException::class);
+    expect(fn () => $service->decide($this->actor, $request->id, 'approved', 'Self review'))->toThrow(ValidationException::class);
+    $checker = User::factory()->create(['role_id' => $this->actor->role_id]);
+    $approved = $service->decide($checker, $request->id, 'approved', 'Verified original receipt');
+    expect($approved->status)->toBe('approved')->and((int) $approved->reviewed_by)->toBe($checker->id)
+        ->and($this->ledger->balances($a->id)['total_paisa'])->toBe(5635000);
+    expect($service->decide($checker, $request->id, 'approved', 'Verified original receipt')->id)->toBe($request->id);
+    expect(DB::table('loan_transactions')->where('kind', 'reversal')->count())->toBe(1);
+    expect(fn () => $service->decide($checker, $request->id, 'rejected', 'Changed mind'))->toThrow(ValidationException::class);
+});
+
+it('retains rejected requests and permits a new independently reviewed proposal', function () {
+    $a = ($this->open)();
+    $receipt = $this->ledger->repay($this->actor, $a->id, '100', '0', 2, $this->date, 'review-receipt', 'Receipt');
+    $service = app(LoanCorrections::class);
+    $r = $service->request($this->actor, $receipt->id, $this->date, 'review-request', 'Please reverse');
+    $checker = User::factory()->create(['role_id' => $this->actor->role_id]);
+    $service->decide($checker, $r->id, 'rejected', 'Evidence missing');
+    expect(DB::table('loan_transactions')->count())->toBe(2)->and(DB::table('loan_correction_requests')->find($r->id)->status)->toBe('rejected');
+    $new = $service->request($this->actor, $receipt->id, $this->date, 'new-request-key', 'Evidence attached to reference ABC');
+    expect($new->id)->not->toBe($r->id);
+});
+
+it('leaves a correction pending when its posting cannot pass accounting controls', function () {
+    $a = ($this->open)();
+    $receipt = $this->ledger->repay($this->actor, $a->id, '100', '0', 2, $this->date, 'review-receipt', 'Receipt');
+    $service = app(LoanCorrections::class);
+    $r = $service->request($this->actor, $receipt->id, $this->date, 'review-request', 'Please reverse');
+    $checker = User::factory()->create(['role_id' => $this->actor->role_id]);
+    DB::table('accounting_periods')->update(['closed_at' => now(), 'closed_by' => $checker->id]);
+    expect(fn () => $service->decide($checker, $r->id, 'approved', 'Verified'))->toThrow(ValidationException::class);
+    expect(DB::table('loan_correction_requests')->find($r->id)->status)->toBe('pending')->and(DB::table('loan_transactions')->count())->toBe(2);
+});
+
+it('blocks ordinary or inactive reviewers and proposals against opening transactions', function () {
+    $a = ($this->open)();
+    $service = app(LoanCorrections::class);
+    $opening = DB::table('loan_transactions')->first();
+    expect(fn () => $service->request($this->actor, $opening->id, $this->date, 'review-opening', 'Reverse opening'))->toThrow(ValidationException::class);
+    $receipt = $this->ledger->repay($this->actor, $a->id, '100', '0', 2, $this->date, 'review-receipt', 'Receipt');
+    $r = $service->request($this->actor, $receipt->id, $this->date, 'review-request', 'Please reverse');
+    foreach ([User::factory()->create(), User::factory()->create(['role_id' => $this->actor->role_id, 'is_active' => false])] as $checker) {
+        expect(fn () => $service->decide($checker, $r->id, 'approved', 'Verified'))->toThrow(HttpException::class);
+    }
+    expect(DB::table('loan_transactions')->where('kind', 'reversal')->count())->toBe(0);
 });

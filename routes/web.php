@@ -69,6 +69,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('accounts', 'open')->name('open');
         Route::post('accounts/{account}/repayments', 'repay')->name('repay');
         Route::post('transactions/{transaction}/reverse', 'reverse')->name('reverse');
+        Route::post('corrections/{correction}/review', 'review')->name('review');
     });
 
     Route::prefix('savings-ledger')->name('savings-ledger.')->controller(SavingsLedgerController::class)->group(function () {

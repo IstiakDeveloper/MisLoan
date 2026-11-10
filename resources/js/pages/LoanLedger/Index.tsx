@@ -25,7 +25,19 @@ type Transaction = {
     description: string;
     reversal_of: number | null;
 };
+type Correction = {
+    id: number;
+    loan_transaction_id: number;
+    requested_by_name: string;
+    reviewed_by_name: string | null;
+    reason: string;
+    business_date: string;
+    status: string;
+    decision_note: string | null;
+    reversal_transaction_id: number | null;
+};
 type Props = {
+    corrections: Page<Correction> | null;
     accounts: Page<Account>;
     account: Account | null;
     asOf: string;
@@ -81,9 +93,15 @@ export default function LoanLedger({
     overduePaisa,
     schedule,
     transactions,
+    corrections,
     ledgerAccounts,
     reconciliation,
 }: Props) {
+    const review = useForm<Record<string, string>>({
+        correction_id: '',
+        decision: 'approved',
+        note: '',
+    });
     const today = new Date().toLocaleDateString('en-CA');
     const opening = useForm<Record<string, string>>({
         application_id: '',
@@ -417,9 +435,94 @@ export default function LoanLedger({
                                     className={button}
                                     disabled={correction.processing}
                                 >
-                                    Reverse receipt
+                                    Request receipt reversal
                                 </button>
                             </form>
+                        </section>
+                        <section className="space-y-3 rounded border bg-white p-4">
+                            <h2 className="text-xl">Correction approvals</h2>
+                            <p>
+                                Requests do not change money. A different
+                                personal administrator must approve. Decisions
+                                below show current workflow status, including
+                                when viewing an earlier statement date. If the
+                                requested date is in a closed period, reject and
+                                submit a new request for an open date.
+                            </p>
+                            <form
+                                className="grid gap-3 md:grid-cols-2"
+                                onSubmit={(e) => {
+                                    e.preventDefault();
+                                    review.post(
+                                        `/loan-ledger/corrections/${review.data.correction_id}/review`,
+                                        {
+                                            onSuccess: () =>
+                                                review.reset(
+                                                    'correction_id',
+                                                    'note',
+                                                ),
+                                        },
+                                    );
+                                }}
+                            >
+                                {inputs(review.data, review.setData, [
+                                    'correction_id',
+                                    'note',
+                                ])}
+                                <label>
+                                    Decision
+                                    <select
+                                        className={field}
+                                        value={review.data.decision}
+                                        onChange={(e) =>
+                                            review.setData(
+                                                'decision',
+                                                e.target.value,
+                                            )
+                                        }
+                                    >
+                                        <option value="approved">
+                                            Approve and reverse
+                                        </option>
+                                        <option value="rejected">
+                                            Reject without posting
+                                        </option>
+                                    </select>
+                                </label>
+                                <Errors errors={review.errors} />
+                                <button
+                                    className={button}
+                                    disabled={review.processing}
+                                >
+                                    Record correction decision
+                                </button>
+                            </form>
+                            {corrections?.data.map((c) => (
+                                <article
+                                    className="rounded border p-3"
+                                    key={c.id}
+                                >
+                                    <p>
+                                        Request #{c.id} · receipt #
+                                        {c.loan_transaction_id} · {c.status}
+                                    </p>
+                                    <p>
+                                        {c.reason} · correction date{' '}
+                                        {c.business_date} · requested by{' '}
+                                        {c.requested_by_name}
+                                    </p>
+                                    {c.reviewed_by_name && (
+                                        <p>
+                                            Reviewed by {c.reviewed_by_name}:{' '}
+                                            {c.decision_note}{' '}
+                                            {c.reversal_transaction_id
+                                                ? `· reversal #${c.reversal_transaction_id}`
+                                                : ''}
+                                        </p>
+                                    )}
+                                </article>
+                            ))}
+                            {corrections && <Pages page={corrections} />}
                         </section>
                         <section className="overflow-auto rounded border bg-white p-4">
                             <h2 className="text-xl">
