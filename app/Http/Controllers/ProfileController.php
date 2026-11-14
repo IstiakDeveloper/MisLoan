@@ -10,7 +10,6 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -52,7 +51,7 @@ class ProfileController extends Controller
 
         if ($request->hasFile('signature')) {
             if ($user->signature) {
-                Storage::disk('public')->delete($user->signature);
+                $compression->delete($user->signature);
             }
             $validated['signature'] = $this->storeCompressed(
                 $compression,
@@ -93,7 +92,7 @@ class ProfileController extends Controller
 
         if ($request->hasFile('profile_photo')) {
             if ($user->profile_photo) {
-                Storage::disk('public')->delete($user->profile_photo);
+                $compression->delete($user->profile_photo);
             }
             $validated['profile_photo'] = $this->storeCompressed(
                 $compression,
@@ -105,7 +104,7 @@ class ProfileController extends Controller
 
         if ($request->hasFile('signature')) {
             if ($user->signature) {
-                Storage::disk('public')->delete($user->signature);
+                $compression->delete($user->signature);
             }
             $validated['signature'] = $this->storeCompressed(
                 $compression,

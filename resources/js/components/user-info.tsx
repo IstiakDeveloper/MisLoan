@@ -1,3 +1,4 @@
+import { documentUrl } from '@/lib/documents';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useInitials } from '@/hooks/use-initials';
 import { type User } from '@/types';
@@ -18,7 +19,7 @@ export function UserInfo({
                     src={
                         user.avatar ||
                         (user.profile_photo
-                            ? `/storage/${user.profile_photo}`
+                            ? documentUrl(user.profile_photo)
                             : undefined)
                     }
                     alt={user.name}

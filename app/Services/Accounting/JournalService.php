@@ -14,8 +14,9 @@ final class JournalService
 {
     private function authorize(User $actor, int $branchId): void
     {
+        $ownBranch = $actor->isBranchCashier() && (int) $actor->branch_id === $branchId;
         abort_unless($actor->is_active && ! $actor->isBranchAccount()
-            && ($actor->isSuperAdmin() || $actor->hasPermission('accounting.post'))
+            && ($actor->isSuperAdmin() || $ownBranch || $actor->hasPermission('accounting.post'))
             && $actor->canAccessBranch($branchId), 403);
     }
 

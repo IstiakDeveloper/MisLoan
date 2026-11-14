@@ -19,7 +19,6 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Password as PasswordBroker;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
 
@@ -223,7 +222,7 @@ class UserController extends Controller
         // Handle signature upload for super admin / full-access users
         if (Auth::user()?->has_all_access && $request->hasFile('signature')) {
             if ($user->signature) {
-                Storage::disk('public')->delete($user->signature);
+                app(ImageCompressionService::class)->delete($user->signature);
             }
             $validated['signature'] = $this->storeCompressedSignature(
                 $request->file('signature'),
@@ -477,7 +476,7 @@ class UserController extends Controller
 
         if ($request->hasFile('signature')) {
             if ($user->signature) {
-                Storage::disk('public')->delete($user->signature);
+                app(ImageCompressionService::class)->delete($user->signature);
             }
 
             $path = $this->storeCompressedSignature($request->file('signature'));

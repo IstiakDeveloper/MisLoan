@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Collection;
 
 class User extends Authenticatable
 {
@@ -33,6 +34,8 @@ class User extends Authenticatable
         'is_active',
         'email_verified_at',
     ];
+
+    private ?Collection $accessibleBranchesMemo = null;
 
     protected $hidden = [
         'password',
@@ -156,9 +159,15 @@ class User extends Authenticatable
     }
 
     /**
-     * Get accessible branches based on user's access level
+     * Get accessible branches based on user's access level.
+     * Remembered for this request so a page does not load the branch list three times.
      */
     public function getAccessibleBranches()
+    {
+        return $this->accessibleBranchesMemo ??= $this->lookupAccessibleBranches();
+    }
+
+    private function lookupAccessibleBranches()
     {
         if ($this->has_all_access || $this->isSuperAdmin() || $this->isHeadOffice()) {
             return Branch::all();
@@ -304,6 +313,28 @@ class User extends Authenticatable
     public function isBranchAccount(): bool
     {
         return $this->account_type === 'branch';
+    }
+
+    public function isFinancialAdministrator(): bool
+    {
+        return (bool) $this->is_active && $this->isSuperAdmin() && ! $this->isBranchAccount();
+    }
+
+    public function isBranchCashier(): bool
+    {
+        return (bool) $this->is_active
+            && ! $this->isBranchAccount()
+            && $this->branch_id !== null
+            && $this->role?->name === Role::BRANCH_MANAGER;
+    }
+
+    public function canPostBranchCash(int $branchId): bool
+    {
+        if ($this->isFinancialAdministrator()) {
+            return $this->canAccessBranch($branchId);
+        }
+
+        return $this->isBranchCashier() && (int) $this->branch_id === $branchId;
     }
 
     public function isStaffAccount(): bool

@@ -1,3 +1,4 @@
+import { documentUrl } from '@/lib/documents';
 import { useEffect, useRef, useState } from 'react';
 import { Head, useForm, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
@@ -116,11 +117,7 @@ function renderDeathRiskFundPreviewPart(partNumber: 1 | 2, formData: any) {
     const isWelfare = isCustomerWelfareFundEffective(d.date, d.loan_sanction_date);
 
     // Helper to get image URL (data URL, absolute, or /storage/ path)
-    const getImageUrl = (url: string | null | undefined) => {
-        if (!url) return null;
-        if (url.startsWith('data:') || url.startsWith('http') || url.startsWith('/')) return url;
-        return `/storage/${url}`;
-    };
+    const getImageUrl = (url: string | null | undefined) => (url ? documentUrl(url) : null);
 
     return (
         <div
@@ -359,12 +356,12 @@ function buildDeathRiskFundDefaults(
     const memberPhotoUrl = member?.customer_photo_path
         ? member.customer_photo_path.startsWith('http')
             ? member.customer_photo_path
-            : `/storage/${member.customer_photo_path}`
+            : documentUrl(member.customer_photo_path)
         : null;
     const guardianPhotoUrl = member?.guardian_photo_path
         ? member.guardian_photo_path.startsWith('http')
             ? member.guardian_photo_path
-            : `/storage/${member.guardian_photo_path}`
+            : documentUrl(member.guardian_photo_path)
         : null;
     const amount = Number(requestedAmount) || 0;
     const words = amount > 0 ? numberToWordsBangla(amount) : '';
@@ -541,10 +538,10 @@ export default function DeathRiskFund({
 
     // Load photos from MemberAdmission if available
     const memberPhotoUrl = member?.customer_photo_path
-        ? (member.customer_photo_path.startsWith('http') ? member.customer_photo_path : `/storage/${member.customer_photo_path}`)
+        ? (member.customer_photo_path.startsWith('http') ? member.customer_photo_path : documentUrl(member.customer_photo_path))
         : null;
     const guardianPhotoUrl = member?.guardian_photo_path
-        ? (member.guardian_photo_path.startsWith('http') ? member.guardian_photo_path : `/storage/${member.guardian_photo_path}`)
+        ? (member.guardian_photo_path.startsWith('http') ? member.guardian_photo_path : documentUrl(member.guardian_photo_path))
         : null;
 
     const baseAmount = Number(requestedAmount) || 0;

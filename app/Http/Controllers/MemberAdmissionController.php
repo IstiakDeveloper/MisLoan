@@ -26,8 +26,10 @@ use App\Services\NotificationService;
 use App\Support\AdmissionFormVisibility;
 use App\Support\LoanFormVisibility;
 use App\Support\RoleListWorkQueue;
+use App\Support\StatusTallies;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
@@ -52,6 +54,61 @@ class MemberAdmissionController extends Controller
         $user = auth()->user();
 
         return $user && ($user->has_all_access || $user->isSuperAdmin() || $user->isHeadOffice());
+    }
+
+    /**
+     * @param  Collection<int, MemberAdmission>  $admissions
+     * @return array<string, LoanApplication>
+     */
+    private function latestOpenLoansByPerson($admissions): array
+    {
+        if ($admissions->isEmpty()) {
+            return [];
+        }
+
+        $people = $admissions->unique(fn (MemberAdmission $admission): string => $this->personKey($admission));
+        $sisters = MemberAdmission::query()
+            ->where(function ($query) use ($people): void {
+                foreach ($people as $admission) {
+                    $query->orWhere(function ($person) use ($admission): void {
+                        if ($admission->application_no && $admission->branch_id) {
+                            $person->where('branch_id', $admission->branch_id)
+                                ->where('application_no', $admission->application_no);
+                        } else {
+                            $person->whereKey($admission->id);
+                        }
+                    });
+                }
+            })
+            ->get(['id', 'branch_id', 'application_no']);
+
+        $loans = LoanApplication::query()
+            ->whereIn('member_admission_id', $sisters->pluck('id'))
+            ->whereNotIn('status', MemberAdmission::closedLoanFormStatuses())
+            ->orderByDesc('id')
+            ->get(['id', 'member_admission_id', 'application_no', 'status']);
+
+        $keys = [];
+        foreach ($sisters as $sister) {
+            $keys[$sister->id] = $this->personKey($sister);
+        }
+
+        $latest = [];
+        foreach ($loans as $loan) {
+            $key = $keys[$loan->member_admission_id] ?? null;
+            if ($key !== null && ! isset($latest[$key])) {
+                $latest[$key] = $loan;
+            }
+        }
+
+        return $latest;
+    }
+
+    private function personKey(MemberAdmission $admission): string
+    {
+        return ($admission->application_no && $admission->branch_id)
+            ? $admission->branch_id.'|'.$admission->application_no
+            : 'id:'.$admission->id;
     }
 
     private function userCanEditAdmission(MemberAdmission $memberAdmission): bool
@@ -464,19 +521,19 @@ class MemberAdmissionController extends Controller
             $this->applyCoalesceDateRange($statsQuery, $fromDate, $toDate, 'COALESCE(reviewed_at, submitted_at, created_at)');
         }
 
-        // Calculate stats
-        $stats = [
-            'total' => $statsQuery->count(),
-            'draft' => (clone $statsQuery)->where('status', 'draft')->count(),
-            'submitted' => (clone $statsQuery)->where('status', 'submitted')->count(),
-            'under_review' => (clone $statsQuery)->where('status', 'under_review')->count(),
-            'ready_for_head_office' => (clone $statsQuery)->where('status', 'ready_for_head_office')->count(),
-            'pending_head_office' => (clone $statsQuery)->where('status', 'pending_head_office')->count(),
-            'needs_revision' => (clone $statsQuery)->where('status', 'needs_revision')->count(),
-            'approved' => (clone $statsQuery)->where('status', 'approved')->count(),
-            'rejected' => (clone $statsQuery)->where('status', 'rejected')->count(),
-            'pending_my_approval' => $this->countPendingMyApproval($statsQuery, $user, 'admission'),
-        ];
+        $tallies = StatusTallies::read($statsQuery, [
+            'total' => 'COUNT(*)',
+            'draft' => "COALESCE(SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END), 0)",
+            'submitted' => "COALESCE(SUM(CASE WHEN status = 'submitted' THEN 1 ELSE 0 END), 0)",
+            'under_review' => "COALESCE(SUM(CASE WHEN status = 'under_review' THEN 1 ELSE 0 END), 0)",
+            'ready_for_head_office' => "COALESCE(SUM(CASE WHEN status = 'ready_for_head_office' THEN 1 ELSE 0 END), 0)",
+            'pending_head_office' => "COALESCE(SUM(CASE WHEN status = 'pending_head_office' THEN 1 ELSE 0 END), 0)",
+            'needs_revision' => "COALESCE(SUM(CASE WHEN status = 'needs_revision' THEN 1 ELSE 0 END), 0)",
+            'approved' => "COALESCE(SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END), 0)",
+            'rejected' => "COALESCE(SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END), 0)",
+        ]);
+        $stats = array_map(intval(...), $tallies);
+        $stats['pending_my_approval'] = $this->countPendingMyApproval($statsQuery, $user, 'admission');
 
         $this->applyResolvedStatusFilter($query, $statusFilter, $user, 'admission');
 
@@ -525,11 +582,12 @@ class MemberAdmissionController extends Controller
             $query->orderByRaw('COALESCE(reviewed_at, submitted_at, created_at) desc');
         }
         $admissions = $query->paginate($perPage)->withQueryString();
+        $openLoans = $this->latestOpenLoansByPerson($admissions->getCollection());
 
-        $admissions = $admissions->through(function (MemberAdmission $admission) use ($user) {
+        $admissions = $admissions->through(function (MemberAdmission $admission) use ($user, $openLoans) {
             $arr = $admission->toArray();
             $arr['tracking_state'] = $admission->getTrackingState();
-            $activeLoan = $admission->existingLoanForm();
+            $activeLoan = $openLoans[$this->personKey($admission)] ?? null;
             $arr['has_active_loan'] = $activeLoan !== null;
             $arr['active_loan_status'] = $activeLoan?->status;
             $arr['existing_loan_form'] = $activeLoan ? [

@@ -488,8 +488,12 @@ export default function Index({
                                 className={card}
                                 onSubmit={(e) => {
                                     e.preventDefault();
+                                    const profit =
+                                        transaction.data.kind === 'profit';
                                     transaction.post(
-                                        `/savings-ledger/accounts/${account.id}/transactions`,
+                                        profit
+                                            ? `/savings-ledger/accounts/${account.id}/configured-profit`
+                                            : `/savings-ledger/accounts/${account.id}/transactions`,
                                         {
                                             onSuccess: () => {
                                                 transaction.reset(
@@ -535,25 +539,33 @@ export default function Index({
                                             </option>
                                         </select>
                                     </label>
+                                    {transaction.data.kind === 'profit' ? (
+                                        <p className="text-sm text-slate-600 dark:text-slate-300">
+                                            মুনাফা এই সঞ্চয় প্রোডাক্টের ক্যালকুলেটর
+                                            থেকে হিসাব হয়। এক মাসের কম হলে শূন্য।
+                                            খরচ এই প্রোডাক্টের নিজের মুনাফা লেজারে
+                                            যায়।
+                                        </p>
+                                    ) : (
+                                        <label className="grid gap-1">
+                                            টাকার পরিমাণ
+                                            <input
+                                                inputMode="decimal"
+                                                required
+                                                className={field}
+                                                value={transaction.data.amount}
+                                                onChange={(e) =>
+                                                    transaction.setData(
+                                                        'amount',
+                                                        e.target.value,
+                                                    )
+                                                }
+                                            />
+                                        </label>
+                                    )}
+                                    {transaction.data.kind !== 'profit' && (
                                     <label className="grid gap-1">
-                                        টাকার পরিমাণ
-                                        <input
-                                            inputMode="decimal"
-                                            required
-                                            className={field}
-                                            value={transaction.data.amount}
-                                            onChange={(e) =>
-                                                transaction.setData(
-                                                    'amount',
-                                                    e.target.value,
-                                                )
-                                            }
-                                        />
-                                    </label>
-                                    <label className="grid gap-1">
-                                        {transaction.data.kind === 'profit'
-                                            ? 'মুনাফা ব্যয় হিসাব'
-                                            : 'নগদ / ব্যাংক হিসাব'}
+                                        নগদ / ব্যাংক হিসাব
                                         <select
                                             required
                                             className={field}
@@ -578,6 +590,7 @@ export default function Index({
                                             ))}
                                         </select>
                                     </label>
+                                    )}
                                     <label className="grid gap-1">
                                         তারিখ
                                         <input
@@ -617,7 +630,9 @@ export default function Index({
                                     className={button}
                                     disabled={transaction.processing}
                                 >
-                                    লেনদেন পোস্ট করুন
+                                    {transaction.data.kind === 'profit'
+                                        ? 'প্রোডাক্টের মুনাফা পোস্ট করুন'
+                                        : 'লেনদেন পোস্ট করুন'}
                                 </button>
                             </form>
                         )}

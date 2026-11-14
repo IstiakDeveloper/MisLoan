@@ -9,7 +9,7 @@ use Illuminate\Support\Str;
 
 class ImageCompressionService
 {
-    public const DISK = 'public';
+    public const DISK = 'local';
 
     public const PHOTO_MAX_WIDTH = 800;
 
@@ -209,15 +209,21 @@ class ImageCompressionService
     }
 
     /**
-     * Delete an image file from the public disk.
+     * Delete a stored file from the private disk and any leftover public copy.
      */
     public function delete(?string $path): bool
     {
-        if ($path && Storage::disk(self::DISK)->exists($path)) {
-            return Storage::disk(self::DISK)->delete($path);
+        if (! $path) {
+            return false;
+        }
+        $deleted = false;
+        foreach (array_unique([self::DISK, 'public']) as $disk) {
+            if (Storage::disk($disk)->exists($path)) {
+                $deleted = Storage::disk($disk)->delete($path) || $deleted;
+            }
         }
 
-        return false;
+        return $deleted;
     }
 
     /**

@@ -1,3 +1,4 @@
+import { documentUrl } from '@/lib/documents';
 import React, { useState, useRef } from 'react';
 import {
     Camera,
@@ -119,7 +120,7 @@ export default function ApproverSelectionStep({
         if (typeof propVal === 'string' && propVal.trim() !== '') {
             return propVal.startsWith('http') || propVal.startsWith('blob:')
                 ? propVal
-                : `/storage/${propVal}`;
+                : documentUrl(propVal);
         }
         return null;
     };

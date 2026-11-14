@@ -14,7 +14,9 @@ use App\Models\SavingsProduct;
 use App\Models\Zone;
 use App\Services\ImageCompressionService;
 use App\Services\MemberCodeService;
+use App\Support\PrivateDocuments;
 use App\Support\SavingsFormVisibility;
+use App\Support\StatusTallies;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -24,6 +26,13 @@ use Inertia\Inertia;
 class SavingsApplicationController extends Controller
 {
     use RequiresSuperAdminDeletePin;
+
+    private function jsonNumber(string $column, string $path): string
+    {
+        return DB::connection()->getDriverName() === 'sqlite'
+            ? "CAST(json_extract({$column}, '{$path}') AS REAL)"
+            : "CAST(JSON_UNQUOTE(JSON_EXTRACT({$column}, '{$path}')) AS DECIMAL(15,2))";
+    }
 
     private function ensureApplicationAccessible(SavingsApplication $application): void
     {
@@ -67,7 +76,7 @@ class SavingsApplicationController extends Controller
 
         $filename = $prefix.'_'.uniqid().'.'.$ext;
         $path = $dir.'/'.$filename;
-        Storage::disk('public')->put($path, $data);
+        Storage::disk(ImageCompressionService::DISK)->put($path, $data);
 
         return $path;
     }
@@ -80,11 +89,8 @@ class SavingsApplicationController extends Controller
         if ($value === null || $value === '') {
             return null;
         }
-        if (str_starts_with($value, 'data:') || str_starts_with($value, 'http')) {
-            return $value;
-        }
 
-        return asset('storage/'.ltrim($value, '/'));
+        return PrivateDocuments::url($value);
     }
 
     /**
@@ -190,6 +196,11 @@ class SavingsApplicationController extends Controller
 
         $applications->through(function ($app) {
             $item = $app->toArray();
+            $raw = is_array($app->form_data) ? $app->form_data : [];
+            $item['form_data'] = array_filter([
+                'withdrawal' => isset($raw['withdrawal']) && is_array($raw['withdrawal']) ? $raw['withdrawal'] : null,
+                'monthly_savings_amount' => $raw['monthly_savings_amount'] ?? null,
+            ], fn ($value) => $value !== null);
             $item['savingsProduct'] = $app->savingsProduct;
             $item['savings_product'] = $app->savingsProduct;
             $item['memberAdmission'] = $app->memberAdmission;
@@ -225,36 +236,39 @@ class SavingsApplicationController extends Controller
             $statsBaseQuery->where('created_at', '<=', $dateTo.' 23:59:59');
         }
 
-        $totalDeposit = (float) (clone $statsBaseQuery)->where('status', '!=', 'cancelled')->sum('deposit_amount');
-
-        // Calculate total withdrawn from closed applications
-        $closedApps = (clone $statsBaseQuery)->where('status', 'closed')->get(['id', 'form_data', 'deposit_amount', 'maturity_amount']);
-        $totalWithdrawn = 0.0;
-        foreach ($closedApps as $cApp) {
-            $wData = $cApp->form_data['withdrawal'] ?? null;
-            if ($wData && isset($wData['total_payout'])) {
-                $totalWithdrawn += (float) $wData['total_payout'];
-            } else {
-                $totalWithdrawn += (float) ($cApp->maturity_amount ?: $cApp->deposit_amount);
-            }
-        }
-        $netBalance = max(0, $totalDeposit - $totalWithdrawn);
-
+        $payout = $this->jsonNumber('form_data', '$.withdrawal.total_payout');
+        $withdrawn = "CASE WHEN status = 'closed' AND {$payout} IS NOT NULL THEN {$payout} WHEN status = 'closed' AND maturity_amount IS NOT NULL AND maturity_amount != 0 THEN maturity_amount WHEN status = 'closed' THEN COALESCE(deposit_amount, 0) ELSE 0 END";
+        $tallies = StatusTallies::read($statsBaseQuery, [
+            'total' => 'COUNT(*)',
+            'total_deposit' => "COALESCE(SUM(CASE WHEN status != 'cancelled' THEN deposit_amount ELSE 0 END), 0)",
+            'total_withdrawn' => "COALESCE(SUM({$withdrawn}), 0)",
+            'active' => "COALESCE(SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END), 0)",
+            'matured' => "COALESCE(SUM(CASE WHEN status = 'matured' THEN 1 ELSE 0 END), 0)",
+            'closed' => "COALESCE(SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END), 0)",
+            'pending' => "COALESCE(SUM(CASE WHEN status IN ('draft', 'submitted', 'under_review') THEN 1 ELSE 0 END), 0)",
+            'draft' => "COALESCE(SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END), 0)",
+            'submitted' => "COALESCE(SUM(CASE WHEN status = 'submitted' THEN 1 ELSE 0 END), 0)",
+            'under_review' => "COALESCE(SUM(CASE WHEN status = 'under_review' THEN 1 ELSE 0 END), 0)",
+            'approved' => "COALESCE(SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END), 0)",
+            'rejected' => "COALESCE(SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END), 0)",
+        ]);
+        $totalDeposit = (float) $tallies['total_deposit'];
+        $totalWithdrawn = (float) $tallies['total_withdrawn'];
         $stats = [
-            'total' => (clone $statsBaseQuery)->count(),
-            'total_accounts' => (clone $statsBaseQuery)->count(),
+            'total' => (int) $tallies['total'],
+            'total_accounts' => (int) $tallies['total'],
             'total_deposit' => $totalDeposit,
             'total_withdrawn' => $totalWithdrawn,
-            'net_balance' => $netBalance,
-            'active' => (clone $statsBaseQuery)->where('status', 'active')->count(),
-            'matured' => (clone $statsBaseQuery)->where('status', 'matured')->count(),
-            'closed' => (clone $statsBaseQuery)->where('status', 'closed')->count(),
-            'pending' => (clone $statsBaseQuery)->whereIn('status', ['draft', 'submitted', 'under_review'])->count(),
-            'draft' => (clone $statsBaseQuery)->where('status', 'draft')->count(),
-            'submitted' => (clone $statsBaseQuery)->where('status', 'submitted')->count(),
-            'under_review' => (clone $statsBaseQuery)->where('status', 'under_review')->count(),
-            'approved' => (clone $statsBaseQuery)->where('status', 'approved')->count(),
-            'rejected' => (clone $statsBaseQuery)->where('status', 'rejected')->count(),
+            'net_balance' => max(0, $totalDeposit - $totalWithdrawn),
+            'active' => (int) $tallies['active'],
+            'matured' => (int) $tallies['matured'],
+            'closed' => (int) $tallies['closed'],
+            'pending' => (int) $tallies['pending'],
+            'draft' => (int) $tallies['draft'],
+            'submitted' => (int) $tallies['submitted'],
+            'under_review' => (int) $tallies['under_review'],
+            'approved' => (int) $tallies['approved'],
+            'rejected' => (int) $tallies['rejected'],
         ];
 
         // Branches, areas, zones for location filter dropdowns

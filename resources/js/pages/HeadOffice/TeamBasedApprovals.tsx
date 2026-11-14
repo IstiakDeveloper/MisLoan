@@ -1,3 +1,4 @@
+import { documentUrl } from '@/lib/documents';
 import React, { useMemo, useState } from 'react';
 import { Head, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
@@ -1019,10 +1020,10 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                                                                 onClick={() =>
                                                                     setZoomSignatureUrl(
                                                                         a.approver_signature!.startsWith('http')
-                                                                            ? a.approver_signature!
+                                                                            ? documentUrl(a.approver_signature!)
                                                                             : a.approver_signature!.startsWith('/storage/')
-                                                                            ? a.approver_signature!
-                                                                            : `/storage/${a.approver_signature!}`,
+                                                                            ? documentUrl(a.approver_signature!)
+                                                                            : documentUrl(a.approver_signature!),
                                                                     )
                                                                 }
                                                                 className="focus:outline-none hover:scale-105 transition-transform"
@@ -1031,10 +1032,10 @@ export default function TeamBasedApprovals({ approvals, filters, stats, zones, a
                                                                 <img
                                                                     src={
                                                                         a.approver_signature.startsWith('http')
-                                                                            ? a.approver_signature
+                                                                            ? documentUrl(a.approver_signature)
                                                                             : a.approver_signature.startsWith('/storage/')
-                                                                            ? a.approver_signature
-                                                                            : `/storage/${a.approver_signature}`
+                                                                            ? documentUrl(a.approver_signature)
+                                                                            : documentUrl(a.approver_signature)
                                                                     }
                                                                     alt="Signature"
                                                                     className="h-6 max-h-6 object-contain print:!h-6 print:!max-h-6"

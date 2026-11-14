@@ -1,3 +1,4 @@
+import { documentUrl } from '@/lib/documents';
 import AdminLayout from '@/layouts/admin-layout';
 import { Head, useForm, usePage } from '@inertiajs/react';
 import {
@@ -79,10 +80,10 @@ export default function Edit({ user }: Props) {
 
     // Image previews
     const [photoPreview, setPhotoPreview] = useState<string | null>(
-        user.profile_photo ? `/storage/${user.profile_photo}` : null,
+        user.profile_photo ? documentUrl(user.profile_photo) : null,
     );
     const [signaturePreview, setSignaturePreview] = useState<string | null>(
-        user.signature ? `/storage/${user.signature}` : null,
+        user.signature ? documentUrl(user.signature) : null,
     );
 
     const photoInputRef = useRef<HTMLInputElement>(null);

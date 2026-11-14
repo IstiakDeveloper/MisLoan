@@ -6,6 +6,7 @@ use App\Models\SavingsApplication;
 use App\Models\User;
 use App\Services\Accounting\JournalService;
 use App\Services\Accounting\Money;
+use App\Services\Accounting\PostingDefaults;
 use Brick\Math\BigInteger;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -17,10 +18,11 @@ final class SavingsLedger
 {
     public function __construct(private readonly JournalService $journals) {}
 
-    private function authorize(User $actor, int $branch): void
+    private function authorize(User $actor, int $branch, bool $cashierAllowed = false): void
     {
-        abort_unless($actor->is_active && ! $actor->isBranchAccount() && $actor->isSuperAdmin()
-            && $actor->canAccessBranch($branch), 403);
+        $allowed = $actor->isFinancialAdministrator()
+            || ($cashierAllowed && $actor->isBranchCashier() && (int) $actor->branch_id === $branch);
+        abort_unless($allowed, 403);
     }
 
     private function fail(string $message): never
@@ -108,17 +110,20 @@ final class SavingsLedger
         $value = $this->amount($amount);
 
         return DB::transaction(function () use ($actor, $accountId, $kind, $value, $counterId, $date, $key, $description) {
-            $account = $this->lockedAccount($actor, $accountId);
+            if ($kind === 'profit') {
+                abort_unless($actor->isFinancialAdministrator(), 403);
+            }
+            $account = $this->lockedAccount($actor, $accountId, $kind !== 'profit');
 
             return $this->write($actor, $account, $kind, $kind === 'withdrawal' ? -$value : $value, $counterId, $date, $key, $description);
         }, 3);
     }
 
-    private function lockedAccount(User $actor, int $id): object
+    private function lockedAccount(User $actor, int $id, bool $cashierAllowed = false): object
     {
         $account = DB::table('savings_accounts')->where('id', $id)->lockForUpdate()->first();
         abort_unless($account, 404);
-        $this->authorize($actor, (int) $account->branch_id);
+        $this->authorize($actor, (int) $account->branch_id, $cashierAllowed);
 
         return $account;
     }
@@ -285,6 +290,27 @@ final class SavingsLedger
             $this->lockedAccount($actor, $hold->savings_account_id);
             DB::table('savings_holds')->where('id', $hold->id)->whereNull('released_at')->update(['released_at' => now(), 'released_by' => $actor->id]);
         }, 3);
+    }
+
+    public function configuredProfit(User $actor, int $accountId, string $date, string $key, string $description): object
+    {
+        $account = DB::table('savings_accounts')->find($accountId);
+        abort_unless($account, 404);
+        $snapshot = json_decode($account->product_snapshot, true, 512, JSON_THROW_ON_ERROR);
+        $productId = (int) (is_array($snapshot) ? ($snapshot['id'] ?? 0) : 0);
+        if ($productId < 1) {
+            $this->fail('This savings account has no product, so its profit cannot be calculated.');
+        }
+        $expense = app(PostingDefaults::class)->resolve((int) $account->branch_id, null, $productId)['savings_profit_expense_account_id'];
+        if (! $expense || (int) $expense === (int) $account->liability_account_id) {
+            $this->fail('Map this savings product’s own profit expense account before posting.');
+        }
+        $amount = app(ProductSavingsProfit::class)->duePaisa($account, $date);
+        if ($amount <= 0) {
+            $this->fail('No product profit is due. Profit follows the savings calculator and is zero before one month.');
+        }
+
+        return $this->transact($actor, $accountId, 'profit', Money::format($amount), (int) $expense, $date, $key, $description);
     }
 
     public function close(User $actor, int $accountId): void

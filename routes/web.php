@@ -3,8 +3,10 @@
 use App\Http\Controllers\AccountingController;
 use App\Http\Controllers\AppRegistrationController;
 use App\Http\Controllers\ApprovalController;
+use App\Http\Controllers\CashDeskController;
 use App\Http\Controllers\ClusterHandoverController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\FinancialReportsController;
 use App\Http\Controllers\HeadOffice\ApproverLoanApprovalReportController;
 use App\Http\Controllers\HeadOffice\BranchLoanPendingReportController;
@@ -18,6 +20,7 @@ use App\Http\Controllers\HeadOfficeRecentDeletionController;
 use App\Http\Controllers\HeadOfficeSavingsController;
 use App\Http\Controllers\HeadOfficeTeamBasedApprovalController;
 use App\Http\Controllers\HeadOfficeVerificationController;
+use App\Http\Controllers\InstitutionPolicyController;
 use App\Http\Controllers\IssueProcessingController;
 use App\Http\Controllers\LedgerStatementController;
 use App\Http\Controllers\LoanApplicationController;
@@ -35,7 +38,10 @@ use App\Http\Controllers\MemberCategoryController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\OrganizationController;
 use App\Http\Controllers\PortfolioHandoverController;
+use App\Http\Controllers\PostingDefaultController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\ReceiptController;
+use App\Http\Controllers\RegulatoryMappingController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SamityController;
 use App\Http\Controllers\Savings\SavingsLedgerController;
@@ -62,6 +68,34 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
     Route::get('loan-products/{loanProduct}/quote', LoanQuoteController::class)->name('loan-products.quote');
+    Route::get('documents', [DocumentController::class, 'show'])->name('documents.show');
+
+    Route::middleware('branch.cash')->group(function () {
+        Route::get('cash-desk', [CashDeskController::class, 'index'])->name('cash-desk.index');
+        Route::post('cash-desk/sessions', [CashDeskController::class, 'open'])->name('cash-desk.sessions.store');
+        Route::post('cash-desk/sessions/{session}/submit', [CashDeskController::class, 'submit'])->whereNumber('session')->name('cash-desk.sessions.submit');
+        Route::post('cash-desk/sessions/{session}/review', [CashDeskController::class, 'review'])->whereNumber('session')->name('cash-desk.sessions.review');
+        Route::post('cash-desk/statements', [CashDeskController::class, 'statement'])->name('cash-desk.statements.store');
+        Route::post('cash-desk/statements/{line}/match', [CashDeskController::class, 'match'])->whereNumber('line')->name('cash-desk.statements.match');
+        Route::post('cash-desk/loans/{account}/repayments', [CashDeskController::class, 'repay'])->whereNumber('account')->name('cash-desk.loans.repay');
+        Route::post('cash-desk/savings/{account}/transactions', [CashDeskController::class, 'save'])->whereNumber('account')->name('cash-desk.savings.transact');
+        Route::get('cash-desk/receipts/loans/{transaction}', [ReceiptController::class, 'loan'])->whereNumber('transaction')->name('cash-desk.receipts.loan');
+        Route::get('cash-desk/receipts/savings/{transaction}', [ReceiptController::class, 'savings'])->whereNumber('transaction')->name('cash-desk.receipts.savings');
+    });
+    Route::middleware('financial.admin')->group(function () {
+        Route::get('accounting/posting-defaults', [PostingDefaultController::class, 'index'])->name('accounting.posting-defaults');
+        Route::post('accounting/posting-defaults', [PostingDefaultController::class, 'store'])->name('accounting.posting-defaults.store');
+        Route::get('accounting/institution-policy', [InstitutionPolicyController::class, 'index'])->name('accounting.institution-policy');
+        Route::post('accounting/institution-policy', [InstitutionPolicyController::class, 'store'])->name('accounting.institution-policy.store');
+        Route::post('accounting/product-policies', [InstitutionPolicyController::class, 'snapshot'])->name('accounting.product-policies.store');
+        Route::post('loan-ledger/accounts/{account}/write-off', [InstitutionPolicyController::class, 'writeOff'])->whereNumber('account')->name('loan-ledger.write-off');
+        Route::post('loan-ledger/accounts/{account}/rebate', [InstitutionPolicyController::class, 'rebate'])->whereNumber('account')->name('loan-ledger.rebate');
+        Route::post('loan-ledger/accounts/{account}/reschedule', [InstitutionPolicyController::class, 'reschedule'])->whereNumber('account')->name('loan-ledger.reschedule');
+        Route::post('loan-ledger/reschedules/{reschedule}/review', [InstitutionPolicyController::class, 'reviewReschedule'])->whereNumber('reschedule')->name('loan-ledger.reschedules.review');
+        Route::post('savings-ledger/accounts/{account}/configured-profit', [InstitutionPolicyController::class, 'profit'])->whereNumber('account')->name('savings-ledger.configured-profit');
+        Route::get('accounting/regulatory-mappings', [RegulatoryMappingController::class, 'index'])->name('accounting.regulatory-mappings');
+        Route::post('accounting/regulatory-mappings', [RegulatoryMappingController::class, 'store'])->name('accounting.regulatory-mappings.store');
+    });
 
     Route::get('loan-ledger/accounts/{account}/statement', [LedgerStatementController::class, 'loan'])->middleware('financial.admin')->name('loan-ledger.statement');
     Route::get('savings-ledger/accounts/{account}/statement', [LedgerStatementController::class, 'savings'])->middleware('financial.admin')->name('savings-ledger.statement');

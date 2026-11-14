@@ -237,6 +237,11 @@ export default function LoanWorkspace(props: Props) {
         idempotency_key: crypto.randomUUID(),
         description: '',
     });
+    const rebate = useForm<Record<string, string>>({
+        business_date: today(),
+        idempotency_key: crypto.randomUUID(),
+        description: '',
+    });
     const correction = useForm<Record<string, string>>({
         business_date: today(),
         idempotency_key: crypto.randomUUID(),
@@ -1165,6 +1170,64 @@ export default function LoanWorkspace(props: Props) {
                                                     }
                                                 >
                                                     Review collection
+                                                </button>
+                                            </form>
+                                            <form
+                                                className="mt-5 grid gap-4 border-t border-slate-200 pt-5 sm:grid-cols-2 dark:border-slate-700"
+                                                onSubmit={(event) => {
+                                                    event.preventDefault();
+                                                    rebate.post(
+                                                        `/loan-ledger/accounts/${account.id}/rebate`,
+                                                        {
+                                                            onSuccess: () => {
+                                                                rebate.reset(
+                                                                    'description',
+                                                                );
+                                                                rebate.setData(
+                                                                    'idempotency_key',
+                                                                    crypto.randomUUID(),
+                                                                );
+                                                            },
+                                                        },
+                                                    );
+                                                }}
+                                            >
+                                                <div className="sm:col-span-2 text-sm text-slate-600 dark:text-slate-300">
+                                                    Unearned service charge is
+                                                    rebated from this loan
+                                                    product. Principal stays on
+                                                    its own ledger and the
+                                                    charge hits the product
+                                                    rebate ledger.
+                                                </div>
+                                                {fields(
+                                                    rebate.data,
+                                                    rebate.setData,
+                                                    [
+                                                        [
+                                                            'business_date',
+                                                            'Rebate business date',
+                                                        ],
+                                                        [
+                                                            'description',
+                                                            'Rebate description',
+                                                        ],
+                                                    ],
+                                                )}
+                                                <div className="sm:col-span-2">
+                                                    <FinanceErrors
+                                                        errors={rebate.errors}
+                                                    />
+                                                </div>
+                                                <button
+                                                    className={financeSecondary}
+                                                    disabled={
+                                                        rebate.processing ||
+                                                        account.status !==
+                                                            'active'
+                                                    }
+                                                >
+                                                    Post product rebate
                                                 </button>
                                             </form>
                                         </div>

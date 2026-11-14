@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Member;
 
 use App\Models\LoanApplication;
+use App\Services\Accounting\PostingDefaults;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -20,6 +21,18 @@ class DisburseLoanRequest extends FormRequest
         if ($this->routeIs('loan-ledger.disburse')) {
             $this->merge(['financial_posting' => true]);
         }
+        if (! $this->boolean('financial_posting') && ! $this->routeIs('loan-ledger.disburse')) {
+            return;
+        }
+        $loan = LoanApplication::query()->find($this->route('id'));
+        if (! $loan) {
+            return;
+        }
+        $this->merge(app(PostingDefaults::class)->fillLoan(
+            $this->all(),
+            (int) $loan->branch_id,
+            $loan->loan_product_id ? (int) $loan->loan_product_id : null,
+        ));
     }
 
     /**

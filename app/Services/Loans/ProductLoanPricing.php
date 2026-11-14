@@ -4,6 +4,7 @@ namespace App\Services\Loans;
 
 use App\Models\LoanProduct;
 use App\Services\Accounting\Money;
+use App\Services\Policy\ProductPolicyVersions;
 use Brick\Math\BigRational;
 use Brick\Math\RoundingMode;
 use Illuminate\Validation\ValidationException;
@@ -11,8 +12,9 @@ use Illuminate\Validation\ValidationException;
 /** Existing product tariff pricing; annual reducing rates are not reinterpreted as flat rates. */
 final class ProductLoanPricing
 {
-    public function quote(LoanProduct $product, string $amount, ?int $months = null): array
+    public function quote(LoanProduct $product, string $amount, ?int $months = null, ?string $on = null): array
     {
+        $product = app(ProductPolicyVersions::class)->overlay($product, $on ?? today()->toDateString());
         $principalPaisa = Money::toPaisa($amount);
         $principal = BigRational::of($amount);
         if ($principalPaisa <= 0) {

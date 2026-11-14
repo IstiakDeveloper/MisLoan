@@ -1,3 +1,4 @@
+import { documentUrl } from '@/lib/documents';
 import { Head } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { formatDate } from '@/utils/dateUtils';
@@ -243,7 +244,7 @@ export default function TeamBasedApprovalPrint({ sheet, items }: Props) {
                                                 <div key={i} className="flex flex-col items-center gap-0 py-0.5 border-b border-gray-100 last:border-0 text-[10px]">
                                                     {a.approver_signature && (
                                                         <img
-                                                            src={a.approver_signature.startsWith('http') ? a.approver_signature : a.approver_signature.startsWith('/storage/') ? a.approver_signature : `/storage/${a.approver_signature}`}
+                                                            src={a.approver_signature.startsWith('http') ? documentUrl(a.approver_signature) : a.approver_signature.startsWith('/storage/') ? documentUrl(a.approver_signature) : documentUrl(a.approver_signature)}
                                                             alt=""
                                                             className="h-6 max-h-6 object-contain"
                                                             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}

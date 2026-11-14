@@ -2,21 +2,12 @@
 
 namespace App\Http\Middleware;
 
-use App\Models\LoanApplication;
-use App\Models\LoanApplicationApproval;
-use App\Models\LoanApplicationIssue;
-use App\Models\MemberAdmission;
-use App\Models\MemberAdmissionApproval;
-use App\Models\MemberAdmissionIssue;
-use App\Models\Notification;
 use App\Models\Role;
-use App\Services\ApprovalService;
-use App\Services\ClusterHandoverService;
 use App\Services\CsoAllocationService;
 use App\Services\HoSendCutoffService;
 use App\Services\LoanWorkflowConfigService;
-use Carbon\Carbon;
-use Illuminate\Foundation\Inspiring;
+use App\Services\Navigation\ShellBadges;
+use App\Support\PrivateDocuments;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -73,7 +64,7 @@ class HandleInertiaRequests extends Middleware
         if ($request->user()) {
             $user = $request->user();
 
-            $avatarUrl = $user->profile_photo ? '/storage/'.ltrim($user->profile_photo, '/') : null;
+            $avatarUrl = PrivateDocuments::url($user->profile_photo);
 
             // Build user data manually without loading relationships
             $userData = [
@@ -191,192 +182,20 @@ class HandleInertiaRequests extends Middleware
             }
         }
 
-        // Calculate badge counts for Head Office / SuperAdmin / organizational viewers
         $badgeCounts = [
             'pendingLoanApplications' => 0,
             'pendingAdmissions' => 0,
             'pendingApprovals' => 0,
             'pendingClusterHandovers' => 0,
         ];
-
-        $roleNameForBadges = $userData['role']['name'] ?? null;
-        $canViewHeadOfficeBadges = $userData && (
-            ($userData['has_all_access'] ?? false)
-            || in_array($roleNameForBadges, [
-                'super_admin',
-                'head_office',
-                'cso',
-                'ed',
-                'admf',
-                'dmf',
-                'area_manager',
-                'zone_manager',
-            ], true)
-        );
-
-        if ($canViewHeadOfficeBadges) {
-            $today = Carbon::today();
-            $authUser = $request->user();
-            $restrictBranches = $authUser
-                && ! $authUser->has_all_access
-                && ! $authUser->isSuperAdmin()
-                && ! $authUser->isHeadOffice();
-            $accessibleBranchIds = $restrictBranches
-                ? $authUser->getAccessibleBranches()->pluck('id')->all()
-                : null;
-
-            // Pending Loan Applications: status = pending_head_office, submitted_at = today, no pending issues
-            // Note: Only pending applications are counted, approved applications are excluded
-            $pendingLoanQuery = LoanApplication::where('status', 'pending_head_office')
-                ->whereDate('submitted_at', $today);
-            if (is_array($accessibleBranchIds)) {
-                $pendingLoanQuery->whereIn('branch_id', $accessibleBranchIds ?: [0]);
-            }
-            $pendingLoanIds = $pendingLoanQuery->pluck('id');
-
-            if ($pendingLoanIds->isNotEmpty()) {
-                // Get loan IDs that have pending issues
-                $loansWithIssues = LoanApplicationIssue::whereIn('loan_application_id', $pendingLoanIds)
-                    ->where('status', 'pending')
-                    ->pluck('loan_application_id')
-                    ->unique();
-
-                // Count loans without pending issues
-                $badgeCounts['pendingLoanApplications'] = $pendingLoanIds->diff($loansWithIssues)->count();
-            }
-
-            // Pending Member Admissions: status = pending_head_office, submitted_at = today, no pending issues
-            // Note: Only pending admissions are counted, approved admissions are excluded
-            $pendingAdmissionQuery = MemberAdmission::where('status', 'pending_head_office')
-                ->whereDate('submitted_at', $today);
-            if (is_array($accessibleBranchIds)) {
-                $pendingAdmissionQuery->whereIn('branch_id', $accessibleBranchIds ?: [0]);
-            }
-            $pendingAdmissionIds = $pendingAdmissionQuery->pluck('id');
-
-            if ($pendingAdmissionIds->isNotEmpty()) {
-                // Get admission IDs that have pending issues
-                $admissionsWithIssues = MemberAdmissionIssue::whereIn('member_admission_id', $pendingAdmissionIds)
-                    ->where('status', 'pending')
-                    ->pluck('member_admission_id')
-                    ->unique();
-
-                // Count admissions without pending issues
-                $badgeCounts['pendingAdmissions'] = $pendingAdmissionIds->diff($admissionsWithIssues)->count();
-            }
-
-            // Pending Approvals: LoanApplicationApproval + MemberAdmissionApproval where status = pending
-            $pendingLoanApprovals = LoanApplicationApproval::where('status', 'pending')
-                ->whereHas('loanApplication', function ($query) {
-                    $query->whereIn('status', ['submitted', 'under_review', 'pending_cancellation', 'pending_amount_approval']);
-                })
-                ->count();
-
-            $pendingMemberApprovals = MemberAdmissionApproval::where('status', 'pending')
-                ->whereHas('memberAdmission', function ($query) {
-                    $query->whereIn('status', ['submitted', 'under_review']);
-                })
-                ->count();
-
-            $badgeCounts['pendingApprovals'] = $pendingLoanApprovals + $pendingMemberApprovals;
-
-        }
-
-        // Verification Badge Count:
-        // - Head Office/Super Admin/ED: Count items where branch has replied and waiting for HO approval.
-        // - Branch users/Approvers: Count items where HO raised issues and branch reply is pending.
-        if ($userData && $request->user()) {
-            $authUser = $request->user();
-            $isHoApprover = ($userData['has_all_access'] ?? false)
-                || in_array($roleNameForBadges, ['super_admin', 'head_office', 'ed'], true);
-
-            if ($isHoApprover) {
-                $repliedAdmissionCount = MemberAdmission::whereNotIn('status', ['approved', 'rejected', 'cancelled'])
-                    ->where(function ($q) {
-                        $q->whereHas('issues', fn ($iq) => $iq->whereNotNull('zm_approved_at'))
-                            ->orWhere(fn ($sq) => $sq->whereNotNull('revision_comments')->where('revision_comments', '!=', '')->where('status', 'pending_head_office'));
-                    })
-                    ->count();
-
-                $repliedLoanCount = LoanApplication::whereNotIn('status', ['approved', 'rejected', 'cancelled', 'pending_disbursement', 'disbursed'])
-                    ->whereHas('issues', fn ($iq) => $iq->whereNotNull('zm_approved_at'))
-                    ->count();
-
-                $badgeCounts['pendingVerifications'] = $repliedAdmissionCount + $repliedLoanCount;
-            } elseif ($roleNameForBadges === 'zone_manager') {
-                $accessibleBranchIds = $authUser->getAccessibleBranches()->pluck('id')->all();
-
-                $pendingAdmissionQuery = MemberAdmission::whereNotIn('status', ['approved', 'rejected', 'cancelled'])
-                    ->whereIn('branch_id', $accessibleBranchIds ?: [0])
-                    ->where(function ($q) {
-                        $q->whereHas('issues', fn ($iq) => $iq->where('status', 'pending')->whereNull('zm_approved_at'))
-                            ->orWhere('status', 'needs_revision');
-                    });
-
-                $pendingLoanQuery = LoanApplication::whereNotIn('status', ['approved', 'rejected', 'cancelled', 'pending_disbursement', 'disbursed'])
-                    ->whereIn('branch_id', $accessibleBranchIds ?: [0])
-                    ->where(function ($q) {
-                        $q->whereHas('issues', fn ($iq) => $iq->where('status', 'pending')->whereNull('zm_approved_at'))
-                            ->orWhere('status', 'needs_revision');
-                    });
-
-                $badgeCounts['pendingVerifications'] = $pendingAdmissionQuery->count() + $pendingLoanQuery->count();
-            } else {
-                $accessibleBranchIds = $authUser->getAccessibleBranches()->pluck('id')->all();
-
-                $pendingAdmissionQuery = MemberAdmission::whereNotIn('status', ['approved', 'rejected', 'cancelled'])
-                    ->whereIn('branch_id', $accessibleBranchIds ?: [0])
-                    ->where(function ($q) {
-                        $q->whereHas('issues', fn ($iq) => $iq->where('status', 'pending')->where(function ($sq) {
-                            $sq->whereNull('resolution_note')->orWhere('resolution_note', '');
-                        }))->orWhere('status', 'needs_revision');
-                    });
-
-                $pendingLoanQuery = LoanApplication::whereNotIn('status', ['approved', 'rejected', 'cancelled', 'pending_disbursement', 'disbursed'])
-                    ->whereIn('branch_id', $accessibleBranchIds ?: [0])
-                    ->where(function ($q) {
-                        $q->whereHas('issues', fn ($iq) => $iq->where('status', 'pending')->where(function ($sq) {
-                            $sq->whereNull('response_message')->orWhere('response_message', '');
-                        }))->orWhere('status', 'needs_revision');
-                    });
-
-                if ($roleNameForBadges === 'field_officer') {
-                    $pendingAdmissionQuery->assignedToOfficer((int) $authUser->id);
-                    $pendingLoanQuery->where('submitted_by', $authUser->id);
-                }
-
-                $badgeCounts['pendingVerifications'] = $pendingAdmissionQuery->count() + $pendingLoanQuery->count();
-            }
-        }
-
-        // যার কাছে পেন্ডিং আছে শুধু তারই ব্যাজ: every authenticated user gets their own pending count (branch_manager, area, zone, admf, dmf, ed)
-        // Organizational viewers with has_all_access still need personal pending badge on Approvals nav.
-        if ($userData && $request->user() && (
-            ! ($userData['has_all_access'] ?? false)
-            || in_array($roleNameForBadges, ['ed', 'admf', 'dmf', 'area_manager', 'zone_manager'], true)
-        )) {
-            $approvalService = app(ApprovalService::class);
-            $memberCount = $approvalService->getPendingApprovalsForUser($request->user())->count();
-            $loanCount = LoanApplicationApproval::where('user_id', $request->user()->id)
-                ->where('status', 'pending')
-                ->whereHas('loanApplication', fn ($q) => $q->whereIn('status', ['submitted', 'under_review', 'pending_cancellation', 'pending_amount_approval']))
-                ->count();
-            $badgeCounts['pendingApprovals'] = $memberCount + $loanCount;
-        }
-
-        if ($userData && $request->user() && in_array($roleNameForBadges, [Role::BRANCH_USER, Role::BRANCH_MANAGER], true)) {
-            $badgeCounts['pendingClusterHandovers'] = app(ClusterHandoverService::class)
-                ->pendingMemberCount($request->user());
-        }
-
         $notifications = [];
         $unreadNotificationsCount = 0;
-        if ($request->user()) {
-            $unreadNotificationsCount = Notification::where('user_id', $request->user()->id)->unread()->count();
-            $notifications = Notification::where('user_id', $request->user()->id)
-                ->orderBy('created_at', 'desc')
-                ->take(8)
-                ->get();
+        if ($user = $request->user()) {
+            $shell = app(ShellBadges::class);
+            $badgeCounts = $shell->forUser($user);
+            $feed = $shell->notifications($user);
+            $unreadNotificationsCount = $feed['unread'];
+            $notifications = $feed['items'];
         }
 
         return array_merge(parent::share($request), [

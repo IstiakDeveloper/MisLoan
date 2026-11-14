@@ -1,3 +1,4 @@
+import { documentUrl } from '@/lib/documents';
 import React, { useState, useEffect, useRef } from 'react';
 import { Head, Link, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
@@ -653,7 +654,7 @@ export default function Index({
                                     <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-800 text-white flex items-center justify-center font-extrabold text-2xl sm:text-3xl shadow-md shrink-0 overflow-hidden border-2 border-white ring-2 ring-emerald-500/20">
                                         {memberData.member.customer_photo_path ? (
                                             <img
-                                                src={`/storage/${memberData.member.customer_photo_path}`}
+                                                src={documentUrl(memberData.member.customer_photo_path)}
                                                 alt="Member"
                                                 className="w-full h-full object-cover"
                                             />
@@ -1146,7 +1147,7 @@ export default function Index({
                                                             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-800 text-white flex items-center justify-center font-bold text-sm shadow-xs shrink-0 overflow-hidden">
                                                                 {loan.customer_photo_path ? (
                                                                     <img
-                                                                        src={`/storage/${loan.customer_photo_path}`}
+                                                                        src={documentUrl(loan.customer_photo_path)}
                                                                         alt={loan.applicant_name_bn}
                                                                         className="w-full h-full object-cover"
                                                                     />
@@ -1269,7 +1270,7 @@ export default function Index({
                                                     <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-800 text-white flex items-center justify-center font-bold text-sm shadow-xs shrink-0 overflow-hidden">
                                                         {loan.customer_photo_path ? (
                                                             <img
-                                                                src={`/storage/${loan.customer_photo_path}`}
+                                                                src={documentUrl(loan.customer_photo_path)}
                                                                 alt={loan.applicant_name_bn}
                                                                 className="w-full h-full object-cover"
                                                             />

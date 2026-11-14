@@ -5,6 +5,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 
 beforeEach(function () {
+    Storage::fake('local');
     Storage::fake('public');
 });
 
@@ -18,10 +19,10 @@ it('converts a png photo to a small webp image', function () {
         ->and($path)->toStartWith('admissions/customer_photos/')
         ->and($path)->toEndWith('.'.$extension);
 
-    Storage::disk('public')->assertExists($path);
-    expect(Storage::disk('public')->size($path))->toBeLessThan(ImageCompressionService::PHOTO_MAX_BYTES);
+    Storage::disk('local')->assertExists($path);
+    expect(Storage::disk('local')->size($path))->toBeLessThan(ImageCompressionService::PHOTO_MAX_BYTES);
 
-    $info = getimagesize(Storage::disk('public')->path($path));
+    $info = getimagesize(Storage::disk('local')->path($path));
     expect($info[0])->toBeLessThanOrEqual(ImageCompressionService::PHOTO_MAX_WIDTH)
         ->and($info[2])->toBe(ImageCompressionService::supportsWebp() ? IMAGETYPE_WEBP : IMAGETYPE_JPEG);
 });
@@ -34,9 +35,9 @@ it('resizes wide document scans and stores them as webp', function () {
 
     expect($path)->toBeString()->toEndWith('.'.$extension);
 
-    $info = getimagesize(Storage::disk('public')->path($path));
+    $info = getimagesize(Storage::disk('local')->path($path));
     expect($info[0])->toBe(ImageCompressionService::DOCUMENT_MAX_WIDTH)
-        ->and(Storage::disk('public')->size($path))->toBeLessThan(ImageCompressionService::DOCUMENT_MAX_BYTES);
+        ->and(Storage::disk('local')->size($path))->toBeLessThan(ImageCompressionService::DOCUMENT_MAX_BYTES);
 });
 
 it('stores pdf documents without converting them', function () {
@@ -47,13 +48,13 @@ it('stores pdf documents without converting them', function () {
     $path = app(ImageCompressionService::class)->compressDocument($file, 'admissions/customer_nids');
 
     expect($path)->toEndWith('.pdf');
-    Storage::disk('public')->assertExists($path);
-    expect(Storage::disk('public')->get($path))->toStartWith('%PDF');
+    Storage::disk('local')->assertExists($path);
+    expect(Storage::disk('local')->get($path))->toStartWith('%PDF');
 });
 
 it('recompresses a stored png and replaces it with webp', function () {
     $source = noisyPngPath(1200, 900);
-    Storage::disk('public')->put('signatures/users/big.png', file_get_contents($source));
+    Storage::disk('local')->put('signatures/users/big.png', file_get_contents($source));
     @unlink($source);
 
     $extension = ImageCompressionService::outputExtension();
@@ -65,8 +66,8 @@ it('recompresses a stored png and replaces it with webp', function () {
     );
 
     expect($newPath)->toBe('signatures/users/big.'.$extension);
-    Storage::disk('public')->assertMissing('signatures/users/big.png');
-    Storage::disk('public')->assertExists('signatures/users/big.'.$extension);
+    Storage::disk('local')->assertMissing('signatures/users/big.png');
+    Storage::disk('local')->assertExists('signatures/users/big.'.$extension);
 });
 
 it('converts stored jpegs to webp', function () {
@@ -77,7 +78,7 @@ it('converts stored jpegs to webp', function () {
     imagejpeg($image, $tmp, 80);
     imagedestroy($image);
 
-    Storage::disk('public')->put('avatars/users/old.jpg', file_get_contents($tmp));
+    Storage::disk('local')->put('avatars/users/old.jpg', file_get_contents($tmp));
     @unlink($tmp);
 
     $extension = ImageCompressionService::outputExtension();
@@ -90,9 +91,9 @@ it('converts stored jpegs to webp', function () {
 
     expect($path)->toBe('avatars/users/old.'.$extension);
     if ($extension === 'webp') {
-        Storage::disk('public')->assertMissing('avatars/users/old.jpg');
+        Storage::disk('local')->assertMissing('avatars/users/old.jpg');
     }
-    Storage::disk('public')->assertExists($path);
+    Storage::disk('local')->assertExists($path);
 });
 
 it('skips webp files that are already within size and dimension limits', function () {
@@ -108,7 +109,7 @@ it('skips webp files that are already within size and dimension limits', functio
     imagedestroy($image);
 
     $stored = 'avatars/users/small.'.ImageCompressionService::outputExtension();
-    Storage::disk('public')->put($stored, file_get_contents($tmp));
+    Storage::disk('local')->put($stored, file_get_contents($tmp));
     @unlink($tmp);
 
     $path = app(ImageCompressionService::class)->compressStoredFile(
@@ -123,27 +124,27 @@ it('skips webp files that are already within size and dimension limits', functio
 
 it('compresses existing public-disk png files via artisan', function () {
     $source = noisyPngPath(1200, 800);
-    Storage::disk('public')->put('signatures/users/huge.png', file_get_contents($source));
+    Storage::disk('local')->put('signatures/users/huge.png', file_get_contents($source));
     @unlink($source);
 
     $this->artisan('images:compress-existing')->assertSuccessful();
 
     $extension = ImageCompressionService::outputExtension();
-    Storage::disk('public')->assertMissing('signatures/users/huge.png');
-    Storage::disk('public')->assertExists('signatures/users/huge.'.$extension);
-    expect(Storage::disk('public')->size('signatures/users/huge.'.$extension))
+    Storage::disk('local')->assertMissing('signatures/users/huge.png');
+    Storage::disk('local')->assertExists('signatures/users/huge.'.$extension);
+    expect(Storage::disk('local')->size('signatures/users/huge.'.$extension))
         ->toBeLessThan(ImageCompressionService::SIGNATURE_MAX_BYTES);
 });
 
 it('lists stored images during a dry run without writing', function () {
     $source = noisyPngPath(400, 400);
-    Storage::disk('public')->put('admissions/customer_photos/keep.png', file_get_contents($source));
+    Storage::disk('local')->put('admissions/customer_photos/keep.png', file_get_contents($source));
     @unlink($source);
 
     $this->artisan('images:compress-existing', ['--dry-run' => true])->assertSuccessful();
 
-    Storage::disk('public')->assertExists('admissions/customer_photos/keep.png');
-    Storage::disk('public')->assertMissing('admissions/customer_photos/keep.'.ImageCompressionService::outputExtension());
+    Storage::disk('local')->assertExists('admissions/customer_photos/keep.png');
+    Storage::disk('local')->assertMissing('admissions/customer_photos/keep.'.ImageCompressionService::outputExtension());
 });
 
 it('skips already converted webp files when only-unconverted is set', function () {
@@ -161,18 +162,18 @@ it('skips already converted webp files when only-unconverted is set', function (
     imagedestroy($converted);
 
     $png = noisyPngPath(600, 400);
-    Storage::disk('public')->put('signatures/users/done.'.$extension, file_get_contents($convertedTmp));
-    Storage::disk('public')->put('signatures/users/pending.png', file_get_contents($png));
+    Storage::disk('local')->put('signatures/users/done.'.$extension, file_get_contents($convertedTmp));
+    Storage::disk('local')->put('signatures/users/pending.png', file_get_contents($png));
     @unlink($convertedTmp);
     @unlink($png);
 
-    $before = Storage::disk('public')->get('signatures/users/done.'.$extension);
+    $before = Storage::disk('local')->get('signatures/users/done.'.$extension);
 
     $this->artisan('images:compress-existing', ['--only-unconverted' => true])->assertSuccessful();
 
-    expect(Storage::disk('public')->get('signatures/users/done.'.$extension))->toBe($before);
-    Storage::disk('public')->assertMissing('signatures/users/pending.png');
-    Storage::disk('public')->assertExists('signatures/users/pending.'.$extension);
+    expect(Storage::disk('local')->get('signatures/users/done.'.$extension))->toBe($before);
+    Storage::disk('local')->assertMissing('signatures/users/pending.png');
+    Storage::disk('local')->assertExists('signatures/users/pending.'.$extension);
 });
 
 function noisyPngPath(int $width, int $height): string

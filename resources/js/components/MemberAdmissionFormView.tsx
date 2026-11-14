@@ -1,3 +1,4 @@
+import { documentUrl } from '@/lib/documents';
 import React from 'react';
 import { MemberAdmission } from '@/types/memberAdmission';
 import { formatDateBangla, toBanglaDigits } from '@/utils/dateUtils';
@@ -210,7 +211,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                                     style={{ width: 88, height: 88 }}
                                 >
                                     {admission.customer_photo_path ? (
-                                        <img src={`/storage/${admission.customer_photo_path}`} alt="Member" className="w-full h-full object-cover" />
+                                        <img src={documentUrl(admission.customer_photo_path)} alt="Member" className="w-full h-full object-cover" />
                                     ) : (
                                         <span>ছবি</span>
                                     )}
@@ -524,7 +525,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                                     <span className="text-[14px] font-bold shrink-0">আবেদনকারীর স্বাক্ষর:</span>
                                     <span className="border-b border-dotted border-gray-700 flex-1 min-h-[46px] flex items-end">
                                         {(admission.applicant_signature_path || (admission as any).applicant_signature) ? (
-                                            <img src={`/storage/${admission.applicant_signature_path || (admission as any).applicant_signature}`} alt="" className="h-10 object-contain" />
+                                            <img src={documentUrl(admission.applicant_signature_path || (admission as any).applicant_signature)} alt="" className="h-10 object-contain" />
                                         ) : null}
                                     </span>
                                 </div>
@@ -550,7 +551,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                                     <span className="text-[14px] font-bold shrink-0">অভিভাবকের স্বাক্ষর:</span>
                                     <span className="border-b border-dotted border-gray-700 flex-1 min-h-[46px] flex items-end">
                                         {(admission as any).guardian_signature_path ? (
-                                            <img src={`/storage/${(admission as any).guardian_signature_path}`} alt="" className="h-10 object-contain" />
+                                            <img src={documentUrl((admission as any).guardian_signature_path)} alt="" className="h-10 object-contain" />
                                         ) : null}
                                     </span>
                                 </div>
@@ -563,7 +564,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                                 <div className="text-center">
                                     <div className="border-b-2 border-dotted border-gray-700 flex items-end justify-center mb-1.5" style={{ height: '82px' }}>
                                         {(admission as any).surveyor_signature_path ? (
-                                            <img src={`/storage/${(admission as any).surveyor_signature_path}`} alt="" className="max-h-14 w-auto object-contain" />
+                                            <img src={documentUrl((admission as any).surveyor_signature_path)} alt="" className="max-h-14 w-auto object-contain" />
                                         ) : null}
                                     </div>
                                     <p className="text-[14px] font-bold text-gray-900">অফিসারের স্বাক্ষর ও তারিখ</p>
@@ -574,7 +575,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                                 <div className="text-center">
                                     <div className="border-b-2 border-dotted border-gray-700 flex items-end justify-center mb-1.5" style={{ height: '82px' }}>
                                         {(admission as any).submitted_by_signature_path ? (
-                                             <img src={`/storage/${(admission as any).submitted_by_signature_path}`} alt="" className="max-h-14 w-auto object-contain" />
+                                             <img src={documentUrl((admission as any).submitted_by_signature_path)} alt="" className="max-h-14 w-auto object-contain" />
                                         ) : null}
                                     </div>
                                     <p className="text-[14px] font-bold text-gray-900">শাখা ব্যবস্থাপকের স্বাক্ষর ও তারিখ</p>
@@ -585,7 +586,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                                 <div className="text-center">
                                     <div className="border-b-2 border-dotted border-gray-700 flex items-end justify-center mb-1.5" style={{ height: '82px' }}>
                                         {admission.approvals?.filter((a: any) => a.status === 'approved')[0]?.approver_signature ? (
-                                            <img src={`/storage/${admission.approvals.filter((a: any) => a.status === 'approved')[0].approver_signature}`} alt="" className="max-h-14 w-auto object-contain" />
+                                            <img src={documentUrl(admission.approvals.filter((a: any) => a.status === 'approved')[0].approver_signature)} alt="" className="max-h-14 w-auto object-contain" />
                                         ) : null}
                                     </div>
                                     <p className="text-[14px] font-bold text-gray-900">হিসাবরক্ষকের স্বাক্ষর ও তারিখ</p>

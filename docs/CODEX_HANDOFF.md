@@ -4,6 +4,8 @@
 
 > Accounting UI update (2026-11-10): The mixed `/accounting` screen has been replaced by task-based overview, vouchers, guided creation, posted journals, chart, periods and selected-report screens. See [ACCOUNTING_UX_PLAN.md](ACCOUNTING_UX_PLAN.md) for the design, implementation and limits. Keep pending vouchers distinct from posted money; cashier/day-end and bank reconciliation remain roadmap work.
 
+> Local test-data update (2026-11-10): The user explicitly selected rebuilding all October 2026 disbursed contracts from **current products for test use only**. The local `mis-loan` database now contains 3,614 rebuilt/posted October loans, test GL/funding and October/November periods for 42 branches. This overrides the earlier read-only local-data state for this specific test task. Originals were privately backed up; no repayments were fabricated. See [TEST_FINANCE_SEED.md](TEST_FINANCE_SEED.md) before using or changing this dataset. Rebuilt terms are synthetic and must not be treated as historical signed contracts or production-ready balances.
+
 এই নথি নতুন Codex session-এ প্রথমে পড়তে হবে। এটি **কাজের breakdown ও যাচাইকৃত অবস্থার বিবরণ**, production-ready বা ১০০% completion certificate নয়।
 
 ## ১. লক্ষ্য ও স্থায়ী সিদ্ধান্ত
@@ -124,8 +126,8 @@ MySQL feature tests আলাদা disposable test database-এ চালাত
 ## ৭. Deployment-sensitive পরিবর্তন
 
 - `accounting_vouchers` ও `savings_correction_requests`-সহ প্রয়োজনীয় নতুন migrations staging-এ আগে rehearse করতে হবে। Existing schema দেখে skip/rewrite করে migration history falsify করা যাবে না।
-- `FINANCIAL_MFA_REQUIRED=true` default। Production-এ bypass flag বন্ধ করে সমস্যার সমাধান করবে না; Settings → Two-Factor দিয়ে enrollment/confirmation ও fresh login যাচাই করো।
-- দুটি আলাদা personal active SuperAdmin reviewer দরকার। Shared branch identity reviewer নয়। Recovery codes এবং encryption key-এর protected recovery ব্যবস্থা লাগবে।
+- দুই-ফ্যাক্টর সরানো হয়েছে। লগইন পাসওয়ার্ড। `FINANCIAL_MFA_REQUIRED` আর কিছু করে না। Settings → Two-Factor এখনকার পথ নয়।
+- দুটি আলাদা personal active SuperAdmin reviewer দরকার। Shared branch identity reviewer নয়।
 - Existing Head Office staff এখন account/role/session mutation করতে পারবেন না; personal SuperAdmin লাগে। প্রতিষ্ঠানের অনুমোদিত admin matrix-এর সঙ্গে এই boundary মিলিয়ে নিতে হবে।
 - নতুন interactive personal password validation minimum 8; branch PIN আলাদা। Existing/HRM-imported credential policy ও rotation আলাদাভাবে যাচাই করতে হবে।
 - মূল application/admission workflow ও নতুন financial ledger আলাদা। পুরোনো disbursed application বা report থাকলেই verified financial opening তৈরি হয়েছে ধরে নিও না।

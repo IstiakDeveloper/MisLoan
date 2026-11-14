@@ -55,8 +55,18 @@ final class SavingsLedgerController extends Controller
     public function transact(Request $request, int $account, SavingsLedger $ledger)
     {
         $this->authorize($request);
+        if ($request->input('kind') === 'profit') {
+            $data = $request->validate([
+                'business_date' => ['required', 'date_format:Y-m-d'],
+                'idempotency_key' => ['required', 'string', 'max:100'],
+                'description' => ['required', 'string', 'max:1000'],
+            ]);
+            $entry = $ledger->configuredProfit($request->user(), $account, $data['business_date'], $data['idempotency_key'], $data['description']);
+
+            return back()->with('success', 'Savings profit posted from the product calculator: '.$entry->reference);
+        }
         $data = $request->validate([
-            'kind' => ['required', Rule::in(['deposit', 'withdrawal', 'profit'])],
+            'kind' => ['required', Rule::in(['deposit', 'withdrawal'])],
             'amount' => ['required', 'string', 'max:30'],
             'counter_account_id' => ['required', 'integer', 'exists:ledger_accounts,id'],
             'business_date' => ['required', 'date_format:Y-m-d'],

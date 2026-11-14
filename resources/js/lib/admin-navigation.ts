@@ -143,9 +143,13 @@ const itemLabels: Record<string, string> = {
     'Team Approval Review': 'দলভিত্তিক অনুমোদন যাচাই',
     'Team Based Approvals': 'দলভিত্তিক অনুমোদন',
     'Accounting Overview': 'হিসাবের সারসংক্ষেপ',
+    'Cash Desk': 'ক্যাশ ডেস্ক',
     'Vouchers & Approvals': 'ভাউচার ও অনুমোদন',
     'Posted Journals': 'পোস্টেড জার্নাল',
     'Chart of Accounts': 'হিসাবের তালিকা (GL)',
+    'Posting Defaults': 'GL ডিফল্ট',
+    'Institution Policy': 'প্রতিষ্ঠানের নীতি',
+    'Regulatory Mappings': 'নিয়ন্ত্রক ম্যাপিং',
     'Accounting Periods': 'হিসাবকাল',
     'Financial Statements & Ledger': 'আর্থিক বিবরণী ও GL Ledger',
     'App Registration Report': 'App নিবন্ধন প্রতিবেদন',
@@ -198,6 +202,11 @@ export function getAdminNavigation(
         superAdmin = role === 'super_admin';
     const personal = user.account_type !== 'branch';
     const financial = superAdmin && personal && user.is_active !== false;
+    const cashier =
+        role === 'branch_manager' &&
+        personal &&
+        user.branch_id != null &&
+        user.is_active !== false;
     const office =
         ['super_admin', 'head_office', 'ed', 'cso'].includes(role) &&
         !branch &&
@@ -323,6 +332,7 @@ export function getAdminNavigation(
             item('Team Based Approvals', '/team-based-approvals', FileCheck),
     ]);
     add('accounting', 'Accounting & Cash', Landmark, [
+        (financial || cashier) && item('Cash Desk', '/cash-desk', Wallet),
         financial && item('Accounting Overview', '/accounting', Landmark),
         financial &&
             item('Vouchers & Approvals', '/accounting/vouchers', FileCheck),
@@ -408,6 +418,16 @@ export function getAdminNavigation(
     add('accounting-setup', 'Accounting setup', Settings, [
         financial &&
             item('Chart of Accounts', '/accounting/accounts', Landmark),
+        financial &&
+            item('Posting Defaults', '/accounting/posting-defaults', Landmark),
+        financial &&
+            item('Institution Policy', '/accounting/institution-policy', Settings),
+        financial &&
+            item(
+                'Regulatory Mappings',
+                '/accounting/regulatory-mappings',
+                FileSpreadsheet,
+            ),
         financial &&
             item('Accounting Periods', '/accounting/periods', CalendarDays),
     ]);

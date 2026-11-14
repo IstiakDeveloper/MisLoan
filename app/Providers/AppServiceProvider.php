@@ -3,6 +3,8 @@
 namespace App\Providers;
 
 use App\Models\LoanApplication;
+use App\Models\MemberAdmission;
+use App\Services\Members\MemberIdentity;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Support\Facades\DB;
@@ -28,6 +30,10 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Password::defaults(fn () => Password::min(8));
+
+        MemberAdmission::created(function (MemberAdmission $admission): void {
+            app(MemberIdentity::class)->attachNew($admission);
+        });
 
         // Set JSON encoding options to handle UTF-8 properly
         // JSON_PARTIAL_OUTPUT_ON_ERROR allows partial JSON output on encoding errors

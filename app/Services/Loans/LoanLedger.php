@@ -6,6 +6,8 @@ use App\Models\LoanApplication;
 use App\Models\User;
 use App\Services\Accounting\JournalService;
 use App\Services\Accounting\Money;
+use App\Services\Accounting\PostingDefaults;
+use App\Services\Policy\InstitutionPolicy;
 use Brick\Math\BigInteger;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -21,9 +23,11 @@ final class LoanLedger
         throw ValidationException::withMessages(['ledger' => $message]);
     }
 
-    private function authorize(User $actor, int $branch): void
+    private function authorize(User $actor, int $branch, bool $cashierAllowed = false): void
     {
-        abort_unless($actor->is_active && ! $actor->isBranchAccount() && $actor->isSuperAdmin() && $actor->canAccessBranch($branch), 403);
+        $allowed = $actor->isFinancialAdministrator()
+            || ($cashierAllowed && $actor->isBranchCashier() && (int) $actor->branch_id === $branch);
+        abort_unless($allowed, 403);
     }
 
     private function amount(string $amount): int
@@ -96,8 +100,8 @@ final class LoanLedger
                 $this->fail('Disbursement posting must use the full original amount and original disbursement date. Use an audited opening for a partly repaid loan.');
             }
             $this->counter($principalAccount, 'asset');
-            if ($principalAccount === $counterAccount) {
-                $this->fail('The cash/bank offset must differ from the loan principal control account.');
+            if ($principalAccount === $counterAccount || $principalAccount === $incomeAccount) {
+                $this->fail('Principal and service charge must use different ledger accounts, and cash cannot be the principal account.');
             }
             $this->counter($incomeAccount, 'income');
             $this->counter($counterAccount, $mode === 'disbursement' ? 'asset' : 'equity');
@@ -131,11 +135,11 @@ final class LoanLedger
         }, 3);
     }
 
-    private function locked(User $actor, int $id): array
+    private function locked(User $actor, int $id, bool $cashierAllowed = false): array
     {
         $account = DB::table('loan_accounts')->where('id', $id)->lockForUpdate()->first();
         abort_unless($account, 404);
-        $this->authorize($actor, (int) $account->branch_id);
+        $this->authorize($actor, (int) $account->branch_id, $cashierAllowed);
         $loan = LoanApplication::query()->lockForUpdate()->findOrFail($account->loan_application_id);
         if (! in_array($loan->status, [LoanApplication::STATUS_DISBURSED, LoanApplication::STATUS_REPAID], true)) {
             $this->fail('The source loan is in a conflicting workflow state.');
@@ -207,7 +211,7 @@ final class LoanLedger
         }
 
         return DB::transaction(function () use ($actor, $accountId, $principal, $charge, $cashAccount, $date, $key, $description) {
-            [$account, $loan] = $this->locked($actor, $accountId);
+            [$account, $loan] = $this->locked($actor, $accountId, true);
 
             return $this->payment($actor, $account, $loan, -$principal, -$charge, $cashAccount, $date, $key, $description);
         }, 3);
@@ -315,6 +319,78 @@ final class LoanLedger
         ]);
 
         return DB::table('loan_transactions')->find($id);
+    }
+
+    public function writeOff(User $actor, int $accountId, string $principalAmount, string $date, string $key, string $description): object
+    {
+        $expense = app(InstitutionPolicy::class)->row()->write_off_expense_account_id;
+        if (! $expense) {
+            $this->fail('Save a write-off expense account before posting.');
+        }
+
+        return $this->policyMovement($actor, $accountId, -$this->amount($principalAmount), 0, (int) $expense, 'expense', (int) $expense, $date, $key, $description, 'write_off', true);
+    }
+
+    public function rebate(User $actor, int $accountId, string $date, string $key, string $description): object
+    {
+        $account = DB::table('loan_accounts')->find($accountId);
+        abort_unless($account, 404);
+        $productId = (int) DB::table('loan_applications')->where('id', $account->loan_application_id)->value('loan_product_id');
+        if ($productId < 1) {
+            $this->fail('This loan has no product, so its service-charge rebate cannot be taken from the contract.');
+        }
+        $expense = app(PostingDefaults::class)->resolve((int) $account->branch_id, $productId, null)['loan_rebate_expense_account_id'];
+        if (! $expense) {
+            $this->fail('Map this loan product’s rebate expense account before posting.');
+        }
+        $outstanding = $this->balances($accountId, $date)['charge_paisa'];
+        $rebate = min(app(ProductServiceCharge::class)->unearnedPaisa($account, $date), $outstanding);
+        if ($rebate <= 0) {
+            $this->fail('No unearned service charge remains on this product contract.');
+        }
+
+        return $this->policyMovement($actor, $accountId, 0, -$rebate, (int) $expense, 'expense', (int) $expense, $date, $key, $description, 'rebate', false);
+    }
+
+    private function policyMovement(User $actor, int $accountId, int $principal, int $charge, int $counter, string $counterType, int $expenseId, string $date, string $key, string $description, string $kind, bool $creditPrincipal): object
+    {
+        return DB::transaction(function () use ($actor, $accountId, $principal, $charge, $counter, $counterType, $expenseId, $date, $key, $description, $kind, $creditPrincipal) {
+            [$account, $loan] = $this->locked($actor, $accountId);
+            $this->date($date);
+            if (! preg_match('/^[A-Za-z0-9_-]{8,100}$/D', $key) || trim($description) === '' || mb_strlen($description) > 1000) {
+                $this->fail('A valid request key and description are required.');
+            }
+            $hash = hash('sha256', json_encode([$kind, $principal, $charge, $counter, $date, $description, $actor->id], JSON_THROW_ON_ERROR));
+            $existing = DB::table('loan_transactions')->where('loan_account_id', $account->id)->where('idempotency_key', $key)->first();
+            if ($existing) {
+                if (! hash_equals($existing->payload_hash, $hash)) {
+                    $this->fail('This request key was already used for another posting.');
+                }
+
+                return $existing;
+            }
+            if ($date < $account->opened_on || $account->status !== 'active') {
+                $this->fail('The adjustment must be inside an open ledger after its opening date.');
+            }
+            $this->counter($counter, $counterType);
+            $this->checkHistory($account, $principal, $charge, $date);
+            $amount = abs($principal) + abs($charge);
+            $lines = [['account_id' => $expenseId, 'debit_paisa' => $amount, 'credit_paisa' => 0]];
+            if ($creditPrincipal) {
+                $lines[] = ['account_id' => (int) $account->principal_account_id, 'debit_paisa' => 0, 'credit_paisa' => abs($principal)];
+            } else {
+                $lines[] = ['account_id' => (int) $account->charge_income_account_id, 'debit_paisa' => 0, 'credit_paisa' => abs($charge)];
+            }
+            $journal = $this->journals->post($actor, $account->branch_id, $date, 'loan-'.hash('sha256', $account->id.'|'.$key), $description, $lines);
+            $transaction = $this->insert($actor, $account, $kind, $principal, $charge, $counter, $date, $key, $hash, $description, $journal);
+            $balance = $this->balances($account->id);
+            if ($balance['total_paisa'] === 0) {
+                DB::table('loan_accounts')->where('id', $account->id)->update(['status' => 'closed', 'closed_at' => now(), 'closed_by' => $actor->id, 'updated_at' => now()]);
+                $loan->updateQuietly(['status' => LoanApplication::STATUS_REPAID, 'repaid_at' => $date, 'repaid_by' => $actor->id]);
+            }
+
+            return $transaction;
+        }, 3);
     }
 
     public function reconciliation(User $actor, int $accountId): array

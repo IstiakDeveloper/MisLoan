@@ -13,6 +13,7 @@ use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\NormalizeInertiaAmounts;
 use App\Http\Middleware\ProtectUserAdministration;
+use App\Http\Middleware\RequireBranchCashier;
 use App\Http\Middleware\RequireFinancialAdministrator;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -48,6 +49,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'ensure.portfolio.handover' => EnsurePortfolioHandoverComplete::class,
             'secure.user.admin' => ProtectUserAdministration::class,
             'financial.admin' => RequireFinancialAdministrator::class,
+            'branch.cash' => RequireBranchCashier::class,
             'role' => CheckRole::class,
             'permission' => CheckPermission::class,
             'branch.user' => CheckBranchUser::class,

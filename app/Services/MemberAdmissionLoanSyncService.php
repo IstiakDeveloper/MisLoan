@@ -6,6 +6,7 @@ use App\Models\LoanApplication;
 use App\Models\LoanMember;
 use App\Models\MemberAdmission;
 use App\Models\Samity;
+use App\Support\PrivateDocuments;
 use Carbon\Carbon;
 
 class MemberAdmissionLoanSyncService
@@ -617,11 +618,7 @@ class MemberAdmissionLoanSyncService
             return null;
         }
 
-        if (str_starts_with($path, 'http') || str_starts_with($path, '/storage/')) {
-            return $path;
-        }
-
-        return '/storage/'.$path;
+        return PrivateDocuments::url($path);
     }
 
     /**

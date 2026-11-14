@@ -1,4 +1,5 @@
 ﻿import NotificationBell from '@/components/NotificationBell';
+import { documentUrl } from '@/lib/documents';
 import {
     Dialog,
     DialogContent,
@@ -173,7 +174,7 @@ export default function AdminLayout({
     const roleLabel = (user.role?.name ?? 'Staff').replaceAll('_', ' ');
     const avatar =
         user.avatar ||
-        (user.profile_photo ? `/storage/${user.profile_photo}` : null);
+        (user.profile_photo ? documentUrl(user.profile_photo) : null);
     useEffect(
         () =>
             router.on('navigate', () => {
@@ -242,6 +243,7 @@ export default function AdminLayout({
             >
                 <Link
                     href={item.href}
+                    prefetch="hover"
                     title={`${item.title} · ${item.englishTitle}`}
                     aria-label={small ? item.title : undefined}
                     aria-current={selected ? 'page' : undefined}

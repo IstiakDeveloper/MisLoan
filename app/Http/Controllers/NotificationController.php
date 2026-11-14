@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Notification;
+use App\Services\Navigation\ShellBadges;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -43,8 +44,9 @@ class NotificationController extends Controller
         }
 
         $notification->markAsRead();
+        app(ShellBadges::class)->forget(auth()->user());
 
-        if (!empty($notification->action_url) && !in_array($notification->action_url, ['/notifications', '/notifications/'], true)) {
+        if (! empty($notification->action_url) && ! in_array($notification->action_url, ['/notifications', '/notifications/'], true)) {
             return redirect($notification->action_url);
         }
 
@@ -63,6 +65,7 @@ class NotificationController extends Controller
         }
 
         $notification->markAsRead();
+        app(ShellBadges::class)->forget(auth()->user());
 
         if (request()->wantsJson()) {
             return response()->json(['success' => true]);
@@ -82,6 +85,7 @@ class NotificationController extends Controller
                 'is_read' => true,
                 'read_at' => now(),
             ]);
+        app(ShellBadges::class)->forget(auth()->user());
 
         if (request()->wantsJson()) {
             return response()->json(['success' => true]);

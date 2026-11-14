@@ -39,11 +39,13 @@ use App\Services\NotificationService;
 use App\Support\LoanFormVisibility;
 use App\Support\NumberToWordsBangla;
 use App\Support\RoleListWorkQueue;
+use App\Support\StatusTallies;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -726,8 +728,29 @@ class LoanApplicationController extends Controller
     }
 
     /**
-     * Display available loan products
+     * @param  Collection<int, array{id: int, area_id: int|null}>  $branches
+     * @param  Collection<int, Area>  $areas
+     * @return Collection<int, int>
      */
+    private function samityBranchIds($branches, $areas, mixed $zoneId, mixed $areaId, mixed $branchId)
+    {
+        if ($branchId) {
+            return collect([(int) $branchId]);
+        }
+
+        if ($areaId) {
+            return $branches->where('area_id', (int) $areaId)->pluck('id')->map(fn ($id): int => (int) $id)->values();
+        }
+
+        if ($zoneId) {
+            $areaIds = $areas->where('zone_id', (int) $zoneId)->pluck('id');
+
+            return $branches->whereIn('area_id', $areaIds->all())->pluck('id')->map(fn ($id): int => (int) $id)->values();
+        }
+
+        return collect();
+    }
+
     public function index(Request $request)
     {
         $user = $request->user();
@@ -812,7 +835,7 @@ class LoanApplicationController extends Controller
                 'loan_category_id', 'branch_id', 'samity_id', 'form_type', 'status',
                 'requested_amount', 'approved_amount', 'pending_approved_amount', 'disbursed_amount', 'created_at', 'updated_at',
                 'cancellation_from_status',
-                'submitted_at', 'reviewed_at', 'disbursed_at', 'purpose_of_loan', 'legacy_member_snapshot',
+                'submitted_at', 'reviewed_at', 'disbursed_at', 'purpose_of_loan',
             ])
             ->paginate($perPage)
             ->withQueryString();
@@ -891,34 +914,32 @@ class LoanApplicationController extends Controller
             ->orderBy('name')
             ->get(['id', 'name', 'code']);
 
-        $branchIds = $branches->pluck('id');
-        $samities = $branchIds->isEmpty()
+        $samityBranchIds = $this->samityBranchIds($branches, $areas, $zoneId, $areaId, $branchId);
+        $samities = $samityBranchIds->isEmpty()
             ? collect()
             : Samity::query()
                 ->where('is_active', true)
-                ->whereIn('branch_id', $branchIds)
+                ->whereIn('branch_id', $samityBranchIds)
                 ->orderBy('samity_code')
                 ->get(['id', 'branch_id', 'samity_code', 'samity_name', 'samity_name_bn']);
 
-        $stats = [
-            'total' => (clone $statsBaseQuery)->where('status', '!=', 'draft')->count(),
-            'draft' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_DRAFT)->count(),
-            'submitted' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_SUBMITTED)->count(),
-            'approved' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_APPROVED)->count(),
-            'pending_disbursement' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_PENDING_DISBURSEMENT)->count(),
-            'awaiting_takeup' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_AWAITING_TAKEUP)->count(),
-            'pending_cancellation' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_PENDING_CANCELLATION)->count(),
-            'ho_pending_cancellation' => (clone $statsBaseQuery)
-                ->where('status', LoanApplication::STATUS_PENDING_CANCELLATION)
-                ->where('cancellation_from_status', LoanApplication::STATUS_PENDING_HEAD_OFFICE)
-                ->count(),
-            'rejected' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_REJECTED)->count(),
-            'ready_for_head_office' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_READY_FOR_HEAD_OFFICE)->count(),
-            'pending_head_office' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_PENDING_HEAD_OFFICE)->count(),
-            'under_review' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_UNDER_REVIEW)->count(),
-            'disbursed' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_DISBURSED)->count(),
-            'pending_my_approval' => $this->countPendingMyApproval($statsBaseQuery, $user, 'loan'),
-        ];
+        $tallies = StatusTallies::read($statsBaseQuery, [
+            'total' => "COALESCE(SUM(CASE WHEN status != 'draft' THEN 1 ELSE 0 END), 0)",
+            'draft' => "COALESCE(SUM(CASE WHEN status = '".LoanApplication::STATUS_DRAFT."' THEN 1 ELSE 0 END), 0)",
+            'submitted' => "COALESCE(SUM(CASE WHEN status = '".LoanApplication::STATUS_SUBMITTED."' THEN 1 ELSE 0 END), 0)",
+            'approved' => "COALESCE(SUM(CASE WHEN status = '".LoanApplication::STATUS_APPROVED."' THEN 1 ELSE 0 END), 0)",
+            'pending_disbursement' => "COALESCE(SUM(CASE WHEN status = '".LoanApplication::STATUS_PENDING_DISBURSEMENT."' THEN 1 ELSE 0 END), 0)",
+            'awaiting_takeup' => "COALESCE(SUM(CASE WHEN status = '".LoanApplication::STATUS_AWAITING_TAKEUP."' THEN 1 ELSE 0 END), 0)",
+            'pending_cancellation' => "COALESCE(SUM(CASE WHEN status = '".LoanApplication::STATUS_PENDING_CANCELLATION."' THEN 1 ELSE 0 END), 0)",
+            'ho_pending_cancellation' => "COALESCE(SUM(CASE WHEN status = '".LoanApplication::STATUS_PENDING_CANCELLATION."' AND cancellation_from_status = '".LoanApplication::STATUS_PENDING_HEAD_OFFICE."' THEN 1 ELSE 0 END), 0)",
+            'rejected' => "COALESCE(SUM(CASE WHEN status = '".LoanApplication::STATUS_REJECTED."' THEN 1 ELSE 0 END), 0)",
+            'ready_for_head_office' => "COALESCE(SUM(CASE WHEN status = '".LoanApplication::STATUS_READY_FOR_HEAD_OFFICE."' THEN 1 ELSE 0 END), 0)",
+            'pending_head_office' => "COALESCE(SUM(CASE WHEN status = '".LoanApplication::STATUS_PENDING_HEAD_OFFICE."' THEN 1 ELSE 0 END), 0)",
+            'under_review' => "COALESCE(SUM(CASE WHEN status = '".LoanApplication::STATUS_UNDER_REVIEW."' THEN 1 ELSE 0 END), 0)",
+            'disbursed' => "COALESCE(SUM(CASE WHEN status = '".LoanApplication::STATUS_DISBURSED."' THEN 1 ELSE 0 END), 0)",
+        ]);
+        $stats = array_map(intval(...), $tallies);
+        $stats['pending_my_approval'] = $this->countPendingMyApproval($statsBaseQuery, $user, 'loan');
 
         return Inertia::render('Member/LoanApplications/Index', [
             'categories' => $categories,

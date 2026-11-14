@@ -1,3 +1,4 @@
+import { documentUrl } from '@/lib/documents';
 import React, { useState, useEffect } from 'react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { ComboSelect } from '@/components/ComboSelect';
@@ -692,7 +693,7 @@ export default function Show({ admission, cycleSurveys = [], can_update_samity =
                         ) : (
                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                                 {attachments.map((att) => {
-                                    const fileUrl = `/storage/${att.path}`;
+                                    const fileUrl = documentUrl(att.path);
                                     const isPdf = att.path?.toLowerCase().endsWith('.pdf');
 
                                     return (

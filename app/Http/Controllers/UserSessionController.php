@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Branch;
 use App\Models\Role;
 use App\Models\User;
+use App\Support\PrivateDocuments;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -78,7 +79,7 @@ class UserSessionController extends Controller
                     'phone' => $user->phone,
                     'is_active' => (bool) $user->is_active,
                     'has_all_access' => (bool) $user->has_all_access,
-                    'avatar' => $user->avatar ?? ($user->profile_photo ? '/storage/'.$user->profile_photo : null),
+                    'avatar' => $user->avatar ?? PrivateDocuments::url($user->profile_photo),
                     'role' => $user->role ? [
                         'id' => $user->role->id,
                         'name' => $user->role->name,

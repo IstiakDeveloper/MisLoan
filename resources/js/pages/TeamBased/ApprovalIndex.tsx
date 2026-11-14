@@ -1,3 +1,4 @@
+import { documentUrl } from '@/lib/documents';
 import { Head, Link, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import TeamBasedExportBar from '@/components/team-based/TeamBasedExportBar';
@@ -749,10 +750,10 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                                                         onClick={() =>
                                                             setZoomSignatureUrl(
                                                                 a.approver_signature!.startsWith('http')
-                                                                    ? a.approver_signature!
+                                                                    ? documentUrl(a.approver_signature!)
                                                                     : a.approver_signature!.startsWith('/storage/')
-                                                                    ? a.approver_signature!
-                                                                    : `/storage/${a.approver_signature!}`,
+                                                                    ? documentUrl(a.approver_signature!)
+                                                                    : documentUrl(a.approver_signature!),
                                                             )
                                                         }
                                                         className="focus:outline-none hover:scale-105 transition-transform"
@@ -761,10 +762,10 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                                                         <img
                                                             src={
                                                                 a.approver_signature.startsWith('http')
-                                                                    ? a.approver_signature
+                                                                    ? documentUrl(a.approver_signature)
                                                                     : a.approver_signature.startsWith('/storage/')
-                                                                    ? a.approver_signature
-                                                                    : `/storage/${a.approver_signature}`
+                                                                    ? documentUrl(a.approver_signature)
+                                                                    : documentUrl(a.approver_signature)
                                                             }
                                                             alt="Signature"
                                                             className="h-7 object-contain"
@@ -950,10 +951,10 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                                                                 onClick={() =>
                                                                     setZoomSignatureUrl(
                                                                         a.approver_signature!.startsWith('http')
-                                                                            ? a.approver_signature!
+                                                                            ? documentUrl(a.approver_signature!)
                                                                             : a.approver_signature!.startsWith('/storage/')
-                                                                            ? a.approver_signature!
-                                                                            : `/storage/${a.approver_signature!}`,
+                                                                            ? documentUrl(a.approver_signature!)
+                                                                            : documentUrl(a.approver_signature!),
                                                                     )
                                                                 }
                                                                 className="focus:outline-none hover:scale-105 transition-transform"
@@ -962,10 +963,10 @@ export default function TeamBasedApprovalIndex({ approvals, filters, draftCount,
                                                                 <img
                                                                     src={
                                                                         a.approver_signature.startsWith('http')
-                                                                            ? a.approver_signature
+                                                                            ? documentUrl(a.approver_signature)
                                                                             : a.approver_signature.startsWith('/storage/')
-                                                                            ? a.approver_signature
-                                                                            : `/storage/${a.approver_signature}`
+                                                                            ? documentUrl(a.approver_signature)
+                                                                            : documentUrl(a.approver_signature)
                                                                     }
                                                                     alt="Signature"
                                                                     className="h-7 max-h-7 object-contain print:!h-7 print:!max-h-7"

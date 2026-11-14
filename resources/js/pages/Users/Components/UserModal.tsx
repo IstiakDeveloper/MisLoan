@@ -1,3 +1,4 @@
+import { documentUrl } from '@/lib/documents';
 import { FormEvent, useEffect, useState } from 'react';
 import { useForm, usePage } from '@inertiajs/react';
 import { X } from 'lucide-react';
@@ -276,8 +277,7 @@ export default function UserModal({ isOpen, onClose, user, roles, zones, areas, 
 
     const getSignatureUrl = (value?: string | null) => {
         if (!value) return null;
-        if (value.startsWith('http') || value.startsWith('/storage/')) return value;
-        return `/storage/${value}`;
+        return documentUrl(value);
     };
 
     if (!isOpen) return null;
