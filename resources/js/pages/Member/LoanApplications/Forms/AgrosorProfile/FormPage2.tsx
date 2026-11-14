@@ -2,6 +2,7 @@ import React, { useEffect, useMemo } from 'react';
 import { AgrosorFormPageProps } from './Types';
 import { Calculator, ShieldCheck, Users, PenLine } from 'lucide-react';
 import { calcInstallmentSchedule, getLoanDurationMonths } from '@/utils/loanInterest';
+import { toEnglishDigits } from '@/utils/memberCodeUtils';
 
 const toNum = (v: unknown) => {
     const n = Number(v);
@@ -347,8 +348,11 @@ export default function FormPage2({
                     <span>১৩. জামিনদারের তথ্য (২ জন)</span>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div className="rounded-xl border border-gray-200 bg-gray-50/70 p-3 space-y-2">
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-3 space-y-2">
                         <p className="text-xs font-bold text-emerald-800 border-b border-emerald-100 pb-1">১| ১ম জামিনদার</p>
+                        <p className="text-[10px] text-gray-600 leading-snug">
+                            ভর্তিতে নাম বা মোবাইল না থাকলে এখানে লিখুন। থাকলেও প্রয়োজনে বদলানো যাবে।
+                        </p>
                         <div>
                             <label className="text-[10px] font-medium text-gray-600 mb-0.5 block">
                                 নাম <span className="text-red-500 font-bold">*</span>
@@ -356,8 +360,7 @@ export default function FormPage2({
                             <input
                                 type="text"
                                 placeholder="জামিনদারের নাম"
-                                className={fromAdmission ? admissionClass : inputClass}
-                                readOnly={fromAdmission}
+                                className={inputClass}
                                 value={data.guarantor_1_name || ''}
                                 onChange={(e) => setData('guarantor_1_name', e.target.value)}
                             />
@@ -369,8 +372,7 @@ export default function FormPage2({
                             <input
                                 type="text"
                                 placeholder="ঠিকানা"
-                                className={fromAdmission ? admissionClass : inputClass}
-                                readOnly={fromAdmission}
+                                className={inputClass}
                                 value={data.guarantor_1_address || ''}
                                 onChange={(e) => setData('guarantor_1_address', e.target.value)}
                             />
@@ -381,11 +383,17 @@ export default function FormPage2({
                             </label>
                             <input
                                 type="text"
+                                inputMode="numeric"
                                 placeholder="মোবাইল নং"
-                                className={fromAdmission ? admissionClass : inputClass}
-                                readOnly={fromAdmission}
+                                maxLength={11}
+                                className={inputClass}
                                 value={data.guarantor_1_mobile || ''}
-                                onChange={(e) => setData('guarantor_1_mobile', e.target.value)}
+                                onChange={(e) =>
+                                    setData(
+                                        'guarantor_1_mobile',
+                                        toEnglishDigits(e.target.value).replace(/\D/g, '').slice(0, 11),
+                                    )
+                                }
                             />
                         </div>
                     </div>
