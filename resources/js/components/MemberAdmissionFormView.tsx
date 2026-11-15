@@ -2,6 +2,7 @@ import React from 'react';
 import { MemberAdmission } from '@/types/memberAdmission';
 import { formatDateBangla, toBanglaDigits } from '@/utils/dateUtils';
 import { useAutoFitPrint } from '@/hooks/useAutoFitPrint';
+import { formatSamityNameWithCode, samityPreferredName } from '@/utils/memberCodeUtils';
 
 interface Props {
     admission: MemberAdmission & {
@@ -50,6 +51,17 @@ function formatAmount(v: number | string | null | undefined): string {
 function str(v: string | number | null | undefined): string {
     if (v == null || v === undefined) return '';
     return String(v);
+}
+
+/** "Koli (5050)" — code digits follow the rest of this form and stay in Bangla. */
+function samityNameWithCode(samity?: { samity_name?: string | null; samity_name_bn?: string | null; samity_code?: string | number | null; id?: string | number | null } | null): string {
+    if (!samity) {
+        return '';
+    }
+
+    const label = formatSamityNameWithCode(samityPreferredName(samity), samity.samity_code ?? samity.id ?? '');
+
+    return label.replace(/\((\d+)\)/, (_, digits: string) => `(${toBanglaDigits(digits)})`);
 }
 
 /** Single row with label and value on dotted line (form style) with distinct breathing room */
@@ -223,7 +235,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                             <p className="text-[13.5px] print:text-[13px] leading-loose text-gray-800 font-normal">
                                 আমি নিম্ন স্বাক্ষরকারী মৌসুমী'র উদ্যোগে গঠিত{' '}
                                 <span className="border-b border-dotted border-gray-700 px-3 inline-block min-w-[140px] text-center font-bold">
-                                    {admission.samity?.samity_name ?? ''}
+                                    {samityNameWithCode(admission.samity)}
                                 </span>{' '}
                                 সমিতির সদস্য হতে ইচ্ছুক। আমি অঙ্গীকার করছি যে, সমিতির সমস্ত নিয়ম-কানুন যথাযথভাবে মেনে চলব। নিম্নে আমার সম্পর্কে যে সমস্ত তথ্য ও জীবন বৃত্তান্ত দিয়েছি তা সম্পূর্ণ সত্য।
                             </p>
@@ -232,7 +244,7 @@ export default function MemberAdmissionFormView({ admission, printMode }: Props)
                         {/* Personal Info (1-9) with spacious vertical gaps */}
                         <div className="mb-4 space-y-3 sm:space-y-3.5">
                             <div className="grid grid-cols-1 md:grid-cols-2 print:grid-cols-2 gap-x-8 gap-y-2 sm:gap-y-3.5">
-                                <FormRow label="1. Samity Name :" value={admission.samity?.samity_name ?? ''} />
+                                <FormRow label="1. Samity Name :" value={samityNameWithCode(admission.samity)} />
                                 <FormRow label="2. Member Category:" value={admission.member_category?.category_name ?? ''} />
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 print:grid-cols-2 gap-x-8 gap-y-2 sm:gap-y-3.5">

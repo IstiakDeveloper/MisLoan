@@ -135,6 +135,14 @@ export function samityCodeSuffix(code: unknown): string {
     return digits.slice(-4).padStart(4, '0');
 }
 
+/** Bangla samity name when it is set, otherwise the English name. */
+export function samityPreferredName(samity?: { samity_name_bn?: string | null; samity_name?: string | null } | null): string {
+    const bangla = String(samity?.samity_name_bn ?? '').trim();
+    const english = String(samity?.samity_name ?? '').trim();
+
+    return bangla || english;
+}
+
 /** Loan-form samity label: "Koli (5050)". */
 export function formatSamityNameWithCode(name: unknown, code: unknown): string {
     const label = String(name ?? '').trim();

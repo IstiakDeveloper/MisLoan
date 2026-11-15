@@ -913,10 +913,20 @@ class LoanApplicationController extends Controller
         $hoSentOn = $this->requestedHeadOfficeSentDay($request, $user);
         $hoSentDay = $hoSentOn ?: now()->toDateString();
         $hoSentCount = null;
+        $hoSentTotalAmount = 0;
+        $readyForHoCount = 0;
+        $readyForHoTotalAmount = 0;
+
         if ($this->isBranchUserRole($user) && $this->loanHeadOfficeSentColumnReady()) {
-            $hoSentCount = (clone $applicationsQuery)
-                ->whereDate('head_office_sent_at', $hoSentDay)
-                ->count();
+            $hoSentScopedQuery = (clone $applicationsQuery)
+                ->whereDate('head_office_sent_at', $hoSentDay);
+            $hoSentCount = (clone $hoSentScopedQuery)->count();
+            $hoSentTotalAmount = (float) ((clone $hoSentScopedQuery)->sum(DB::raw('COALESCE(approved_amount, requested_amount, 0)')));
+
+            $readyBaseQuery = (clone $applicationsQuery)
+                ->where('status', LoanApplication::STATUS_READY_FOR_HEAD_OFFICE);
+            $readyForHoCount = (clone $readyBaseQuery)->count();
+            $readyForHoTotalAmount = (float) ((clone $readyBaseQuery)->sum(DB::raw('COALESCE(approved_amount, requested_amount, 0)')));
         }
 
         if ($hoSentOn) {
@@ -1065,6 +1075,9 @@ class LoanApplicationController extends Controller
             'hoSentOn' => $hoSentOn,
             'hoSentDay' => $hoSentDay,
             'hoSentCount' => $hoSentCount,
+            'hoSentTotalAmount' => $hoSentTotalAmount,
+            'readyForHoCount' => $readyForHoCount,
+            'readyForHoTotalAmount' => $readyForHoTotalAmount,
             'searchFilter' => $searchFilter,
             'perPage' => $perPage,
             'preselectedMember' => $this->resolvePreselectedMember($request),

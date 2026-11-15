@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback, type FormEvent } from 'react';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
-import { formatDate, startOfMonthIsoDate, todayIsoDate } from '@/utils/dateUtils';
+import { formatDate, formatDateTime, formatLongDate, startOfMonthIsoDate, todayIsoDate } from '@/utils/dateUtils';
 import {
     Plus, Calendar, FileText, CheckCircle, XCircle, Clock,
     Search, Eye, Edit, Trash2, X, AlertTriangle, MessageSquare, Send,
@@ -14,6 +14,7 @@ import { ComboSelect } from '@/components/ComboSelect';
 import { formatBranchLabel, keepListFilters, sortBranchesByCode } from '@/utils/branchLabel';
 import SendLoanToHoModal, { HoLoanItem } from '@/components/LoanApplications/SendLoanToHoModal';
 import HoSendCutoffNotice from '@/components/HoSendCutoffNotice';
+import BranchHoDispatchHub from '@/components/LoanApplications/BranchHoDispatchHub';
 import { useHoSendCutoff } from '@/hooks/use-ho-send-cutoff';
 
 interface ZoneOption {
@@ -201,6 +202,9 @@ interface Props {
     hoSentOn?: string | null;
     hoSentDay?: string | null;
     hoSentCount?: number | null;
+    hoSentTotalAmount?: number;
+    readyForHoCount?: number;
+    readyForHoTotalAmount?: number;
     searchFilter?: string;
     perPage?: number;
     preselectedMember?: Member | null;
@@ -300,6 +304,9 @@ export default function Index({
     hoSentOn = null,
     hoSentDay = null,
     hoSentCount = null,
+    hoSentTotalAmount = 0,
+    readyForHoCount = 0,
+    readyForHoTotalAmount = 0,
     searchFilter = '',
     perPage = 20,
     preselectedMember = null,
@@ -1247,6 +1254,37 @@ export default function Index({
         setShowLoanHoModal(true);
     };
 
+    const handleSendAllReadyToHo = () => {
+        if (hoSendCutoff.is_blocked) return;
+
+        if (currentStatusFilter !== 'ready_for_head_office') {
+            selectStatus('ready_for_head_office');
+            return;
+        }
+
+        const readyApps = applicationRows
+            .filter((a) => canSendLoanToHo(a))
+            .map((a) => {
+                const member = a.member_display ?? a.member_admission;
+                const memberName = member?.applicant_name_bn || member?.applicant_name_en || 'সদস্য';
+                return {
+                    id: a.id,
+                    application_no: a.application_no,
+                    applicant_name: memberName,
+                    branch_name: a.branch?.name,
+                    amount: a.approved_amount || a.requested_amount,
+                };
+            });
+
+        if (readyApps.length > 0) {
+            setSelectedHoIds(readyForHoIds);
+            setLoanHoModalItems(readyApps);
+            setShowLoanHoModal(true);
+        } else {
+            selectStatus('ready_for_head_office');
+        }
+    };
+
     const handleConfirmSendLoanToHo = () => {
         if (loanHoModalItems.length === 0 || isSendingLoanToHo) return;
         setIsSendingLoanToHo(true);
@@ -1287,7 +1325,7 @@ export default function Index({
         <AdminLayout>
             <Head title="Loan Applications (ঋণ আবেদন)" />
 
-            <div className="p-3 md:p-4 space-y-3 max-w-[1600px] mx-auto">
+            <div className="p-2 sm:p-3 space-y-2 max-w-[1600px] mx-auto">
                 {/* Flash Success Message */}
                 {showSuccessMessage && flash?.success && (
                     <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-start gap-2.5 shadow-sm text-xs">
@@ -1321,19 +1359,19 @@ export default function Index({
                 )}
 
                 {/* ── 1. SLIM PROFESSIONAL HEADER & TIMING WARNING ───────────────────── */}
-                <div className="space-y-2.5 print:hidden">
+                <div className="space-y-2 print:hidden">
                     {/* Compact Top Action Bar */}
-                    <div className="bg-white px-4 py-3 rounded-2xl border border-slate-200/90 shadow-2xs flex flex-wrap items-center justify-between gap-3">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                            <div className="w-8 h-8 rounded-xl bg-slate-800 text-white flex items-center justify-center shadow-xs shrink-0">
-                                <CreditCard size={16} />
+                    <div className="bg-white px-3 py-2 rounded-2xl border border-slate-200/90 shadow-2xs flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                            <div className="w-7 h-7 rounded-lg bg-slate-800 text-white flex items-center justify-center shadow-xs shrink-0">
+                                <CreditCard size={14} />
                             </div>
                             <div>
                                 <div className="flex items-center gap-2">
-                                    <h1 className="text-sm sm:text-base font-bold text-slate-800 tracking-tight">
+                                    <h1 className="text-sm sm:text-base font-bold text-slate-800 tracking-tight leading-tight">
                                         ঋণ আবেদন তালিকা
                                     </h1>
-                                    <span className="text-[10px] font-bold px-2 py-0.5 bg-slate-100 text-slate-700 rounded-md border border-slate-200">
+                                    <span className="text-[10px] font-bold px-1.5 py-0.2 bg-slate-100 text-slate-700 rounded border border-slate-200">
                                         মোট {stats.total || 0} টি
                                     </span>
                                 </div>
@@ -1341,27 +1379,27 @@ export default function Index({
                         </div>
 
                         {/* Action Buttons */}
-                        <div className="flex items-center gap-2 flex-wrap">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                             <button
                                 type="button"
                                 onClick={handleTodayFilter}
-                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all active:scale-95 shadow-2xs ${
+                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl border text-xs font-semibold transition-all active:scale-95 shadow-2xs ${
                                     isTodayFilter
                                         ? 'bg-blue-600 text-white border-blue-600 font-bold'
                                         : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                                 }`}
                                 title="আজকের আবেদনসমূহ (Today)"
                             >
-                                <Calendar size={13} />
+                                <Calendar size={12} />
                                 <span>Today (আজ)</span>
                             </button>
 
                             {canCreateLoanApplication && (
                                 <button
                                     onClick={handleNewApplication}
-                                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-2xs transition-all active:scale-95"
+                                    className="inline-flex items-center gap-1 px-3 py-1 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-2xs transition-all active:scale-95"
                                 >
-                                    <Plus size={14} />
+                                    <Plus size={13} />
                                     <span>নতুন ঋণ আবেদন</span>
                                 </button>
                             )}
@@ -1369,33 +1407,51 @@ export default function Index({
                             <button
                                 type="button"
                                 onClick={handleExportExcel}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-xs font-semibold transition-all active:scale-95 shadow-2xs"
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-xs font-semibold transition-all active:scale-95 shadow-2xs"
                                 title="XLSX এক্সেল ডাউনলোড"
                             >
-                                <Download size={13} />
+                                <Download size={12} />
                                 <span>Excel</span>
                             </button>
 
                             <button
                                 type="button"
                                 onClick={() => window.print()}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-semibold transition-all active:scale-95 shadow-2xs"
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-semibold transition-all active:scale-95 shadow-2xs"
                             >
-                                <Printer size={13} />
+                                <Printer size={12} />
                                 <span>প্রিন্ট</span>
                             </button>
                         </div>
                     </div>
-
-                    {isBranchUser && (
-                        <HoSendCutoffNotice kind="loan" />
-                    )}
                 </div>
 
+                {isBranchUser && (
+                    <BranchHoDispatchHub
+                        today={today}
+                        sentDay={sentDay}
+                        hoSentOn={hoSentOn}
+                        readyCount={readyForHoCount || (filteredStats['ready_for_head_office'] || 0)}
+                        readyTotalAmount={readyForHoTotalAmount}
+                        sentCount={hoSentCount ?? 0}
+                        sentTotalAmount={hoSentTotalAmount}
+                        isViewingReadyList={currentStatusFilter === 'ready_for_head_office' && !hoSentOn}
+                        isSending={isSendingLoanToHo}
+                        branchName={branches[0]?.name}
+                        branchCode={branches[0]?.code}
+                        onSelectSentDay={(day) => showSentDay(day)}
+                        onClearSentFilter={() => {
+                            applyListFilters({ ho_sent_on: '', status: 'all', page: 1 });
+                        }}
+                        onSendAllReady={handleSendAllReadyToHo}
+                        onViewReadyList={() => selectStatus('ready_for_head_office')}
+                    />
+                )}
+
                 {/* ── 2. UNIFIED FILTER & STATUS CONTROL CARD ─────────────────────────── */}
-                <div className="bg-white rounded-3xl border border-slate-200/90 shadow-2xs p-3.5 space-y-3.5 print:hidden">
+                <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-2 sm:p-2.5 space-y-2 print:hidden">
                     {/* Status Filter Cards in 1 Row with Micro Visual Progress & Icons */}
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-1.5">
                         {loanStatCards.map((stat) => {
                             const active = isStatActive(stat.key);
                             const IconComponent = stat.icon;
@@ -1406,7 +1462,7 @@ export default function Index({
                                     key={stat.key}
                                     type="button"
                                     onClick={() => selectStatus(stat.key)}
-                                    className={`relative p-2.5 rounded-2xl border text-left transition-all duration-150 active:scale-95 group overflow-hidden ${
+                                    className={`relative p-1.5 sm:p-2 rounded-xl border text-left transition-all duration-150 active:scale-95 group overflow-hidden ${
                                         active
                                             ? `${stat.activeBg} shadow-md ring-2 ring-offset-1 ring-blue-500/40`
                                             : stat.highlight
@@ -1415,13 +1471,13 @@ export default function Index({
                                     }`}
                                 >
                                     {/* Top Row: Icon & Count */}
-                                    <div className="flex items-center justify-between gap-1 mb-1.5">
-                                        <div className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-105 ${
+                                    <div className="flex items-center justify-between gap-1 mb-1">
+                                        <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 transition-transform group-hover:scale-105 ${
                                             active ? 'bg-white/20 text-white' : `${stat.iconBg} ${stat.iconColor}`
                                         }`}>
-                                            <IconComponent size={14} className="stroke-[2.2]" />
+                                            <IconComponent size={13} className="stroke-[2.2]" />
                                         </div>
-                                        <span className={`text-base font-black tracking-tight ${
+                                        <span className={`text-sm sm:text-base font-black tracking-tight ${
                                             active ? 'text-white' : 'text-slate-900'
                                         }`}>
                                             {stat.count}
@@ -1429,14 +1485,14 @@ export default function Index({
                                     </div>
 
                                     {/* Middle: Label */}
-                                    <span className={`text-[11px] font-bold truncate block ${
+                                    <span className={`text-[10px] sm:text-[11px] font-bold truncate block ${
                                         active ? 'text-white/90' : 'text-slate-600'
                                     }`}>
                                         {stat.label}
                                     </span>
 
                                     {/* Visual Micro Progress Bar */}
-                                    <div className="mt-1.5 w-full bg-slate-100 rounded-full h-1 overflow-hidden">
+                                    <div className="mt-1 w-full bg-slate-100 rounded-full h-0.5 overflow-hidden">
                                         <div
                                             className={`h-full rounded-full transition-all duration-300 ${
                                                 active ? 'bg-white' : `bg-gradient-to-r ${stat.barColor}`
@@ -1449,67 +1505,10 @@ export default function Index({
                         })}
                     </div>
 
-                    {isBranchUser && hoSentCount !== null && (
-                        <div className={`flex flex-wrap items-center justify-between gap-2 rounded-2xl border px-3 py-2 ${
-                            hoSentOn
-                                ? 'border-indigo-300 bg-indigo-50'
-                                : 'border-slate-200 bg-slate-50'
-                        }`}>
-                            <div className="min-w-0">
-                                <p className="text-[11px] font-bold text-slate-500">হেড অফিসে পাঠানো</p>
-                                <p className="text-sm font-black text-slate-900">
-                                    {sentDay === today ? 'আজ' : formatDate(sentDay)} · {hoSentCount}টি
-                                </p>
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                                <button
-                                    type="button"
-                                    onClick={() => showSentDay(shiftIsoDate(sentDay, -1))}
-                                    className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
-                                    title="আগের দিন"
-                                >
-                                    <ChevronLeft className="h-4 w-4" />
-                                </button>
-                                <input
-                                    type="date"
-                                    value={sentDay}
-                                    max={today}
-                                    onChange={(e) => {
-                                        if (e.target.value) {
-                                            showSentDay(e.target.value);
-                                        }
-                                    }}
-                                    className="h-8 rounded-xl border border-slate-300 bg-white px-2 text-xs"
-                                    title="পাঠানোর দিন"
-                                />
-                                <button
-                                    type="button"
-                                    onClick={() => showSentDay(shiftIsoDate(sentDay, 1))}
-                                    disabled={sentDay >= today}
-                                    className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-40"
-                                    title="পরের দিন"
-                                >
-                                    <ChevronRight className="h-4 w-4" />
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => showSentDay(sentDay)}
-                                    className={`h-8 rounded-xl px-3 text-xs font-bold ${
-                                        hoSentOn
-                                            ? 'bg-indigo-600 text-white'
-                                            : 'bg-white text-indigo-700 border border-indigo-200 hover:bg-indigo-50'
-                                    }`}
-                                >
-                                    এই দিনের তালিকা
-                                </button>
-                            </div>
-                        </div>
-                    )}
-
                     {/* Location, selectors, search and dates — two rows on desktop */}
                     <div className="space-y-1.5 border-t border-slate-100 pt-2 text-xs">
                         <div className="flex flex-wrap gap-1.5">
-                            {zones.length > 0 && (
+                            {(!isBranchUser || zones.length > 1) && zones.length > 0 && (
                                 <div className="w-[calc(50%-0.1875rem)] min-w-0 sm:w-[calc(33.333%-0.25rem)] lg:w-0 lg:min-w-0 lg:flex-1">
                                     <select
                                         value={selectedZone}
@@ -1527,7 +1526,7 @@ export default function Index({
                                 </div>
                             )}
 
-                            {areas.length > 0 && (
+                            {(!isBranchUser || areas.length > 1) && areas.length > 0 && (
                                 <div className="w-[calc(50%-0.1875rem)] min-w-0 sm:w-[calc(33.333%-0.25rem)] lg:w-0 lg:min-w-0 lg:flex-1">
                                     <select
                                         value={selectedArea}
@@ -1545,7 +1544,7 @@ export default function Index({
                                 </div>
                             )}
 
-                            {branches.length > 0 && (
+                            {(!isBranchUser || branches.length > 1) && branches.length > 0 && (
                                 <div className="w-[calc(50%-0.1875rem)] min-w-0 sm:w-[calc(33.333%-0.25rem)] lg:w-0 lg:min-w-0 lg:flex-1">
                                     <select
                                         value={selectedBranch}
@@ -1774,6 +1773,11 @@ export default function Index({
                                             <div>
                                                 <span className="text-[10px] font-bold uppercase text-slate-400 block">{hoSentOn ? 'পাঠানো' : 'তারিখ'}</span>
                                                 <p className="font-semibold text-slate-600">{formatDate(getEffectiveDate(app))}</p>
+                                                {hoSentOn && app.head_office_sent_at && (
+                                                    <span className="text-[10px] font-bold text-indigo-600 block mt-0.5">
+                                                        {formatDateTime(app.head_office_sent_at).split(' ')[1]} {formatDateTime(app.head_office_sent_at).split(' ')[2]}
+                                                    </span>
+                                                )}
                                             </div>
                                             <div className="col-span-2 flex items-center justify-between pt-1 border-t border-slate-200/50">
                                                 <span className="text-[10px] font-bold uppercase text-slate-400">স্ট্যাটাস:</span>
@@ -2063,7 +2067,15 @@ export default function Index({
                                                     </td>
 
                                                     <td className="px-4 py-3.5 text-slate-600 font-medium">
-                                                        {formatDate(getEffectiveDate(app))}
+                                                        <div className="font-semibold text-slate-800 text-xs">
+                                                            {formatDate(getEffectiveDate(app))}
+                                                        </div>
+                                                        {hoSentOn && app.head_office_sent_at && (
+                                                            <div className="text-[10px] font-bold text-indigo-600 flex items-center gap-1 mt-0.5">
+                                                                <Clock size={10} />
+                                                                <span>{formatDateTime(app.head_office_sent_at).split(' ')[1]} {formatDateTime(app.head_office_sent_at).split(' ')[2]}</span>
+                                                            </div>
+                                                        )}
                                                     </td>
 
                                                     <td className="px-4 py-3.5">

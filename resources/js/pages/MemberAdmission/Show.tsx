@@ -32,6 +32,7 @@ import { toEnglishDigits, formatBranchCode, parseMemberCode } from '@/utils/memb
 import SendAdmissionToHoModal from '@/components/MemberAdmission/SendAdmissionToHoModal';
 import { useHoSendCutoff } from '@/hooks/use-ho-send-cutoff';
 import { formatDate, formatDateBangla, formatDateTime, toBanglaDigits } from '@/utils/dateUtils';
+import { formatSamityNameWithCode } from '@/utils/memberCodeUtils';
 
 interface CycleSurveyItem {
     id: number;
@@ -79,8 +80,12 @@ interface Props {
     };
 }
 
-const samityLabel = (samity?: { samity_name_bn?: string | null; samity_name?: string | null } | null) =>
-    samity?.samity_name_bn || samity?.samity_name || '';
+const samityLabel = (samity?: { samity_name_bn?: string | null; samity_name?: string | null; samity_code?: string | null; id?: number | string | null } | null) => {
+    const name = samity?.samity_name_bn || samity?.samity_name || '';
+    const label = formatSamityNameWithCode(name, samity?.samity_code || samity?.id || '');
+
+    return label.replace(/\((\d+)\)/, (_, digits: string) => `(${toBanglaDigits(digits)})`);
+};
 
 export default function Show({ admission, cycleSurveys = [], can_update_samity = false, samities = [] }: Props) {
     const pageAuth = usePage().props.auth as { user?: { id?: number; has_all_access?: boolean; role?: { name: string } } } | undefined;
