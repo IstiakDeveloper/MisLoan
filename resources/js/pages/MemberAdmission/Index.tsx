@@ -454,6 +454,18 @@ export default function Index({ admissions, zones = [], areas = [], branches = [
         return (admission as any).reviewed_at || admission.submitted_at || admission.created_at;
     };
 
+    const clusterOfficer = (admission: MemberAdmission) => {
+        const officer = admission.assignedOfficer ?? admission.createdBy;
+        if (!officer?.name) {
+            return null;
+        }
+
+        return {
+            name: officer.name,
+            pin: officer.pin || officer.username || null,
+        };
+    };
+
     const highlightMatch = (text?: string | null, query?: string) => {
         if (!text) return '–';
         if (!query || !query.trim()) return text;
@@ -1088,6 +1100,15 @@ export default function Index({ admissions, zones = [], areas = [], branches = [
                                             <p className="font-semibold text-slate-600 mt-0.5">{formatDate(getEffectiveDate(admission))}</p>
                                         </div>
                                         <div>
+                                            <span className="text-[9.5px] font-bold uppercase text-slate-400 block">অফিসার</span>
+                                            <p className="font-semibold text-slate-800 truncate mt-0.5">
+                                                {clusterOfficer(admission)?.name || '–'}
+                                            </p>
+                                            {clusterOfficer(admission)?.pin && (
+                                                <p className="text-[10px] text-slate-500 truncate">{clusterOfficer(admission)?.pin}</p>
+                                            )}
+                                        </div>
+                                        <div className="col-span-2">
                                             <span className="text-[9.5px] font-bold uppercase text-slate-400 block">পেন্ডিং</span>
                                             <p className="font-semibold text-indigo-700 truncate mt-0.5">
                                                 {admission.tracking_state?.label ?? '—'}
@@ -1215,7 +1236,7 @@ export default function Index({ admissions, zones = [], areas = [], branches = [
                     {/* ── DESKTOP TABLE VIEW (hidden md:block) ────────────────────────── */}
                     <div className="hidden md:block member-admission-index-table-wrap print:overflow-visible print:block">
                         <AutoFitTableContainer
-                            minWidth={1050}
+                            minWidth={1180}
                             storageKey="member_admissions_table"
                             title="সদস্য ভর্তি আবেদন তালিকা"
                             subtitle={`(পৃষ্ঠা ${admissions.current_page || 1}/${admissions.last_page || 1} · মোট ${admissions.total || 0} টি)`}
@@ -1244,6 +1265,7 @@ export default function Index({ admissions, zones = [], areas = [], branches = [
                                         <th className="py-3 px-3">ক্যাটাগরি</th>
                                         <th className="py-3 px-3.5">স্ট্যাটাস ও ট্র্যাকিং</th>
                                         <th className="py-3 px-2.5 text-center print:hidden">অ্যাপ</th>
+                                        <th className="py-3 px-3">অফিসার</th>
                                         <th className="py-3 px-3">তারিখ</th>
                                         <th className="py-3 px-3.5 text-right print:hidden">অ্যাকশন</th>
                                     </tr>
@@ -1251,7 +1273,7 @@ export default function Index({ admissions, zones = [], areas = [], branches = [
                                 <tbody className="divide-y divide-slate-100 text-xs">
                                     {admissions.data.length === 0 ? (
                                         <tr>
-                                            <td colSpan={isBranchUser ? 11 : 10} className="py-12 text-center text-slate-400">
+                                            <td colSpan={isBranchUser ? 12 : 11} className="py-12 text-center text-slate-400">
                                                 {workQueue?.hint && !isAllStatus
                                                     ? 'এখন কোনো পেন্ডিং কাজ নেই। সব আবেদন দেখতে “সর্বমোট” চাপুন।'
                                                     : 'কোনো ভর্তি আবেদন পাওয়া যায়নি'}
@@ -1382,6 +1404,18 @@ export default function Index({ admissions, zones = [], areas = [], branches = [
                                                             </button>
                                                         );
                                                     })()}
+                                                </td>
+
+                                                {/* Officer cluster */}
+                                                <td className="py-2.5 px-3">
+                                                    <div className="font-semibold text-slate-800 truncate max-w-[140px]" title={clusterOfficer(admission)?.name}>
+                                                        {clusterOfficer(admission)?.name || '–'}
+                                                    </div>
+                                                    {clusterOfficer(admission)?.pin && (
+                                                        <div className="text-[10.5px] text-slate-500 mt-0.5">
+                                                            {clusterOfficer(admission)?.pin}
+                                                        </div>
+                                                    )}
                                                 </td>
 
                                                 {/* Date */}

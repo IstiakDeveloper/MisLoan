@@ -61,6 +61,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::get('cluster-handover', [ClusterHandoverController::class, 'index'])->name('cluster-handover.index');
     Route::post('cluster-handover', [ClusterHandoverController::class, 'store'])->name('cluster-handover.store');
+    Route::post('cluster-handover/reassign', [ClusterHandoverController::class, 'reassign'])->name('cluster-handover.reassign');
 
     Route::post('admin/maintenance/toggle', [MaintenanceController::class, 'toggle'])->name('admin.maintenance.toggle');
 

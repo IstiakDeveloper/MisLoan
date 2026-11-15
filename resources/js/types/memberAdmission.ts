@@ -168,10 +168,10 @@ export interface MemberAdmission {
     branch?: any;
     samity?: any;
     member_category?: any;
-    created_by?: number | { id: number; name: string } | null;
-    createdBy?: { id: number; name: string } | null;
-    assigned_officer_id?: number | { id: number; name: string } | null;
-    assignedOfficer?: { id: number; name: string } | null;
+    created_by?: number | { id: number; name: string; pin?: string | null; username?: string | null } | null;
+    createdBy?: { id: number; name: string; pin?: string | null; username?: string | null } | null;
+    assigned_officer_id?: number | { id: number; name: string; pin?: string | null; username?: string | null } | null;
+    assignedOfficer?: { id: number; name: string; pin?: string | null; username?: string | null } | null;
     submitted_by?: any;
     reviewed_by?: any;
     family_members?: FamilyMember[];

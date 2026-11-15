@@ -423,6 +423,7 @@ class MemberAdmissionController extends Controller
             'memberCategory',
             'submittedBy',
             'createdBy',
+            'assignedOfficer:id,name,pin,username',
             'approvals.user',
         ])->masterMembers();
 
