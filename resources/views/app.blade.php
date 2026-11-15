@@ -44,6 +44,7 @@
         @if (($page['component'] ?? '') === 'auth/login')
             <link rel="preload" as="image" href="/icons/logo.png" fetchpriority="high">
         @endif
+        <link rel="preload" as="image" href="/icons/logo-loader.webp" type="image/webp">
 
         @viteReactRefresh
         @vite(['resources/js/app.tsx', "resources/js/pages/{$page['component']}.tsx"])

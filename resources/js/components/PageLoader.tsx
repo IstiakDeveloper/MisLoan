@@ -1,6 +1,14 @@
 import { router } from '@inertiajs/react';
 import React, { useEffect, useRef, useState } from 'react';
 
+/**
+ * PageLoader
+ * Ultra-lightweight, professional page transition indicator.
+ * - Hairline 2px emerald brand progress bar at top.
+ * - Sleek, distraction-free floating micro-badge (shows only if transition > 280ms).
+ * - Utilizes optimized 2.5KB compressed WebP logo with PNG fallback.
+ * - 0% CPU/GPU overhead when idle.
+ */
 export default function PageLoader() {
     const [isLoading, setIsLoading] = useState(false);
     const [progress, setProgress] = useState(0);
@@ -29,22 +37,22 @@ export default function PageLoader() {
         const start = () => {
             cleanup();
             setIsLoading(true);
-            setProgress(22);
+            setProgress(18);
 
-            // Delay badge so quick navigations (< 250ms) only show the top glowing beam
+            // Debounce badge: fast page shifts (< 280ms) never flicker the badge
             badgeTimerRef.current = setTimeout(() => {
                 setShowBadge(true);
-            }, 250);
+            }, 280);
 
-            // Smooth progress increment
+            // Calm, steady progress trickle without erratic random jumps
             progressTimerRef.current = setInterval(() => {
                 setProgress((prev) => {
-                    if (prev < 50) return prev + Math.random() * 14 + 7;
-                    if (prev < 80) return prev + Math.random() * 8 + 3;
-                    if (prev < 92) return prev + Math.random() * 2 + 0.5;
+                    if (prev < 50) return prev + 5;
+                    if (prev < 75) return prev + 2.5;
+                    if (prev < 90) return prev + 0.8;
                     return prev;
                 });
-            }, 180);
+            }, 120);
         };
 
         const onProgress = (event: any) => {
@@ -56,11 +64,13 @@ export default function PageLoader() {
         const finish = () => {
             cleanup();
             setProgress(100);
+
+            // Smooth exit: allow the 100% state to display briefly, then fade out
             finishTimerRef.current = setTimeout(() => {
                 setIsLoading(false);
                 setShowBadge(false);
                 setProgress(0);
-            }, 260);
+            }, 250);
         };
 
         const unbindStart = router.on('start', start);
@@ -79,21 +89,20 @@ export default function PageLoader() {
         };
     }, []);
 
-    // When not loading and progress is 0, render NOTHING in the DOM
-    // This guarantees 0% CPU/GPU overhead when idle
+    // Guaranteed 0% DOM / render overhead when idle
     if (!isLoading && progress === 0) {
         return null;
     }
 
     return (
         <aside
-            aria-label="Loading indicator"
+            aria-label="Page loading"
             className="fixed inset-x-0 top-0 z-[999999] pointer-events-none select-none"
             style={{ pointerEvents: 'none' }}
         >
-            {/* Top Glowing Laser Progress Beam */}
+            {/* Top Hairline Progress Bar */}
             <div
-                className="relative h-[3.5px] w-full overflow-hidden transition-opacity duration-300"
+                className="relative h-[2px] sm:h-[2.5px] w-full overflow-hidden transition-opacity duration-300"
                 style={{
                     opacity: isLoading || progress > 0 ? 1 : 0,
                     pointerEvents: 'none',
@@ -104,61 +113,59 @@ export default function PageLoader() {
                     style={{
                         width: `${Math.min(100, Math.max(progress, 0))}%`,
                         background:
-                            'linear-gradient(90deg, #008030 0%, #10a020 40%, #34d399 75%, #f59e0b 100%)',
-                        boxShadow:
-                            '0 0 12px rgba(16, 160, 32, 0.8), 0 0 4px rgba(245, 158, 11, 0.6)',
+                            'linear-gradient(90deg, #008030 0%, #10a020 50%, #34d399 100%)',
+                        boxShadow: '0 1px 3px rgba(16, 160, 32, 0.35)',
                         pointerEvents: 'none',
                     }}
                 >
-                    {/* Glowing Leading Head */}
+                    {/* Subtle leading shimmer highlight (no harsh glare or blur ball) */}
                     <div
-                        className="absolute right-0 top-1/2 -translate-y-1/2 w-20 h-6 pointer-events-none"
+                        className="absolute right-0 top-0 bottom-0 w-20 pointer-events-none"
                         style={{
                             background:
-                                'radial-gradient(circle, rgba(245, 158, 11, 0.9) 0%, rgba(52, 211, 153, 0.6) 40%, transparent 80%)',
-                            filter: 'blur(3px)',
-                            transform: 'translate(50%, -50%)',
-                            pointerEvents: 'none',
+                                'linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.45) 100%)',
                         }}
                     />
                 </div>
             </div>
 
-            {/* Non-Blocking Floating Top Badge (Shows only if loading takes > 250ms) */}
+            {/* Dynamic Island Style Micro-Badge (Only visible during longer loads > 280ms) */}
             {showBadge && (
                 <div
-                    className="fixed top-3.5 right-4 sm:right-6 pointer-events-none select-none transition-all duration-300"
+                    className="fixed top-3 left-1/2 -translate-x-1/2 pointer-events-none select-none transition-all duration-200 ease-out animate-in fade-in slide-in-from-top-1"
                     style={{ pointerEvents: 'none' }}
                 >
                     <div
-                        className="flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white/95 dark:bg-zinc-900/95 shadow-lg border border-emerald-500/30 dark:border-emerald-500/20 backdrop-blur-md"
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/95 dark:bg-zinc-900/95 shadow-md shadow-zinc-900/5 dark:shadow-black/25 border border-zinc-200/70 dark:border-zinc-800/80 backdrop-blur-md"
                         style={{ pointerEvents: 'none' }}
                     >
-                        {/* Orbiting spinner */}
-                        <div
-                            className="relative size-4 flex items-center justify-center pointer-events-none"
-                            style={{ pointerEvents: 'none' }}
-                        >
-                            <div
-                                className="size-full rounded-full border-2 border-emerald-500/30 border-t-emerald-600 dark:border-t-emerald-400 animate-spin"
-                                style={{ pointerEvents: 'none' }}
-                            />
+                        {/* Compressed Brand Mini-Logo (2.5KB WebP) */}
+                        <div className="relative size-4 flex items-center justify-center shrink-0 pointer-events-none">
+                            <picture className="size-4 shrink-0 pointer-events-none">
+                                <source srcSet="/icons/logo-loader.webp" type="image/webp" />
+                                <img
+                                    src="/icons/logo-loader.png"
+                                    alt="MisLoan"
+                                    className="size-full object-contain"
+                                    width={16}
+                                    height={16}
+                                    loading="eager"
+                                />
+                            </picture>
                         </div>
 
-                        {/* Text */}
+                        {/* Ultra-fine hairline spinner in brand emerald */}
+                        <div
+                            className="size-3 shrink-0 rounded-full border-[1.5px] border-emerald-500/25 border-t-emerald-600 dark:border-t-emerald-400 animate-spin"
+                            style={{ pointerEvents: 'none' }}
+                        />
+
+                        {/* Subtle status text */}
                         <span
-                            className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 pointer-events-none"
+                            className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300 tracking-tight pointer-events-none"
                             style={{ pointerEvents: 'none' }}
                         >
                             লোড হচ্ছে...
-                        </span>
-
-                        {/* Progress percentage */}
-                        <span
-                            className="text-[11px] font-mono font-bold text-emerald-600 dark:text-emerald-400 pointer-events-none"
-                            style={{ pointerEvents: 'none' }}
-                        >
-                            {Math.round(progress)}%
                         </span>
                     </div>
                 </div>
