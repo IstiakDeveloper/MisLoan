@@ -10,17 +10,18 @@ import {
 } from '@/utils/loanDraftStorage';
 import {
     calcInstallmentSchedule,
+    calculateLoanSchedule,
     getInstallmentTypeLabel,
     getLoanDurationMonths,
 } from '@/utils/loanInterest';
-import { todayIsoDate } from '@/utils/dateUtils';
+import { todayIsoDate, toIsoDate } from '@/utils/dateUtils';
 import { AgrosorProfileData, AgrosorProfileProps } from './Types';
 import FormPage1 from './FormPage1';
 import FormPage2 from './FormPage2';
 import PrintPreview from './PrintPreview';
 import { numberToWordsBangla } from '../ApprovalForm/PrintPreview';
 import { withLiveMemberCode } from '@/utils/memberCodeUtils';
-import { afterLoanFormSaveUrl } from '@/utils/loanFormNavigation';
+import { afterLoanFormSaveUrl, savedDisbursementDate } from '@/utils/loanFormNavigation';
 
 function resolveBackUrl(
     isLegacy: boolean,
@@ -183,6 +184,7 @@ function buildInitialData(
     branch: any,
     isLegacy: boolean,
     savedData?: AgrosorProfileData,
+    existingApplication?: any,
 ): AgrosorProfileData {
     const memberName = member?.applicant_name_bn || member?.applicant_name_en || member?.name || '';
     const memberCode = member?.application_no || member?.member_code || '';
@@ -363,9 +365,21 @@ function buildInitialData(
         is_legacy_member: !!(member?.is_legacy) || isLegacy,
     };
 
+    const disbursementDate =
+        toIsoDate(savedData?.disbursement_date) ||
+        toIsoDate((savedData as { loan_disbursement_date?: string } | undefined)?.loan_disbursement_date) ||
+        savedDisbursementDate(existingApplication);
+    const repaymentDate =
+        toIsoDate(savedData?.repayment_date) ||
+        (disbursementDate
+            ? calculateLoanSchedule(amount || 1, loanProduct, loanCategory, disbursementDate).lastInstallmentDate || ''
+            : '');
+
     return {
         ...base,
         ...(savedData || {}),
+        disbursement_date: disbursementDate,
+        repayment_date: repaymentDate,
         // Prefer admission when saved draft left these empty
         member_name_code: memberCode
             ? [memberName, memberCode].filter(Boolean).join(' / ')
@@ -445,6 +459,7 @@ export default function AgrosorProfile({
             branch,
             isLegacy,
             savedData && Object.keys(savedData).length > 0 ? savedData : undefined,
+            existingApplication,
         );
         const months = getLoanDurationMonths(loanProduct, 6);
         const amount =
@@ -511,7 +526,7 @@ export default function AgrosorProfile({
     const [previewFit, setPreviewFit] = useState({ scale: 1, height: 0 });
 
     const { data, setData, processing } = useForm<AgrosorProfileData>(
-        buildInitialData(member, loanProduct, loanCategory, requestedAmount, branch, isLegacy, savedData),
+        buildInitialData(member, loanProduct, loanCategory, requestedAmount, branch, isLegacy, savedData, existingApplication),
     );
 
     // Scale preview to the right panel WIDTH only (admin sidebar already reduced main content).

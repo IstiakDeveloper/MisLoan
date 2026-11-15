@@ -7,6 +7,7 @@ use App\Models\MemberAdmission;
 use App\Models\Notification;
 use App\Models\Role;
 use App\Models\User;
+use App\Support\LoanFormVisibility;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
@@ -359,6 +360,94 @@ it('requires a disbursement date', function () {
         ->assertSessionHasErrors('disbursement_date');
 
     expect($loan->fresh()->status)->toBe(LoanApplication::STATUS_PENDING_DISBURSEMENT);
+});
+
+it('copies the date from the first form onto every other saved form', function () {
+    [, , $loan] = createPendingDisbursementLoan();
+
+    $loan->applyDisbursementDateToSavedForms('2026-09-15');
+
+    expect($loan->loan_agreement_data['disbursement_date'])->toBe('2026-09-15')
+        ->and($loan->loan_agreement_data['last_installment_date'])->toBe('2027-09-14')
+        ->and($loan->guarantor_info['loan_date'])->toBe('2026-09-15')
+        ->and($loan->nominee_info['loan_sanction_date'])->toBe('2026-09-15')
+        ->and($loan->nominee_info['date'])->toBe('2026-01-10')
+        ->and($loan->asset_info['loan_disbursement_date'])->toBe('2026-09-15')
+        ->and($loan->asset_info['field_visit_date'])->toBe('2026-01-10')
+        ->and($loan->business_plan['loan_disbursement_date'])->toBe('2026-09-15')
+        ->and($loan->business_plan['disbursement_date'])->toBe('2026-09-15')
+        ->and($loan->business_plan['loan_repayment_date'])->toBe('2027-09-14')
+        ->and($loan->business_plan['repayment_date'])->toBe('2027-09-14')
+        ->and($loan->business_plan['loan_approval_date'])->toBe('2026-08-01');
+});
+
+it('leaves unsaved forms empty when copying a disbursement date', function () {
+    [, , $loan] = createPendingDisbursementLoan();
+    $loan->guarantor_info = null;
+    $loan->nominee_info = [];
+
+    $loan->applyDisbursementDateToSavedForms('2026-09-15');
+
+    expect($loan->guarantor_info)->toBeNull()
+        ->and($loan->nominee_info)->toBe([])
+        ->and($loan->loan_agreement_data['disbursement_date'])->toBe('2026-09-15');
+});
+
+it('copies the disbursement date onto generated prefill without marking that form saved', function () {
+    [, , $loan] = createPendingDisbursementLoan();
+    $loan->status = LoanApplication::STATUS_DRAFT;
+    $loan->guarantor_info = [
+        'loan_date' => '2026-01-01',
+        'loan_amount' => 15000,
+        '_prefill_only' => true,
+    ];
+
+    $loan->applyDisbursementDateToSavedForms('2026-09-15');
+
+    expect($loan->guarantor_info['loan_date'])->toBe('2026-09-15')
+        ->and($loan->guarantor_info['_prefill_only'])->toBeTrue()
+        ->and($loan->guarantor_info['_user_saved'] ?? false)->toBeFalse()
+        ->and(LoanFormVisibility::isUserSavedForm($loan->guarantor_info, $loan->status))->toBeFalse();
+});
+
+it('updates only the guarantor loan date and amount', function () {
+    [, , $loan] = createPendingDisbursementLoan();
+    $loan->guarantor_info = [
+        'guarantor_name' => 'করিম',
+        'guarantor_nid' => '1234567890',
+        'guarantor_signature_image' => 'sig',
+        'loan_date' => '2026-01-01',
+        'loan_amount' => 1000,
+        'loan_amount_words' => 'এক হাজার টাকা',
+    ];
+
+    $loan->alignSavedGuarantorLoanTerms('2026-09-15', 17250, 'সতেরো হাজার দুইশত পঞ্চাশ টাকা');
+
+    expect($loan->guarantor_info['loan_date'])->toBe('2026-09-15')
+        ->and($loan->guarantor_info['loan_amount'])->toEqual(17250)
+        ->and($loan->guarantor_info['loan_amount_words'])->toBe('সতেরো হাজার দুইশত পঞ্চাশ টাকা')
+        ->and($loan->guarantor_info['guarantor_name'])->toBe('করিম')
+        ->and($loan->guarantor_info['guarantor_nid'])->toBe('1234567890')
+        ->and($loan->guarantor_info['guarantor_signature_image'])->toBe('sig')
+        ->and($loan->nominee_info['date'])->toBe('2026-01-10');
+});
+
+it('does not create a guarantor form when aligning loan terms', function () {
+    [, , $loan] = createPendingDisbursementLoan();
+    $loan->guarantor_info = null;
+
+    $loan->alignSavedGuarantorLoanTerms('2026-09-15', 17250, 'সতেরো হাজার টাকা');
+
+    expect($loan->guarantor_info)->toBeNull();
+});
+
+it('ignores a blank disbursement date when syncing forms', function () {
+    [, , $loan] = createPendingDisbursementLoan();
+
+    $loan->applyDisbursementDateToSavedForms('   ');
+
+    expect($loan->guarantor_info['loan_date'])->toBe('2026-01-01')
+        ->and($loan->loan_agreement_data['disbursement_date'])->toBe('2026-01-01');
 });
 
 it('ends the loan one day before the disbursement anniversary', function () {

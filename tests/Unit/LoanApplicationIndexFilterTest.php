@@ -170,6 +170,7 @@ beforeEach(function () {
         $table->text('asset_info')->nullable();
         $table->text('business_plan')->nullable();
         $table->timestamp('submitted_at')->nullable();
+        $table->timestamp('head_office_sent_at')->nullable();
         $table->timestamp('reviewed_at')->nullable();
         $table->timestamp('disbursed_at')->nullable();
         $table->unsignedBigInteger('submitted_by')->nullable();
@@ -392,4 +393,62 @@ it('limits samity choices to the branches a user can access', function () {
 
     expect($props['samities'])->toHaveCount(1)
         ->and($props['samities']->first()->samity_code)->toBe('S-OWN');
+});
+
+it('lists the branch head office send day after the loan is approved or disbursed', function () {
+    $role = Role::query()->create([
+        'name' => Role::BRANCH_USER,
+        'display_name' => 'Branch User',
+    ]);
+    $zone = Zone::query()->create(['name' => 'Send Zone', 'code' => 'ZN-SEND']);
+    $area = Area::query()->create(['zone_id' => $zone->id, 'name' => 'Send Area', 'code' => 'AR-SEND']);
+    $branch = Branch::query()->create(['area_id' => $area->id, 'name' => 'Send Branch', 'code' => 'BR-SEND']);
+    $user = User::query()->create([
+        'name' => 'Send Branch User',
+        'email' => 'send-branch@example.com',
+        'username' => 'loan-send-branch',
+        'password' => 'password',
+        'role_id' => $role->id,
+        'branch_id' => $branch->id,
+        'has_all_access' => false,
+    ]);
+    $samity = Samity::query()->create([
+        'branch_id' => $branch->id,
+        'samity_code' => 'S-SEND',
+        'samity_name' => 'Send Samity',
+    ]);
+    $category = LoanCategory::query()->create([
+        'category_name' => 'Send Category',
+        'category_code' => 'SEND',
+    ]);
+    $product = loanFilterProduct($category, 'SEND-P', 'Send Product');
+
+    $waiting = loanFilterApplication($branch, $samity, $category, $product, 'SEND-WAIT');
+    $waiting->update(['status' => LoanApplication::STATUS_READY_FOR_HEAD_OFFICE]);
+
+    $sentToday = loanFilterApplication($branch, $samity, $category, $product, 'SEND-TODAY');
+    $sentToday->update([
+        'status' => LoanApplication::STATUS_DISBURSED,
+        'head_office_sent_at' => now(),
+    ]);
+
+    $sentYesterday = loanFilterApplication($branch, $samity, $category, $product, 'SEND-YDAY');
+    $sentYesterday->update([
+        'status' => LoanApplication::STATUS_APPROVED,
+        'head_office_sent_at' => now()->subDay(),
+    ]);
+
+    $todayPage = loanIndexProps($user, ['ho_sent_on' => now()->toDateString()]);
+    expect($todayPage['applications']->pluck('id')->all())->toBe([$sentToday->id])
+        ->and($todayPage['hoSentCount'])->toBe(1)
+        ->and($todayPage['hoSentOn'])->toBe(now()->toDateString());
+
+    $yesterdayPage = loanIndexProps($user, ['ho_sent_on' => now()->subDay()->toDateString()]);
+    expect($yesterdayPage['applications']->pluck('id')->all())->toBe([$sentYesterday->id])
+        ->and($yesterdayPage['hoSentCount'])->toBe(1);
+
+    $queue = loanIndexProps($user);
+    expect($queue['applications']->pluck('id')->all())->toBe([$waiting->id])
+        ->and($queue['hoSentCount'])->toBe(1)
+        ->and($queue['hoSentOn'])->toBeNull();
 });

@@ -85,6 +85,7 @@ class LoanApplication extends Model
         'printed_at',
         'submitted_by',
         'submitted_at',
+        'head_office_sent_at',
         'reviewed_by',
         'reviewed_at',
         'rejection_reason',
@@ -147,6 +148,7 @@ class LoanApplication extends Model
         'has_savings_account' => 'boolean',
         'other_loan_amount' => 'decimal:2',
         'submitted_at' => 'datetime',
+        'head_office_sent_at' => 'datetime',
         'reviewed_at' => 'datetime',
         'amount_change_requested_at' => 'datetime',
         'cancellation_requested_at' => 'datetime',
@@ -223,6 +225,25 @@ class LoanApplication extends Model
     const STATUS_CANCELLED = 'cancelled';
 
     const STATUS_NEEDS_CORRECTION = 'needs_correction';
+
+    /**
+     * Statuses a loan can be in after the branch has sent it to Head Office.
+     * The send day stays on head_office_sent_at, so later approval or disbursement does not remove it.
+     *
+     * @return list<string>
+     */
+    public static function headOfficeSentStatuses(): array
+    {
+        return [
+            self::STATUS_PENDING_HEAD_OFFICE,
+            self::STATUS_APPROVED,
+            self::STATUS_PENDING_DISBURSEMENT,
+            self::STATUS_AWAITING_TAKEUP,
+            self::STATUS_PENDING_AMOUNT_APPROVAL,
+            self::STATUS_DISBURSED,
+            self::STATUS_REPAID,
+        ];
+    }
 
     // Relationships
     public function memberAdmission(): BelongsTo
@@ -580,6 +601,86 @@ class LoanApplication extends Model
      *     business_plan: array<string, mixed>
      * }
      */
+    /**
+     * Copy a disbursement date chosen on the loan agreement or approval form
+     * onto every other form that already has saved data.
+     */
+    public function applyDisbursementDateToSavedForms(string $disbursementDate): void
+    {
+        $disbursementDate = trim($disbursementDate);
+        if ($disbursementDate === '') {
+            return;
+        }
+
+        try {
+            $disbursementDate = Carbon::parse($disbursementDate)->toDateString();
+        } catch (\Throwable) {
+            return;
+        }
+
+        $agreement = is_array($this->loan_agreement_data) ? $this->loan_agreement_data : [];
+        $guarantor = is_array($this->guarantor_info) ? $this->guarantor_info : [];
+        $nominee = is_array($this->nominee_info) ? $this->nominee_info : [];
+        $asset = is_array($this->asset_info) ? $this->asset_info : [];
+        $plan = is_array($this->business_plan) ? $this->business_plan : [];
+
+        $stamped = $this->stampDisbursementDateOnForms(
+            $disbursementDate,
+            $agreement,
+            $guarantor,
+            $nominee,
+            $asset,
+            $plan,
+        );
+
+        if ($agreement !== []) {
+            $this->loan_agreement_data = $stamped['loan_agreement_data'];
+        }
+        if ($guarantor !== []) {
+            $this->guarantor_info = $stamped['guarantor_info'];
+        }
+        if ($nominee !== []) {
+            $this->nominee_info = $stamped['nominee_info'];
+        }
+        if ($asset !== []) {
+            $this->asset_info = $stamped['asset_info'];
+        }
+        if ($plan !== []) {
+            $this->business_plan = $stamped['business_plan'];
+        }
+    }
+
+    /**
+     * Keep the guarantor form's loan date and amount in step with the loan form.
+     * Guarantor name, identity, address, and signatures are left unchanged.
+     * Does nothing when the guarantor form has not been saved.
+     */
+    public function alignSavedGuarantorLoanTerms(?string $disbursementDate, float $amountWithService, string $amountWords): void
+    {
+        $info = is_array($this->guarantor_info) ? $this->guarantor_info : [];
+        if ($info === []) {
+            return;
+        }
+
+        if ($amountWithService > 0) {
+            $info['loan_amount'] = $amountWithService;
+            if ($amountWords !== '') {
+                $info['loan_amount_words'] = $amountWords;
+            }
+        }
+
+        $disbursementDate = trim((string) $disbursementDate);
+        if ($disbursementDate !== '') {
+            try {
+                $info['loan_date'] = Carbon::parse($disbursementDate)->toDateString();
+            } catch (\Throwable) {
+                // Keep the date already stored on the guarantor form.
+            }
+        }
+
+        $this->guarantor_info = $info;
+    }
+
     public function stampDisbursementDateOnForms(
         string $disbursementDate,
         array $agreementData,

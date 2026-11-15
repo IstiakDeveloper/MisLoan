@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { Head, useForm, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
-import { formatDateBangla, todayIsoDate } from '@/utils/dateUtils';
+import { formatDateBangla, todayIsoDate, toIsoDate } from '@/utils/dateUtils';
 import { calculateTotalServiceCharge } from '@/utils/loanInterest';
 import { Save, Printer, Eye, ArrowLeft, ShieldCheck, UserCheck, CreditCard, FileText, CheckCircle2, Plus, Trash2, Users } from 'lucide-react';
 import { numberToWordsBangla } from './ApprovalForm/PrintPreview';
-import { afterLoanFormSaveUrl, continueDisburseWizardUrl, disburseWizardParamsFromContext, isDisburseWizardSearch, loanDisburseShowUrl } from '@/utils/loanFormNavigation';
+import { afterLoanFormSaveUrl, continueDisburseWizardUrl, disburseWizardParamsFromContext, isDisburseWizardSearch, loanDisburseShowUrl, savedDisbursementDate } from '@/utils/loanFormNavigation';
 import { useAutoFitPrint } from '@/hooks/useAutoFitPrint';
 import { withLiveMemberCode, liveMemberIdentityNumber, liveMemberMobile } from '@/utils/memberCodeUtils';
 
@@ -177,6 +177,7 @@ function buildGuarantorCommitmentDefaults(
     loanProduct: any,
     requestedAmount: number,
     branch?: any,
+    disbursementDate?: string | null,
 ): GuarantorCommitmentData {
     const baseLoanAmount = Number(requestedAmount) || 0;
     const loanAmount = calcLoanAmountWithServiceCharge(baseLoanAmount, loanProduct);
@@ -217,7 +218,7 @@ function buildGuarantorCommitmentDefaults(
         member_code: member?.application_no || '',
         samity_name: member?.samity?.samity_name_bn || member?.samity?.samity_name || '',
         samity_code: member?.samity?.samity_code || member?.samity?.id?.toString() || '',
-        loan_date: todayIsoDate(),
+        loan_date: toIsoDate(disbursementDate) || todayIsoDate(),
         loan_amount: loanAmount,
         loan_amount_words: words ? words + ' টাকা' : '',
         witness1_signature_image: null,
@@ -226,14 +227,21 @@ function buildGuarantorCommitmentDefaults(
     };
 }
 
-function GuarantorCommitmentOnlyPreview({ member, loanProduct, requestedAmount, branch, savedData }: any) {
+function GuarantorCommitmentOnlyPreview({ member, loanProduct, requestedAmount, branch, savedData, existingApplication }: any) {
     const baseLoanAmount = Number(requestedAmount) || 0;
-    const defaults = buildGuarantorCommitmentDefaults(member, loanProduct, requestedAmount, branch);
+    const defaults = buildGuarantorCommitmentDefaults(
+        member,
+        loanProduct,
+        requestedAmount,
+        branch,
+        toIsoDate(savedData?.loan_date) || savedDisbursementDate(existingApplication),
+    );
     const previewData = withLiveMemberCode(
         savedData && Object.keys(savedData).length > 0
             ? {
                 ...defaults,
                 ...savedData,
+                loan_date: toIsoDate(savedData?.loan_date) || defaults.loan_date,
                 ...(baseLoanAmount > 0 ? {
                     loan_amount: defaults.loan_amount,
                     loan_amount_words: defaults.loan_amount_words,
@@ -300,6 +308,7 @@ export default function GuarantorCommitment({
                 requestedAmount={requestedAmount}
                 branch={branch}
                 savedData={savedData}
+                existingApplication={existingApplication}
             />
         );
     }
@@ -359,7 +368,7 @@ export default function GuarantorCommitment({
         samity_code: member?.samity?.samity_code || member?.samity?.id?.toString() || '',
 
         // Loan Details — loan_amount = base + service charge (auto from product)
-        loan_date: todayIsoDate(),
+        loan_date: toIsoDate(savedData?.loan_date) || savedDisbursementDate(existingApplication) || todayIsoDate(),
         loan_amount: initialLoanAmount,
         loan_amount_words: initialWords,
 
@@ -473,6 +482,7 @@ export default function GuarantorCommitment({
             setData(prev => withLiveMemberCode({
                 ...prev,
                 ...savedData,
+                loan_date: toIsoDate(savedData.loan_date) || savedDisbursementDate(existingApplication) || prev.loan_date,
                 guarantors: loadedGuarantors,
                 ...(baseLoanAmount > 0 ? {
                     loan_amount: calculated,
@@ -521,6 +531,16 @@ export default function GuarantorCommitment({
 
         return next;
     };
+
+    const requireGuarantorComplete = !embedded && new URLSearchParams(window.location.search).get('complete') === '1';
+
+    useEffect(() => {
+        if (!requireGuarantorComplete) {
+            return;
+        }
+
+        setFieldErrors(collectFieldErrors());
+    }, [requireGuarantorComplete, data.guarantors, data.loan_date, data.loan_amount]);
 
     const clearFieldError = (key: string) => {
         if (!fieldErrors[key]) {
@@ -680,6 +700,14 @@ export default function GuarantorCommitment({
             </Head>
 
             <div className="max-w-[1600px] mx-auto p-4 md:p-6 space-y-6">
+                {requireGuarantorComplete && (
+                    <div className="bg-amber-50 border border-amber-300 rounded-xl p-3.5 print:hidden">
+                        <p className="text-sm font-bold text-amber-950">সাবমিটের আগে জামিনদারের আবশ্যক তথ্য পূরণ করুন</p>
+                        <p className="text-xs text-amber-900 mt-0.5">
+                            নাম, এনআইডি, মোবাইল, গ্রাম/রাস্তা, ডাকঘর, উপজেলা ও জেলা পূরণ করে সংরক্ষণ করুন। তারপর ঋণ আবেদন সাবমিট করুন।
+                        </p>
+                    </div>
+                )}
                 {inWizard && (
                     <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5 print:hidden">
                         <p className="text-sm font-bold text-emerald-900">বিতরণের ধাপ ১/২ — জামিনদার ফর্ম</p>
@@ -747,12 +775,12 @@ export default function GuarantorCommitment({
                         {!inWizard && (
                             <button
                                 type="button"
-                                onClick={() => handleSaveDraft(false)}
+                                onClick={() => handleSaveDraft(requireGuarantorComplete)}
                                 disabled={processing}
                                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-xs md:text-sm font-bold rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-all shadow-sm"
                             >
                                 <Save className="w-4 h-4" />
-                                <span>{processing ? 'সংরক্ষণ হচ্ছে...' : (saveButtonLabel || 'ড্রাফট সংরক্ষণ করুন')}</span>
+                                <span>{processing ? 'সংরক্ষণ হচ্ছে...' : (requireGuarantorComplete ? 'আবশ্যক তথ্য সংরক্ষণ' : (saveButtonLabel || 'ড্রাফট সংরক্ষণ করুন'))}</span>
                             </button>
                         )}
                         {inWizard && (

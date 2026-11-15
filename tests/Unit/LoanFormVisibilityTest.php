@@ -250,7 +250,7 @@ class LoanFormVisibilityTest extends TestCase
         $this->assertEqualsCanonicalizing([2, 3], $editable);
     }
 
-    public function test_field_officer_at_draft_still_only_gets_submit_forms(): void
+    public function test_field_officer_at_draft_can_fill_guarantor_when_the_loan_requires_it(): void
     {
         $editable = LoanFormVisibility::editableFormIdsForUser(
             Role::FIELD_OFFICER,
@@ -259,7 +259,56 @@ class LoanFormVisibilityTest extends TestCase
             50000.0
         );
 
+        $this->assertEqualsCanonicalizing([1, 2], $editable);
+    }
+
+    public function test_field_officer_below_guarantor_minimum_does_not_edit_the_guarantor_form(): void
+    {
+        $editable = LoanFormVisibility::editableFormIdsForUser(
+            Role::FIELD_OFFICER,
+            LoanApplication::STATUS_DRAFT,
+            $this->weeklyProduct(),
+            15000.0
+        );
+
         $this->assertEqualsCanonicalizing([1], $editable);
+        $this->assertFalse(LoanFormVisibility::requiresGuarantorForm(15000.0));
+    }
+
+    public function test_submit_requires_a_saved_guarantor_with_identity_fields(): void
+    {
+        $this->assertNull(LoanFormVisibility::submitGuarantorError(null, LoanApplication::STATUS_DRAFT, 15000.0));
+
+        $missing = LoanFormVisibility::submitGuarantorError([
+            'guarantor_name' => 'করিম',
+            '_prefill_only' => true,
+        ], LoanApplication::STATUS_DRAFT, 25000.0);
+        $this->assertNotNull($missing);
+        $this->assertStringContainsString('এনআইডি', (string) $missing);
+
+        $savedIncomplete = LoanFormVisibility::submitGuarantorError([
+            'guarantor_name' => 'করিম',
+            'guarantor_nid' => '123',
+            'guarantor_mobile' => '01700000000',
+            'guarantor_village' => 'গ্রাম',
+            'guarantor_post_office' => 'ডাকঘর',
+            'guarantor_upazila' => '',
+            'guarantor_district' => 'ঢাকা',
+            '_user_saved' => true,
+        ], LoanApplication::STATUS_DRAFT, 25000.0);
+        $this->assertStringContainsString('উপজেলা', (string) $savedIncomplete);
+
+        $complete = [
+            'guarantor_name' => 'করিম',
+            'guarantor_nid' => '123',
+            'guarantor_mobile' => '01700000000',
+            'guarantor_village' => 'গ্রাম',
+            'guarantor_post_office' => 'ডাকঘর',
+            'guarantor_upazila' => 'উপজেলা',
+            'guarantor_district' => 'ঢাকা',
+            '_user_saved' => true,
+        ];
+        $this->assertNull(LoanFormVisibility::submitGuarantorError($complete, LoanApplication::STATUS_DRAFT, 25000.0));
     }
 
     public function test_branch_user_can_edit_loan_details_at_any_status_except_disbursed_and_cancelled(): void
@@ -603,5 +652,74 @@ class LoanFormVisibilityTest extends TestCase
         );
 
         $this->assertSame('agrosor_profile', $updated['form_variant']);
+    }
+
+    public function test_guarantor_identity_gaps_ignore_loan_date_and_amount(): void
+    {
+        $gaps = LoanFormVisibility::guarantorIdentityGaps([
+            'guarantor_name' => 'করিম',
+            'guarantor_mobile' => '01700000000',
+            'loan_date' => '',
+            'loan_amount' => 0,
+            'guarantors' => [[
+                'guarantor_name' => 'করিম',
+                'guarantor_nid' => '123',
+                'guarantor_mobile' => '01700000000',
+                'guarantor_village' => 'গ্রাম',
+                'guarantor_post_office' => 'ডাকঘর',
+                'guarantor_upazila' => '',
+                'guarantor_district' => 'ঢাকা',
+            ]],
+        ]);
+
+        $this->assertSame(['জামিনদারের উপজেলা'], $gaps);
+        $this->assertSame([], LoanFormVisibility::guarantorIdentityGaps(null));
+    }
+
+    public function test_saved_badge_requires_a_real_save_on_drafts_and_keeps_completed_loans(): void
+    {
+        $filled = [
+            'loan_purpose' => 'গরু পালন',
+            'loan_amount' => 25000,
+        ];
+
+        $draft = new LoanApplication(['status' => LoanApplication::STATUS_DRAFT]);
+        $draft->loan_agreement_data = $filled;
+        $this->assertFalse(LoanFormVisibility::buildFormSavedMap($draft)[1]);
+
+        $draft->loan_agreement_data = LoanFormVisibility::markUserSaved($filled);
+        $this->assertTrue(LoanFormVisibility::buildFormSavedMap($draft)[1]);
+
+        $copied = LoanFormVisibility::markPrefill($filled + ['_user_saved' => true]);
+        $draft->loan_agreement_data = $copied;
+        $this->assertFalse(LoanFormVisibility::buildFormSavedMap($draft)[1]);
+        $this->assertArrayNotHasKey('_user_saved', $copied);
+        $this->assertTrue($copied['_prefill_only']);
+
+        $pending = new LoanApplication(['status' => LoanApplication::STATUS_PENDING_DISBURSEMENT]);
+        $pending->loan_agreement_data = $filled;
+        $this->assertTrue(LoanFormVisibility::buildFormSavedMap($pending)[1]);
+
+        $pending->loan_agreement_data = LoanFormVisibility::markPrefill($filled);
+        $this->assertFalse(LoanFormVisibility::buildFormSavedMap($pending)[1]);
+
+        $pending->asset_info = [
+            'house_count' => 2,
+            'monthly_income' => 15000,
+        ];
+        $this->assertFalse(LoanFormVisibility::buildFormSavedMap($pending)[4]);
+
+        $pending->asset_info = LoanFormVisibility::markUserSaved([
+            'house_count' => 2,
+        ]);
+        $this->assertFalse(LoanFormVisibility::buildFormSavedMap($pending)[4]);
+
+        $pending->asset_info = [
+            'field_visit_date' => '2026-09-01',
+            'comments' => 'ঠিক আছে',
+            'information_provider_name' => 'করিম',
+            'house_identification' => 'টিনের ঘর',
+        ];
+        $this->assertTrue(LoanFormVisibility::buildFormSavedMap($pending)[4]);
     }
 }

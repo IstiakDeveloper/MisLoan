@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Head, useForm, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
-import { formatDateBangla, todayIsoDate } from '@/utils/dateUtils';
+import { formatDateBangla, todayIsoDate, toIsoDate } from '@/utils/dateUtils';
 import { Save, Printer, Eye, ArrowLeft, ClipboardList } from 'lucide-react';
 import GeneralSavingsSection, { getRequiredSavingsPercent } from '@/components/LoanApplications/GeneralSavingsSection';
-import { afterLoanFormSaveUrl } from '@/utils/loanFormNavigation';
+import { afterLoanFormSaveUrl, savedDisbursementDate } from '@/utils/loanFormNavigation';
 import { useAutoFitPrint, triggerPrintWithAutoFit } from '@/hooks/useAutoFitPrint';
 import { withLiveMemberCode } from '@/utils/memberCodeUtils';
 
@@ -369,12 +369,13 @@ function buildFieldInvestigationDefaults(
     requestedAmount: number,
     branch?: any,
     loanRound = 1,
+    disbursementDate?: string | null,
 ): FieldInvestigationData {
     return {
         branch_name: branch?.name || '',
         branch_address: branch?.address || '',
         field_visit_date: todayIsoDate(),
-        loan_disbursement_date: '',
+        loan_disbursement_date: toIsoDate(disbursementDate) || '',
         member_name: member?.applicant_name_bn || member?.applicant_name_en || '',
         member_no: member?.application_no || '',
         samity_name: member?.samity?.samity_name_bn || member?.samity?.samity_name || '',
@@ -477,12 +478,19 @@ export default function FieldInvestigation({
     const isResumeApproval = !!resumeParams?.get('resume_approval_id');
     if (onlyPreview) {
         const reqAmt = Number(requestedAmount) || 0;
-        const defaults = buildFieldInvestigationDefaults(member, requestedAmount, branch, loanRound);
+        const defaults = buildFieldInvestigationDefaults(
+            member,
+            requestedAmount,
+            branch,
+            loanRound,
+            toIsoDate(savedData?.loan_disbursement_date) || savedDisbursementDate(existingApplication),
+        );
         const previewData = withLiveMemberCode(
             savedData && Object.keys(savedData).length > 0
                 ? {
                     ...defaults,
                     ...savedData,
+                    loan_disbursement_date: toIsoDate(savedData?.loan_disbursement_date) || defaults.loan_disbursement_date,
                     ...(reqAmt > 0 ? {
                         current_loan_demand: reqAmt,
                         recommended_loan_amount: reqAmt,
@@ -526,7 +534,7 @@ export default function FieldInvestigation({
         branch_name: branch?.name || '',
         branch_address: branch?.address || '',
         field_visit_date: todayIsoDate(),
-        loan_disbursement_date: '',
+        loan_disbursement_date: toIsoDate(savedData?.loan_disbursement_date) || savedDisbursementDate(existingApplication) || '',
         member_name: member?.applicant_name_bn || member?.applicant_name_en || '',
         member_no: member?.application_no || '',
         samity_name: member?.samity?.samity_name_bn || member?.samity?.samity_name || '',
@@ -584,6 +592,9 @@ export default function FieldInvestigation({
             setData((prev) => {
                 const reqAmt = Number(requestedAmount) || 0;
                 const merged = { ...prev, ...savedData };
+                if (!String(merged.loan_disbursement_date || '').trim()) {
+                    merged.loan_disbursement_date = savedDisbursementDate(existingApplication);
+                }
                 if (!String(merged.nid_number || '').trim()) {
                     merged.nid_number = resolveMemberIdentityNumber(member);
                 }

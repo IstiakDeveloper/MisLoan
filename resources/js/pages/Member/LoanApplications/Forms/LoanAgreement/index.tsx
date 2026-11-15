@@ -3,7 +3,7 @@ import { Head, useForm, router, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { Printer, Save, Eye, Calculator, ArrowLeft, AlertCircle } from 'lucide-react';
 import { fileToCompressedDataUrl } from '@/utils/imageUpload';
-import { todayIsoDate } from '@/utils/dateUtils';
+import { todayIsoDate, toIsoDate } from '@/utils/dateUtils';
 import {
     clearLoanDraftLocal,
     loadLoanDraftLocal,
@@ -14,7 +14,7 @@ import {
 import { LoanAgreementData, LoanAgreementProps } from './Types';
 import { LoanAgreementPrintView } from './LoanAgreementPrintView';
 import { LoanAgreementForm } from './LoanAgreementForm';
-import { afterLoanFormSaveUrl } from '@/utils/loanFormNavigation';
+import { afterLoanFormSaveUrl, savedDisbursementDate } from '@/utils/loanFormNavigation';
 import { calculateLoanSchedule, isSufolonLoan } from '@/utils/loanInterest';
 import { numberToWordsBangla } from '../ApprovalForm/PrintPreview';
 import { withLiveMemberCode } from '@/utils/memberCodeUtils';
@@ -41,10 +41,12 @@ export function buildLoanAgreementDefaults(
     requestedAmount: number,
     branch?: any,
     customDurationMonths?: number | string | null,
+    disbursementDate?: string | null,
 ): LoanAgreementData {
     const landInfo = getAcresAndDecimals(member?.total_land_amount || member?.cultivable_land_amount);
     const loanAmt = Number(requestedAmount) || 0;
-    const schedule = calculateLoanSchedule(loanAmt, loanProduct, loanCategory, undefined, customDurationMonths);
+    const disburseOn = toIsoDate(disbursementDate) || todayIsoDate();
+    const schedule = calculateLoanSchedule(loanAmt, loanProduct, loanCategory, disburseOn, customDurationMonths);
     const interestRate = Number(loanProduct?.interest_rate != null ? loanProduct.interest_rate : (loanCategory?.interest_rate != null ? loanCategory.interest_rate : 0));
 
     return {
@@ -75,7 +77,7 @@ export function buildLoanAgreementDefaults(
         number_of_installments: schedule.numberOfInstallments,
         installment_amount: schedule.installmentAmount,
         last_installment_amount: schedule.lastInstallmentAmount,
-        disbursement_date: todayIsoDate(),
+        disbursement_date: disburseOn,
         last_installment_date: schedule.lastInstallmentDate,
         applicant_signature_name: member?.applicant_name_bn || '',
         applicant_signature_image: member?.applicant_signature_path || null,
@@ -136,6 +138,7 @@ function liveLoanAgreementTerms(defaults: LoanAgreementData): Partial<LoanAgreem
         number_of_installments: defaults.number_of_installments,
         installment_amount: defaults.installment_amount,
         last_installment_amount: defaults.last_installment_amount,
+        disbursement_date: defaults.disbursement_date,
         last_installment_date: defaults.last_installment_date,
         ...(defaults.loan_purpose ? { loan_purpose: defaults.loan_purpose } : {}),
     };
@@ -168,8 +171,10 @@ export default function LoanAgreement({
             existingApplication?.loan_term_months ||
             savedData?.loan_duration_months ||
             loanProduct?.duration_months;
+        const disburseOn =
+            toIsoDate(savedData?.disbursement_date) || savedDisbursementDate(existingApplication);
         const previewData = mergeFormData(
-            buildLoanAgreementDefaults(member, loanProduct, loanCategory, requestedAmount, branch, termMonths),
+            buildLoanAgreementDefaults(member, loanProduct, loanCategory, requestedAmount, branch, termMonths, disburseOn),
             savedData,
             Number(requestedAmount) || 0,
             member,
@@ -203,15 +208,21 @@ export default function LoanAgreement({
     const flashError = page.props.flash?.error || null;
     const flashSuccess = page.props.flash?.success || null;
 
+    const linkedDisbursementDate =
+        toIsoDate(savedData?.disbursement_date) || savedDisbursementDate(existingApplication);
     const { data, setData, processing } = useForm<LoanAgreementData>(
-        buildLoanAgreementDefaults(member, loanProduct, loanCategory, requestedAmount, branch),
+        buildLoanAgreementDefaults(member, loanProduct, loanCategory, requestedAmount, branch, undefined, linkedDisbursementDate),
     );
 
     // Load server draft, then overlay local backup if present (so unsaved work is never lost)
     useEffect(() => {
         const local = loadLoanDraftLocal<Partial<LoanAgreementData>>(draftKey);
         if (savedData || local?.data) {
-            const defaults = buildLoanAgreementDefaults(member, loanProduct, loanCategory, requestedAmount, branch);
+            const disburseOn =
+                toIsoDate(local?.data?.disbursement_date) ||
+                toIsoDate(savedData?.disbursement_date) ||
+                savedDisbursementDate(existingApplication);
+            const defaults = buildLoanAgreementDefaults(member, loanProduct, loanCategory, requestedAmount, branch, undefined, disburseOn);
             setData((prev) => withLiveMemberCode({
                 ...prev,
                 ...(savedData || {}),

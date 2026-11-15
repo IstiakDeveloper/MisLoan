@@ -1,3 +1,23 @@
+import { toIsoDate } from '@/utils/dateUtils';
+
+type DisbursementDateSource = {
+    loan_agreement_data?: { disbursement_date?: string | null } | null;
+    business_plan?: { loan_disbursement_date?: string | null; disbursement_date?: string | null } | null;
+} | null | undefined;
+
+/** Disbursement date already stored on the loan agreement (form 1) or approval form (form 5). */
+export function savedDisbursementDate(application?: DisbursementDateSource): string {
+    const agreement = application?.loan_agreement_data;
+    const plan = application?.business_plan;
+    const raw =
+        (agreement?.disbursement_date != null && String(agreement.disbursement_date).trim()) ||
+        (plan?.loan_disbursement_date != null && String(plan.loan_disbursement_date).trim()) ||
+        (plan?.disbursement_date != null && String(plan.disbursement_date).trim()) ||
+        '';
+
+    return toIsoDate(raw);
+}
+
 /** After saving a loan form, return to the application Show hub when possible. */
 export function loanApplicationShowUrl(applicationId: number, formId?: number): string {
     const q = formId ? `?form=${formId}` : '';

@@ -159,6 +159,11 @@ interface LoanApplication {
     } | null;
     disburse_required_form_ids?: number[];
     next_disburse_form_id?: number | null;
+    guarantor_required?: boolean;
+    guarantor_form_saved?: boolean;
+    guarantor_identity_gaps?: string[];
+    guarantor_followup_open?: boolean;
+    guarantor_submit_error?: string | null;
     member_admission_status?: string;
     loan_product: {
         product_name: string;
@@ -570,7 +575,7 @@ export default function Show({ application, routes, categories = [], can_update_
                 ? application.approved_amount
                 : application.requested_amount);
 
-    const buildFormUrl = (formId: number) => {
+    const buildFormUrl = (formId: number, extra?: Record<string, string>) => {
         const route = FORM_ROUTES[formId];
         if (!route) return '#';
         const params = new URLSearchParams({
@@ -581,6 +586,9 @@ export default function Show({ application, routes, categories = [], can_update_
         if (application.loan_product_id) params.set('product_id', String(application.loan_product_id));
         if (application.loan_category_id) params.set('category_id', String(application.loan_category_id));
         params.set('application_id', String(application.id));
+        if (extra) {
+            Object.entries(extra).forEach(([key, value]) => params.set(key, value));
+        }
         return `/member/loan-applications/forms/${route}?${params.toString()}`;
     };
 
@@ -633,41 +641,7 @@ export default function Show({ application, routes, categories = [], can_update_
         openDisburseModal();
     }, []);
 
-    const hasMeaningfulData = (data: any): boolean => {
-        if (data === null || data === undefined || data === '') return false;
-        if (typeof data === 'string') {
-            const trimmed = data.trim();
-            return trimmed !== '' && trimmed !== 'null' && trimmed !== '{}' && trimmed !== '[]' && trimmed.length >= 3;
-        }
-        if (Array.isArray(data)) {
-            if (data.length === 0) return false;
-            return data.some((item) => hasMeaningfulData(item));
-        }
-        if (typeof data === 'object') {
-            const keys = Object.keys(data);
-            if (keys.length === 0) return false;
-            return keys.some((key) => hasMeaningfulData(data[key]));
-        }
-        return true;
-    };
-
-    const isFormSaved = (id: number) => {
-        if (formSaved[id] === true) return true;
-        switch (id) {
-            case 1:
-                return hasMeaningfulData(application.loan_agreement_data);
-            case 2:
-                return hasMeaningfulData(application.guarantor_info);
-            case 3:
-                return hasMeaningfulData(application.nominee_info);
-            case 4:
-                return hasMeaningfulData(application.asset_info);
-            case 5:
-                return hasMeaningfulData(application.business_plan);
-            default:
-                return false;
-        }
-    };
+    const isFormSaved = (id: number) => formSaved[id] === true;
 
     const formDataFor = (id: number) => {
         switch (id) {
@@ -1587,6 +1561,14 @@ export default function Show({ application, routes, categories = [], can_update_
                                 <Button
                                     className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs font-semibold rounded-xl text-xs sm:text-sm h-9 sm:h-10"
                                     onClick={() => {
+                                        if (application.guarantor_submit_error) {
+                                            if (fillableFormIds.includes(2)) {
+                                                router.visit(buildFormUrl(2, { complete: '1' }));
+                                                return;
+                                            }
+                                            alert(application.guarantor_submit_error);
+                                            return;
+                                        }
                                         if (confirm('ঋণ আবেদনটি শাখা ব্যবস্থাপকের কাছে জমা দিতে চান?')) {
                                             router.patch(routes.submit, {}, {
                                                 onError: (errs) => {
@@ -1698,6 +1680,25 @@ export default function Show({ application, routes, categories = [], can_update_
                     </div>
 
                     {/* Validation Error Banner for Incomplete Approval Form */}
+                    {application.status === 'draft' && application.guarantor_submit_error && (
+                        <div className="rounded-2xl border-2 border-amber-300 bg-amber-50 p-4 text-xs sm:text-sm text-amber-950 shadow-xs flex items-start gap-3 print:hidden">
+                            <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                            <div className="min-w-0 flex-1">
+                                <h4 className="font-bold text-amber-950 text-sm">জামিনদারের আবশ্যক তথ্য ছাড়া সাবমিট হবে না</h4>
+                                <p className="mt-1 font-medium text-amber-900 whitespace-pre-line">{application.guarantor_submit_error}</p>
+                                {fillableFormIds.includes(2) && (
+                                    <Button
+                                        size="sm"
+                                        className="mt-2 bg-amber-700 hover:bg-amber-800 text-white rounded-lg text-xs"
+                                        onClick={() => router.visit(buildFormUrl(2, { complete: '1' }))}
+                                    >
+                                        জামিনদার ফর্ম পূরণ
+                                    </Button>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
                     {application.status === 'draft' && application.approval_form_validation_error && (
                         <div className="rounded-2xl border-2 border-red-300 bg-red-50 p-4 text-xs sm:text-sm text-red-900 shadow-xs flex items-start gap-3 print:hidden">
                             <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
@@ -2056,6 +2057,32 @@ export default function Show({ application, routes, categories = [], can_update_
                                     </div>
                                 )}
                                 
+                                {application.guarantor_followup_open && (
+                                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                            <p className="text-sm font-bold text-amber-950">জামিনদার ফর্মের আবশ্যক ঘর</p>
+                                            <p className="mt-1 text-xs sm:text-sm text-amber-900 leading-relaxed">
+                                                এই ঋণে জামিনদার অঙ্গীকার ফর্ম আবশ্যক। ঋণ ফর্মের তারিখ ও পরিমাণ এখানে মিলিয়ে রাখা হয়।
+                                                {' '}
+                                                {application.guarantor_form_saved
+                                                    ? `বাকি আবশ্যক ঘর: ${(application.guarantor_identity_gaps ?? []).join(', ')}।`
+                                                    : 'এখনো পূরণ করতে হবে: জামিনদারের নাম, এনআইডি, মোবাইল, গ্রাম/রাস্তা, ডাকঘর, উপজেলা, জেলা।'}
+                                                {' '}
+                                                জামিনদারের নাম, ঠিকানা ও স্বাক্ষর ঋণ ফর্ম থেকে বদলানো হয় না।
+                                            </p>
+                                        </div>
+                                        {fillableFormIds.includes(2) && (
+                                            <Button
+                                                size="sm"
+                                                className="bg-amber-700 hover:bg-amber-800 text-white rounded-lg text-xs shrink-0"
+                                                onClick={() => router.visit(buildFormUrl(2))}
+                                            >
+                                                জামিনদার ফর্ম আপডেট
+                                            </Button>
+                                        )}
+                                    </div>
+                                )}
+
                                 {/* Form Selector Pills */}
                                 <div className="space-y-2">
                                     <div className="flex items-center justify-between">

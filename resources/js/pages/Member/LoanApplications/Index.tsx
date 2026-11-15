@@ -5,7 +5,7 @@ import { formatDate, startOfMonthIsoDate, todayIsoDate } from '@/utils/dateUtils
 import {
     Plus, Calendar, FileText, CheckCircle, XCircle, Clock,
     Search, Eye, Edit, Trash2, X, AlertTriangle, MessageSquare, Send,
-    Filter, RefreshCw, UserCheck, Layers, CreditCard, ChevronRight, AlertCircle, ArrowUpRight, Sparkles,
+    Filter, RefreshCw, UserCheck, Layers, CreditCard, ChevronLeft, ChevronRight, AlertCircle, ArrowUpRight, Sparkles,
     Download, Printer, Building2, CheckCircle2, Banknote, Ban, PauseCircle
 } from 'lucide-react';
 import ListPagination from '@/components/ListPagination';
@@ -102,6 +102,7 @@ interface LoanApplication {
     submitted_at?: string;
     reviewed_at?: string;
     disbursed_at?: string;
+    head_office_sent_at?: string | null;
     member_code?: string;
     member_admission?: {
         id: number;
@@ -197,6 +198,9 @@ interface Props {
     dateFrom?: string;
     dateTo?: string;
     statusFilter?: string;
+    hoSentOn?: string | null;
+    hoSentDay?: string | null;
+    hoSentCount?: number | null;
     searchFilter?: string;
     perPage?: number;
     preselectedMember?: Member | null;
@@ -293,6 +297,9 @@ export default function Index({
     dateFrom,
     dateTo,
     statusFilter = 'all',
+    hoSentOn = null,
+    hoSentDay = null,
+    hoSentCount = null,
     searchFilter = '',
     perPage = 20,
     preselectedMember = null,
@@ -460,6 +467,17 @@ export default function Index({
     };
 
     const today = todayIsoDate();
+    const [sentDay, setSentDay] = useState(hoSentDay || today);
+
+    const shiftIsoDate = (iso: string, days: number) => {
+        const [year, month, day] = iso.split('-').map(Number);
+        const date = new Date(year, (month || 1) - 1, day || 1);
+        date.setDate(date.getDate() + days);
+        const nextMonth = String(date.getMonth() + 1).padStart(2, '0');
+        const nextDay = String(date.getDate()).padStart(2, '0');
+
+        return `${date.getFullYear()}-${nextMonth}-${nextDay}`;
+    };
     const firstDayOfMonth = startOfMonthIsoDate();
     const [selectedZone, setSelectedZone] = useState(filters?.zone_id ? String(filters.zone_id) : '');
     const [selectedArea, setSelectedArea] = useState(filters?.area_id ? String(filters.area_id) : '');
@@ -601,7 +619,8 @@ export default function Index({
         setCurrentDateFrom(dateFrom || '');
         setCurrentDateTo(dateTo || '');
         setCurrentStatusFilter(statusFilter || 'all');
-    }, [dateFrom, dateTo, statusFilter]);
+        setSentDay(hoSentDay || today);
+    }, [dateFrom, dateTo, statusFilter, hoSentDay, today]);
 
     useEffect(() => {
         if (flash?.success) {
@@ -655,6 +674,12 @@ export default function Index({
             ? overrides.status
             : currentStatusFilter;
         params.status = (status as string) || 'all';
+        const sentOn = Object.prototype.hasOwnProperty.call(overrides, 'ho_sent_on')
+            ? overrides.ho_sent_on
+            : (hoSentOn || '');
+        if (sentOn) {
+            params.ho_sent_on = sentOn as string;
+        }
         const search = Object.prototype.hasOwnProperty.call(overrides, 'search')
             ? overrides.search
             : searchQuery;
@@ -719,11 +744,11 @@ export default function Index({
     const handleTodayFilter = () => {
         setCurrentDateFrom(today);
         setCurrentDateTo(today);
-        applyListFilters({ date_from: today, date_to: today, page: 1 });
+        applyListFilters({ date_from: today, date_to: today, ho_sent_on: '', page: 1 });
     };
 
     const handleDateFilterChange = () => {
-        applyListFilters({ page: 1 });
+        applyListFilters({ ho_sent_on: '', page: 1 });
     };
 
     const resetFilters = () => {
@@ -743,6 +768,10 @@ export default function Index({
     };
 
     const getEffectiveDate = (app: LoanApplication) => {
+        if (hoSentOn && app.head_office_sent_at) {
+            return app.head_office_sent_at;
+        }
+
         return (app as any).disbursed_at || (app as any).reviewed_at || (app as any).submitted_at || app.created_at;
     };
 
@@ -1153,10 +1182,16 @@ export default function Index({
     const selectStatus = (status: string) => {
         const next = status || 'all';
         setCurrentStatusFilter(next);
-        applyListFilters({ status: next, page: 1 });
+        applyListFilters({ status: next, ho_sent_on: '', page: 1 });
     };
 
-    const isStatActive = (key: string) => (key === 'all' ? isAllStatus : currentStatusFilter === key);
+    const showSentDay = (day: string) => {
+        const next = day > today ? today : day;
+        setSentDay(next);
+        applyListFilters({ ho_sent_on: next, status: 'all', page: 1 });
+    };
+
+    const isStatActive = (key: string) => !hoSentOn && (key === 'all' ? isAllStatus : currentStatusFilter === key);
 
     const readyForHoIds = useMemo(
         () => applicationRows.filter((a) => canSendLoanToHo(a)).map((a) => a.id),
@@ -1413,6 +1448,63 @@ export default function Index({
                             );
                         })}
                     </div>
+
+                    {isBranchUser && hoSentCount !== null && (
+                        <div className={`flex flex-wrap items-center justify-between gap-2 rounded-2xl border px-3 py-2 ${
+                            hoSentOn
+                                ? 'border-indigo-300 bg-indigo-50'
+                                : 'border-slate-200 bg-slate-50'
+                        }`}>
+                            <div className="min-w-0">
+                                <p className="text-[11px] font-bold text-slate-500">হেড অফিসে পাঠানো</p>
+                                <p className="text-sm font-black text-slate-900">
+                                    {sentDay === today ? 'আজ' : formatDate(sentDay)} · {hoSentCount}টি
+                                </p>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                                <button
+                                    type="button"
+                                    onClick={() => showSentDay(shiftIsoDate(sentDay, -1))}
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
+                                    title="আগের দিন"
+                                >
+                                    <ChevronLeft className="h-4 w-4" />
+                                </button>
+                                <input
+                                    type="date"
+                                    value={sentDay}
+                                    max={today}
+                                    onChange={(e) => {
+                                        if (e.target.value) {
+                                            showSentDay(e.target.value);
+                                        }
+                                    }}
+                                    className="h-8 rounded-xl border border-slate-300 bg-white px-2 text-xs"
+                                    title="পাঠানোর দিন"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => showSentDay(shiftIsoDate(sentDay, 1))}
+                                    disabled={sentDay >= today}
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-40"
+                                    title="পরের দিন"
+                                >
+                                    <ChevronRight className="h-4 w-4" />
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => showSentDay(sentDay)}
+                                    className={`h-8 rounded-xl px-3 text-xs font-bold ${
+                                        hoSentOn
+                                            ? 'bg-indigo-600 text-white'
+                                            : 'bg-white text-indigo-700 border border-indigo-200 hover:bg-indigo-50'
+                                    }`}
+                                >
+                                    এই দিনের তালিকা
+                                </button>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Location, selectors, search and dates — two rows on desktop */}
                     <div className="space-y-1.5 border-t border-slate-100 pt-2 text-xs">
@@ -1680,7 +1772,7 @@ export default function Index({
                                                 <p className="font-bold text-slate-800 truncate">{app.loan_product?.product_name}</p>
                                             </div>
                                             <div>
-                                                <span className="text-[10px] font-bold uppercase text-slate-400 block">তারিখ</span>
+                                                <span className="text-[10px] font-bold uppercase text-slate-400 block">{hoSentOn ? 'পাঠানো' : 'তারিখ'}</span>
                                                 <p className="font-semibold text-slate-600">{formatDate(getEffectiveDate(app))}</p>
                                             </div>
                                             <div className="col-span-2 flex items-center justify-between pt-1 border-t border-slate-200/50">
@@ -1877,7 +1969,7 @@ export default function Index({
                                         )}
                                         <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">সদস্য কোড ও টাইপ</th>
                                         <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">আবেদনকারী সদস্য</th>
-                                        <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">তারিখ</th>
+                                        <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">{hoSentOn ? 'পাঠানো' : 'তারিখ'}</th>
                                         <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">ঋণ পণ্য ও ক্যাটাগরি</th>
                                         <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">পরিমাণ</th>
                                         <th className="px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-wider">স্ট্যাটাস</th>

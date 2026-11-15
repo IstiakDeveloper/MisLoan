@@ -69,6 +69,7 @@ it('does not clone the previous sufolon agreement onto a new agrosor loan', func
 
 it('reuses the saved agreement when the next loan is the same sufolon product', function () {
     [$member, $sufolonProduct, $sufolonCategory] = makeCloneServiceContext();
+    $member->loan_dofa = 2;
 
     $previous = LoanApplication::create([
         'status' => LoanApplication::STATUS_REPAID,
@@ -104,8 +105,79 @@ it('reuses the saved agreement when the next loan is the same sufolon product', 
         ->and($draft->business_plan)->toBeNull();
 });
 
+it('copies a repeat member loan as prefill and does not keep the previous save flag', function () {
+    [$member, $sufolonProduct, $sufolonCategory] = makeCloneServiceContext();
+    $member->loan_dofa = 2;
+
+    $previous = LoanApplication::create([
+        'status' => LoanApplication::STATUS_REPAID,
+        'requested_amount' => 50000,
+        'form_type' => 'loan_agreement',
+        'loan_agreement_data' => [
+            'loan_purpose' => 'গরু পালন',
+            'house_value' => '80000',
+            'loan_amount' => 50000,
+            '_user_saved' => true,
+        ],
+    ]);
+    attachCloneServiceRelations($previous, $member, $sufolonProduct, $sufolonCategory);
+
+    $draft = LoanApplication::create([
+        'status' => LoanApplication::STATUS_DRAFT,
+        'requested_amount' => 50000,
+        'form_type' => 'loan_agreement',
+        'loan_term_months' => 6,
+        'number_of_installments' => 6,
+    ]);
+    attachCloneServiceRelations($draft, $member, $sufolonProduct, $sufolonCategory);
+
+    (new LoanApplicationCloneService)->cloneAndMerge($draft, $previous);
+    $draft->refresh();
+
+    expect($draft->loan_agreement_data['loan_purpose'] ?? null)->toBe('গরু পালন')
+        ->and($draft->loan_agreement_data['_prefill_only'] ?? false)->toBeTrue()
+        ->and($draft->loan_agreement_data['_user_saved'] ?? false)->toBeFalse();
+});
+
+it('does not overwrite a form already saved on the current draft', function () {
+    [$member, $sufolonProduct, $sufolonCategory] = makeCloneServiceContext();
+    $member->loan_dofa = 2;
+
+    $previous = LoanApplication::create([
+        'status' => LoanApplication::STATUS_REPAID,
+        'requested_amount' => 50000,
+        'form_type' => 'loan_agreement',
+        'loan_agreement_data' => [
+            'loan_purpose' => 'আগের ঋণ',
+            '_user_saved' => true,
+        ],
+    ]);
+    attachCloneServiceRelations($previous, $member, $sufolonProduct, $sufolonCategory);
+
+    $draft = LoanApplication::create([
+        'status' => LoanApplication::STATUS_DRAFT,
+        'requested_amount' => 50000,
+        'form_type' => 'loan_agreement',
+        'loan_term_months' => 6,
+        'number_of_installments' => 6,
+        'loan_agreement_data' => [
+            'loan_purpose' => 'নিজের লেখা',
+            '_user_saved' => true,
+        ],
+    ]);
+    attachCloneServiceRelations($draft, $member, $sufolonProduct, $sufolonCategory);
+
+    (new LoanApplicationCloneService)->cloneAndMerge($draft, $previous);
+    $draft->refresh();
+
+    expect($draft->loan_agreement_data['loan_purpose'] ?? null)->toBe('নিজের লেখা')
+        ->and($draft->loan_agreement_data['_user_saved'] ?? false)->toBeTrue()
+        ->and($draft->loan_agreement_data['_prefill_only'] ?? false)->toBeFalse();
+});
+
 it('reuses the saved application form when the next loan is the same agrosor product', function () {
     [$member, , , $agrosorProduct, $agrosorCategory] = makeCloneServiceContext();
+    $member->loan_dofa = 2;
 
     $previous = LoanApplication::create([
         'status' => LoanApplication::STATUS_REPAID,

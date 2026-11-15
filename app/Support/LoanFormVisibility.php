@@ -156,6 +156,84 @@ class LoanFormVisibility
     }
 
     /**
+     * Identity fields still empty on a saved guarantor form.
+     * Loan date and amount are not included — those follow the loan form.
+     *
+     * @return string[]
+     */
+    public static function guarantorIdentityGaps(mixed $data): array
+    {
+        if (! is_array($data) || $data === []) {
+            return [];
+        }
+
+        $people = [];
+        if (isset($data['guarantors']) && is_array($data['guarantors'])) {
+            foreach ($data['guarantors'] as $person) {
+                if (is_array($person)) {
+                    $people[] = $person;
+                }
+            }
+        }
+        if ($people === []) {
+            $people = [$data];
+        }
+
+        $fields = [
+            'guarantor_name' => 'নাম',
+            'guarantor_nid' => 'এনআইডি',
+            'guarantor_mobile' => 'মোবাইল',
+            'guarantor_village' => 'গ্রাম/রাস্তা',
+            'guarantor_post_office' => 'ডাকঘর',
+            'guarantor_upazila' => 'উপজেলা',
+            'guarantor_district' => 'জেলা',
+        ];
+        $ordinals = ['১ম', '২য়', '৩য়', '৪র্থ', '৫ম'];
+        $multiple = count($people) > 1;
+        $gaps = [];
+
+        foreach ($people as $index => $person) {
+            $prefix = $multiple
+                ? ($ordinals[$index] ?? ($index + 1).'তম').' জামিনদারের '
+                : 'জামিনদারের ';
+            foreach ($fields as $key => $label) {
+                if (trim((string) ($person[$key] ?? '')) === '') {
+                    $gaps[] = $prefix.$label;
+                }
+            }
+        }
+
+        return $gaps;
+    }
+
+    /**
+     * Submit is blocked until a required guarantor form is saved with every identity field filled.
+     * Loan date and amount are filled from the loan form and are not part of this check.
+     */
+    public static function submitGuarantorError(mixed $data, ?string $status, float $amount): ?string
+    {
+        if (! self::requiresGuarantorForm($amount)) {
+            return null;
+        }
+
+        $probe = is_array($data) && $data !== [] ? $data : ['guarantor_name' => ''];
+        $gaps = self::guarantorIdentityGaps($probe);
+        if (! self::isUserSavedForm($data, $status)) {
+            if ($gaps === []) {
+                return 'সাবমিটের আগে জামিনদার অঙ্গীকার ফর্ম পূরণ করে সংরক্ষণ করুন।';
+            }
+
+            return 'সাবমিটের আগে জামিনদারের আবশ্যক তথ্য পূরণ করে সংরক্ষণ করুন: '.implode(', ', $gaps).'।';
+        }
+
+        if ($gaps === []) {
+            return null;
+        }
+
+        return 'সাবমিটের আগে জামিনদারের আবশ্যক তথ্য পূরণ করে সংরক্ষণ করুন: '.implode(', ', $gaps).'।';
+    }
+
+    /**
      * Branch User before disburse. Form 2 (জামিনদার অঙ্গীকার) only at configured guarantor min amount or more.
      *
      * @return int[]
@@ -380,7 +458,12 @@ class LoanFormVisibility
 
         if (in_array($status, [LoanApplication::STATUS_DRAFT, LoanApplication::STATUS_REJECTED, LoanApplication::STATUS_NEEDS_CORRECTION], true)) {
             if ($roleName === Role::FIELD_OFFICER) {
-                return self::foSubmitFormIds($product, $amount, $category);
+                $ids = self::foSubmitFormIds($product, $amount, $category);
+                if (self::requiresGuarantorForm($amount)) {
+                    $ids[] = 2;
+                }
+
+                return array_values(array_unique($ids));
             }
         }
 
@@ -599,14 +682,82 @@ class LoanFormVisibility
         };
     }
 
+    public const USER_SAVED_KEY = '_user_saved';
+
+    public const PREFILL_ONLY_KEY = '_prefill_only';
+
+    /**
+     * A generated prefill is not a save. Drafts without an explicit save stay unsaved.
+     * Loans already past draft keep the old check so completed work does not flip back.
+     */
+    public static function isUserSavedForm(mixed $data, ?string $status = null, bool $requireInvestigation = false): bool
+    {
+        if (! is_array($data) || $data === []) {
+            return false;
+        }
+
+        $explicit = ! empty($data[self::USER_SAVED_KEY]);
+        if ($explicit) {
+            return $requireInvestigation ? self::isFieldInvestigationSaved($data) : true;
+        }
+
+        if (! empty($data[self::PREFILL_ONLY_KEY])) {
+            return false;
+        }
+
+        if ($status === LoanApplication::STATUS_DRAFT) {
+            return false;
+        }
+
+        $legacy = self::hasMeaningfulFormData($data);
+        if ($requireInvestigation) {
+            return $legacy && self::isFieldInvestigationSaved($data);
+        }
+
+        return $legacy;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    public static function markUserSaved(array $data): array
+    {
+        unset($data[self::PREFILL_ONLY_KEY]);
+        $data[self::USER_SAVED_KEY] = true;
+
+        return $data;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    public static function markPrefill(array $data): array
+    {
+        unset($data[self::USER_SAVED_KEY]);
+        $data[self::PREFILL_ONLY_KEY] = true;
+
+        return $data;
+    }
+
+    public static function isGeneratedPrefill(mixed $data): bool
+    {
+        return is_array($data)
+            && ! empty($data[self::PREFILL_ONLY_KEY])
+            && empty($data[self::USER_SAVED_KEY]);
+    }
+
     public static function buildFormSavedMap(LoanApplication $application): array
     {
+        $status = (string) $application->status;
+
         return [
-            1 => self::hasMeaningfulFormData($application->loan_agreement_data),
-            2 => self::hasMeaningfulFormData($application->guarantor_info),
-            3 => self::hasMeaningfulFormData($application->nominee_info),
-            4 => self::isFieldInvestigationSaved($application->asset_info),
-            5 => self::hasMeaningfulFormData($application->business_plan),
+            1 => self::isUserSavedForm($application->loan_agreement_data, $status),
+            2 => self::isUserSavedForm($application->guarantor_info, $status),
+            3 => self::isUserSavedForm($application->nominee_info, $status),
+            4 => self::isUserSavedForm($application->asset_info, $status, true),
+            5 => self::isUserSavedForm($application->business_plan, $status),
         ];
     }
 

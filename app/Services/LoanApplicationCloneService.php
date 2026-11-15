@@ -193,13 +193,14 @@ class LoanApplicationCloneService
         // ----------------------------------------------------
         // 1. GUARANTOR INFO (Form 2 - জামিনদার অঙ্গীকারনামা)
         // ----------------------------------------------------
-        $guarantorNeedsReset = $isNewMember && (
+        $guarantorAlreadySaved = is_array($targetLoan->guarantor_info) && ! empty($targetLoan->guarantor_info[LoanFormVisibility::USER_SAVED_KEY]);
+        $guarantorNeedsReset = $isNewMember && ! $guarantorAlreadySaved && (
             ! $this->hasMeaningfulData($targetLoan->guarantor_info)
             || (($targetLoan->guarantor_info['guarantor_name'] ?? '') !== ($member?->guarantor_name ?? ''))
             || (($targetLoan->guarantor_info['member_code'] ?? '') !== (string) ($member?->application_no ?? ''))
         );
 
-        if ($shouldFillForm(2) && (! $this->hasMeaningfulData($targetLoan->guarantor_info) || $guarantorNeedsReset)) {
+        if ($shouldFillForm(2) && ! $guarantorAlreadySaved && (! $this->hasMeaningfulData($targetLoan->guarantor_info) || $guarantorNeedsReset)) {
             if ($previousLoan && $this->hasMeaningfulData($previousLoan->guarantor_info)) {
                 $guarantorData = is_array($previousLoan->guarantor_info) ? $previousLoan->guarantor_info : [];
             } else {
@@ -236,7 +237,7 @@ class LoanApplicationCloneService
             $guarantorData['loan_amount'] = $totalWithServiceCharge;
             $guarantorData['loan_amount_words'] = $totalWithServiceWords;
 
-            $targetLoan->guarantor_info = $guarantorData;
+            $targetLoan->guarantor_info = LoanFormVisibility::markPrefill($guarantorData);
             $dirty = true;
         }
 
@@ -300,7 +301,7 @@ class LoanApplicationCloneService
                 $nomineeData['guardian_photo'] = $member->guardian_photo_path;
             }
 
-            $targetLoan->nominee_info = $nomineeData;
+            $targetLoan->nominee_info = LoanFormVisibility::markPrefill($nomineeData);
             $dirty = true;
         }
 
@@ -353,7 +354,7 @@ class LoanApplicationCloneService
             $agreementData['last_installment_amount'] = $agreementData['installment_amount'];
             $agreementData['disbursement_date'] = $today;
 
-            $targetLoan->loan_agreement_data = $agreementData;
+            $targetLoan->loan_agreement_data = LoanFormVisibility::markPrefill($agreementData);
             $dirty = true;
         }
 
@@ -383,7 +384,7 @@ class LoanApplicationCloneService
                 ];
             }
 
-            $targetLoan->asset_info = $assetData;
+            $targetLoan->asset_info = LoanFormVisibility::markPrefill($assetData);
             $dirty = true;
         }
 
@@ -408,7 +409,8 @@ class LoanApplicationCloneService
         // ----------------------------------------------------
         // 5. BUSINESS PLAN & APPROVAL (Form 5 - আবেদন ও অনুমোদনপত্র)
         // ----------------------------------------------------
-        $businessPlanNeedsReset = $isNewMember && (
+        $planAlreadySaved = is_array($targetLoan->business_plan) && ! empty($targetLoan->business_plan[LoanFormVisibility::USER_SAVED_KEY]);
+        $businessPlanNeedsReset = $isNewMember && ! $planAlreadySaved && (
             ! $this->hasMeaningfulData($targetLoan->business_plan)
             || (int) ($targetLoan->business_plan['loan_round'] ?? 1) > 1
             || ! empty($targetLoan->business_plan['guarantor_1_name'])
@@ -494,7 +496,7 @@ class LoanApplicationCloneService
                 );
             }
 
-            $targetLoan->business_plan = $businessData;
+            $targetLoan->business_plan = LoanFormVisibility::markPrefill($businessData);
             $dirty = true;
         } elseif ($shouldFillForm(5) && $this->hasMeaningfulData($targetLoan->business_plan)) {
             $targetIsSufolon = LoanFormVisibility::isSufolon($product, $category);

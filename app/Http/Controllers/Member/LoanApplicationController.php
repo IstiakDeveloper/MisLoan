@@ -40,6 +40,7 @@ use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
@@ -72,6 +73,63 @@ class LoanApplicationController extends Controller
         $user->loadMissing('role');
 
         return $user->role?->name === Role::BRANCH_USER;
+    }
+
+    private function loanHeadOfficeSentColumnReady(): bool
+    {
+        return Schema::hasColumn('loan_applications', 'head_office_sent_at');
+    }
+
+    /**
+     * Branch-user day filter. Empty when the page is on the normal work queue.
+     */
+    private function requestedHeadOfficeSentDay(Request $request, $user): ?string
+    {
+        if (! $this->isBranchUserRole($user) || ! $this->loanHeadOfficeSentColumnReady()) {
+            return null;
+        }
+
+        $raw = trim((string) $request->input('ho_sent_on', ''));
+        if (! preg_match('/^\d{4}-\d{2}-\d{2}$/', $raw)) {
+            return null;
+        }
+
+        try {
+            $day = Carbon::parse($raw)->startOfDay();
+        } catch (\Throwable) {
+            return null;
+        }
+
+        if ($day->isAfter(now()->endOfDay())) {
+            return now()->toDateString();
+        }
+
+        return $day->toDateString();
+    }
+
+    /**
+     * @param  Builder<LoanApplication>  $query
+     */
+    private function applyHeadOfficeSentDay(Builder $query, string $day): void
+    {
+        $query->whereDate('head_office_sent_at', $day);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function headOfficeSendAttributes(): array
+    {
+        $attributes = [
+            'status' => LoanApplication::STATUS_PENDING_HEAD_OFFICE,
+            'submitted_at' => now(),
+        ];
+
+        if ($this->loanHeadOfficeSentColumnReady()) {
+            $attributes['head_office_sent_at'] = now();
+        }
+
+        return $attributes;
     }
 
     private function canCreateLoanApplication($user): bool
@@ -137,6 +195,41 @@ class LoanApplicationController extends Controller
         }
     }
 
+    /**
+     * @return array<int, bool>
+     */
+    private function formSavedMapFromStoredRow(string $status, object $row): array
+    {
+        $loan = new LoanApplication;
+        $loan->status = $status;
+
+        foreach ([
+            'loan_agreement_data',
+            'guarantor_info',
+            'nominee_info',
+            'asset_info',
+            'business_plan',
+        ] as $column) {
+            $raw = $row->{$column} ?? null;
+            if (is_array($raw)) {
+                $loan->{$column} = $raw;
+
+                continue;
+            }
+
+            if (! is_string($raw) || trim($raw) === '') {
+                $loan->{$column} = null;
+
+                continue;
+            }
+
+            $decoded = json_decode($raw, true);
+            $loan->{$column} = is_array($decoded) ? $decoded : null;
+        }
+
+        return LoanFormVisibility::buildFormSavedMap($loan);
+    }
+
     private function attachFormMeta(LoanApplication $application, $user, ?array $formSavedOverride = null, bool $withEscalationApprovers = false): void
     {
         $application->loadMissing(['loanProduct.loanCategory', 'loanCategory', 'memberAdmission']);
@@ -176,7 +269,15 @@ class LoanApplicationController extends Controller
             $formValidationError = $this->validateAgreementFormForSubmit($application);
         }
         $application->approval_form_validation_error = $formValidationError;
-        $application->can_submit = $application->all_forms_complete && ($formValidationError === null);
+        $guarantorSubmitError = LoanFormVisibility::submitGuarantorError(
+            $application->guarantor_info,
+            $status,
+            $amount,
+        );
+        $application->guarantor_submit_error = $guarantorSubmitError;
+        $application->can_submit = $application->all_forms_complete
+            && ($formValidationError === null)
+            && ($guarantorSubmitError === null);
         $application->can_send_to_head_office = $memberAdmission === null
             || $memberAdmission->allowsLoanHeadOfficeSend();
         $application->can_disburse = $status === LoanApplication::STATUS_PENDING_DISBURSEMENT
@@ -256,6 +357,16 @@ class LoanApplicationController extends Controller
         $application->guarantor_payload = LoanFormVisibility::extractGuarantorPayload($application);
         $application->guarantor_required = LoanFormVisibility::requiresGuarantorForm($amount);
         $application->guarantor_verified = ! empty($application->guarantor_verified_at);
+        $guarantorSaved = (bool) ($formSaved[2] ?? false);
+        $guarantorGaps = $application->guarantor_required && $guarantorSaved
+            ? LoanFormVisibility::guarantorIdentityGaps($application->guarantor_info)
+            : [];
+        $application->guarantor_form_saved = $guarantorSaved;
+        $application->guarantor_identity_gaps = $guarantorGaps;
+        $application->guarantor_followup_open = $this->isBranchUserRole($user)
+            && $status === LoanApplication::STATUS_PENDING_DISBURSEMENT
+            && $application->guarantor_required
+            && (! $guarantorSaved || $guarantorGaps !== []);
     }
 
     private function maybeApproveRepeatOrLegacyMember(MemberAdmission $member): void
@@ -793,14 +904,31 @@ class LoanApplicationController extends Controller
         }
 
         $this->applyLoanListSelectors($applicationsQuery, $request);
-        $this->applyCoalesceDateRange($applicationsQuery, $dateFrom, $dateTo, $dateExpression);
-        $this->applyResolvedStatusFilter($applicationsQuery, $statusFilter, $user, 'loan');
+        if ($searchFilter !== '') {
+            $applicationsQuery->where(function ($query) use ($searchFilter) {
+                MemberCodeService::applyLoanSearch($query, $searchFilter);
+            });
+        }
+
+        $hoSentOn = $this->requestedHeadOfficeSentDay($request, $user);
+        $hoSentDay = $hoSentOn ?: now()->toDateString();
+        $hoSentCount = null;
+        if ($this->isBranchUserRole($user) && $this->loanHeadOfficeSentColumnReady()) {
+            $hoSentCount = (clone $applicationsQuery)
+                ->whereDate('head_office_sent_at', $hoSentDay)
+                ->count();
+        }
+
+        if ($hoSentOn) {
+            $this->applyHeadOfficeSentDay($applicationsQuery, $hoSentOn);
+        } else {
+            $this->applyCoalesceDateRange($applicationsQuery, $dateFrom, $dateTo, $dateExpression);
+            $this->applyResolvedStatusFilter($applicationsQuery, $statusFilter, $user, 'loan');
+        }
 
         $applications = $applicationsQuery
-            ->when($searchFilter, function ($query) use ($searchFilter) {
-                MemberCodeService::applyLoanSearch($query, $searchFilter);
-            })
-            ->orderByRaw('COALESCE(disbursed_at, reviewed_at, submitted_at, created_at) desc')
+            ->when($hoSentOn, fn ($query) => $query->orderByDesc('head_office_sent_at'))
+            ->when(! $hoSentOn, fn ($query) => $query->orderByRaw('COALESCE(disbursed_at, reviewed_at, submitted_at, created_at) desc'))
             ->with('samity:id,samity_name,samity_name_bn,samity_code')
             ->select([
                 'id', 'application_no', 'member_admission_id', 'loan_product_id',
@@ -809,33 +937,32 @@ class LoanApplicationController extends Controller
                 'cancellation_from_status',
                 'submitted_at', 'reviewed_at', 'disbursed_at', 'purpose_of_loan', 'legacy_member_snapshot',
             ])
+            ->when($this->loanHeadOfficeSentColumnReady(), fn ($query) => $query->addSelect('head_office_sent_at'))
             ->paginate($perPage)
             ->withQueryString();
 
-        // Form completion flags in a separate query (no ORDER BY = no sort buffer).
-        $formFlags = collect();
+        // Same saved rule as the show page. Length checks treated generated prefill as saved.
+        $formRows = collect();
         if ($applications->isNotEmpty()) {
-            $formFlags = DB::table('loan_applications')
+            $formRows = DB::table('loan_applications')
                 ->whereIn('id', $applications->pluck('id'))
-                ->selectRaw('id, (CASE WHEN loan_agreement_data IS NOT NULL AND LENGTH(TRIM(COALESCE(loan_agreement_data, ""))) > 2 THEN 1 ELSE 0 END) as has_form_1')
-                ->selectRaw('(CASE WHEN guarantor_info IS NOT NULL AND LENGTH(TRIM(COALESCE(guarantor_info, ""))) > 2 THEN 1 ELSE 0 END) as has_form_2')
-                ->selectRaw('(CASE WHEN nominee_info IS NOT NULL AND LENGTH(TRIM(COALESCE(nominee_info, ""))) > 2 THEN 1 ELSE 0 END) as has_form_3')
-                ->selectRaw('(CASE WHEN asset_info IS NOT NULL AND LENGTH(TRIM(COALESCE(asset_info, ""))) > 2 THEN 1 ELSE 0 END) as has_form_4')
-                ->selectRaw('(CASE WHEN business_plan IS NOT NULL AND LENGTH(TRIM(COALESCE(business_plan, ""))) > 2 THEN 1 ELSE 0 END) as has_form_5')
-                ->get()
+                ->get([
+                    'id',
+                    'loan_agreement_data',
+                    'guarantor_info',
+                    'nominee_info',
+                    'asset_info',
+                    'business_plan',
+                ])
                 ->keyBy('id');
         }
 
         // ফর্ম অনুযায়ী কমপ্লিশন: প্রতিটি আবেদনের জন্য stage-aware form meta
-        $applications->getCollection()->transform(function ($app) use ($request, $formFlags) {
-            $flags = $formFlags->get($app->id);
-            $formSavedOverride = $flags ? [
-                1 => (bool) $flags->has_form_1,
-                2 => (bool) $flags->has_form_2,
-                3 => (bool) $flags->has_form_3,
-                4 => (bool) $flags->has_form_4,
-                5 => (bool) $flags->has_form_5,
-            ] : null;
+        $applications->getCollection()->transform(function ($app) use ($request, $formRows) {
+            $row = $formRows->get($app->id);
+            $formSavedOverride = $row
+                ? $this->formSavedMapFromStoredRow((string) $app->status, $row)
+                : null;
             $this->attachFormMeta($app, $request->user(), $formSavedOverride);
             $app->setAttribute('tracking_state', $app->getTrackingState());
 
@@ -935,6 +1062,9 @@ class LoanApplicationController extends Controller
             'dateFrom' => $dateFrom,
             'dateTo' => $dateTo,
             'statusFilter' => $workQueue['status_param'],
+            'hoSentOn' => $hoSentOn,
+            'hoSentDay' => $hoSentDay,
+            'hoSentCount' => $hoSentCount,
             'searchFilter' => $searchFilter,
             'perPage' => $perPage,
             'preselectedMember' => $this->resolvePreselectedMember($request),
@@ -987,8 +1117,13 @@ class LoanApplicationController extends Controller
         }
 
         $this->applyLoanListSelectors($query, $request);
-        $this->applyCoalesceDateRange($query, $dateFrom, $dateTo, 'COALESCE(disbursed_at, reviewed_at, submitted_at, created_at)');
-        $this->applyResolvedStatusFilter($query, $statusFilter, $user, 'loan');
+        $hoSentOn = $this->requestedHeadOfficeSentDay($request, $user);
+        if ($hoSentOn) {
+            $this->applyHeadOfficeSentDay($query, $hoSentOn);
+        } else {
+            $this->applyCoalesceDateRange($query, $dateFrom, $dateTo, 'COALESCE(disbursed_at, reviewed_at, submitted_at, created_at)');
+            $this->applyResolvedStatusFilter($query, $statusFilter, $user, 'loan');
+        }
 
         $query
             ->when($searchFilter, function ($query) use ($searchFilter) {
@@ -1003,7 +1138,8 @@ class LoanApplicationController extends Controller
                         });
                 });
             })
-            ->orderByRaw('COALESCE(disbursed_at, reviewed_at, submitted_at, created_at) desc');
+            ->when($hoSentOn, fn ($ordered) => $ordered->orderByDesc('head_office_sent_at'))
+            ->when(! $hoSentOn, fn ($ordered) => $ordered->orderByRaw('COALESCE(disbursed_at, reviewed_at, submitted_at, created_at) desc'));
 
         $loans = $query->get();
 
@@ -1739,6 +1875,15 @@ class LoanApplicationController extends Controller
             }
         }
 
+        $guarantorSubmitError = LoanFormVisibility::submitGuarantorError(
+            $application->guarantor_info,
+            (string) $application->status,
+            $amount,
+        );
+        if ($guarantorSubmitError !== null) {
+            return back()->withErrors(['error' => $guarantorSubmitError]);
+        }
+
         DB::beginTransaction();
         try {
             $application->update([
@@ -2080,10 +2225,7 @@ class LoanApplicationController extends Controller
             return $blocked;
         }
 
-        $application->update([
-            'status' => LoanApplication::STATUS_PENDING_HEAD_OFFICE,
-            'submitted_at' => now(),
-        ]);
+        $application->update($this->headOfficeSendAttributes());
 
         // Notify Head Office Users
         $application->loadMissing(['memberAdmission', 'branch']);
@@ -2170,10 +2312,7 @@ class LoanApplicationController extends Controller
 
         DB::transaction(function () use ($eligible) {
             foreach ($eligible as $application) {
-                $application->update([
-                    'status' => LoanApplication::STATUS_PENDING_HEAD_OFFICE,
-                    'submitted_at' => now(),
-                ]);
+                $application->update($this->headOfficeSendAttributes());
             }
         });
 
@@ -3040,13 +3179,22 @@ class LoanApplicationController extends Controller
             $existing = is_array($loanApplication->loan_agreement_data) ? $loanApplication->loan_agreement_data : [];
             $agreementData = $this->mergeSoftDraftFormData($existing, $agreementData);
 
-            $loanApplication->loan_agreement_data = $agreementData;
+            $loanApplication->loan_agreement_data = LoanFormVisibility::markUserSaved($agreementData);
             $loanApplication->form_type = 'loan_agreement';
             $loanApplication->purpose_of_loan = $agreementData['loan_purpose'] ?? ($loanApplication->purpose_of_loan ?: 'ঋণ চুক্তিপত্র অনুযায়ী');
             $loanApplication->number_of_installments = (int) ($agreementData['number_of_installments'] ?? $loanApplication->number_of_installments ?? 1);
+            $disbursementDate = trim((string) ($agreementData['disbursement_date'] ?? ''));
+            if ($disbursementDate !== '') {
+                $loanApplication->applyDisbursementDateToSavedForms($disbursementDate);
+            }
+            $this->alignGuarantorWithLoanForm(
+                $loanApplication,
+                $disbursementDate !== '' ? $disbursementDate : null,
+            );
             $loanApplication->save();
 
-            return redirect()->route('member.loan-applications.show', $loanApplication->id)
+            return redirect()
+                ->route('member.loan-applications.show', $loanApplication->id)
                 ->with('success', 'ঋণ চুক্তিপত্র খসড়া হিসেবে সংরক্ষিত হয়েছে।');
         } catch (ValidationException $e) {
             throw $e;
@@ -3133,7 +3281,7 @@ class LoanApplicationController extends Controller
             $numberOfInstallments = (int) $loanProduct->duration_months;
         }
 
-        $loanApplication->guarantor_info = $agreementData;
+        $loanApplication->guarantor_info = LoanFormVisibility::markUserSaved($agreementData);
         $loanApplication->form_type = 'guarantor_commitment';
         $loanApplication->purpose_of_loan = $purposeOfLoan;
         $loanApplication->number_of_installments = $numberOfInstallments;
@@ -3225,7 +3373,7 @@ class LoanApplicationController extends Controller
             $numberOfInstallments = (int) $loanProduct->duration_months;
         }
 
-        $loanApplication->nominee_info = $formData;
+        $loanApplication->nominee_info = LoanFormVisibility::markUserSaved($formData);
         $loanApplication->form_type = 'death_risk_fund';
         $loanApplication->purpose_of_loan = $formData['component_name'] ?? 'মৃত্যুজনিত ঋণঝুঁকি তহবিলে অন্তর্ভুক্তি';
         $loanApplication->number_of_installments = $numberOfInstallments;
@@ -3385,7 +3533,7 @@ class LoanApplicationController extends Controller
             $numberOfInstallments = (int) $loanProduct->duration_months;
         }
 
-        $loanApplication->asset_info = $formData;
+        $loanApplication->asset_info = LoanFormVisibility::markUserSaved($formData);
         $loanApplication->form_type = 'field_investigation';
         $loanApplication->purpose_of_loan = 'সরেজমিনে তদন্ত প্রতিবেদন';
         $loanApplication->number_of_installments = $numberOfInstallments;
@@ -3481,6 +3629,46 @@ class LoanApplicationController extends Controller
     }
 
     /**
+     * Copy only the guarantor form's loan date and amount from the loan form.
+     * Leaves name, NID, address, and signature untouched, including generated prefill.
+     */
+    private function alignGuarantorWithLoanForm(LoanApplication $application, ?string $disbursementDate): void
+    {
+        $application->loadMissing('loanProduct');
+        $amount = (float) ($application->requested_amount ?? 0);
+        if (! LoanFormVisibility::requiresGuarantorForm($amount)) {
+            return;
+        }
+
+        if (! is_array($application->guarantor_info) || $application->guarantor_info === []) {
+            return;
+        }
+
+        $service = $this->calculateTotalServiceCharge($amount, $application->loanProduct);
+        $withService = round($amount + $service);
+        $words = NumberToWordsBangla::convert($withService);
+        $application->alignSavedGuarantorLoanTerms(
+            $disbursementDate,
+            $withService,
+            $words !== '' ? $words.' টাকা' : '',
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $formData
+     */
+    private function disbursementDateFromApprovalPayload(array $formData): ?string
+    {
+        $variant = (string) ($formData['form_variant'] ?? '');
+        $raw = $variant === 'agrosor_profile'
+            ? ($formData['disbursement_date'] ?? $formData['loan_disbursement_date'] ?? null)
+            : ($formData['loan_disbursement_date'] ?? $formData['disbursement_date'] ?? null);
+        $raw = trim((string) $raw);
+
+        return $raw !== '' ? $raw : null;
+    }
+
+    /**
      * Save loan application approval draft
      */
     public function saveLoanApplicationApprovalDraft(Request $request)
@@ -3559,7 +3747,12 @@ class LoanApplicationController extends Controller
                 }
             }
 
-            $loanApplication->business_plan = $formData;
+            $loanApplication->business_plan = LoanFormVisibility::markUserSaved($formData);
+            $disbursementDate = $this->disbursementDateFromApprovalPayload($formData);
+            if ($disbursementDate !== null) {
+                $loanApplication->applyDisbursementDateToSavedForms($disbursementDate);
+            }
+            $this->alignGuarantorWithLoanForm($loanApplication, $disbursementDate);
             $loanApplication->form_type = 'loan_application_approval';
             $loanApplication->purpose_of_loan = $formData['loan_purpose']
                 ?? ($loanApplication->purpose_of_loan
@@ -3567,7 +3760,8 @@ class LoanApplicationController extends Controller
             $loanApplication->number_of_installments = $numberOfInstallments;
             $loanApplication->save();
 
-            return redirect()->route('member.loan-applications.show', $loanApplication->id)
+            return redirect()
+                ->route('member.loan-applications.show', $loanApplication->id)
                 ->with('success', 'ঋণ আবেদন খসড়া হিসেবে সংরক্ষিত হয়েছে।');
         } catch (ValidationException $e) {
             throw $e;

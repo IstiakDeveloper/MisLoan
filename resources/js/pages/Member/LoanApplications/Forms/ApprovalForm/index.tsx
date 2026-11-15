@@ -62,6 +62,7 @@ function resolveLoanOfficialDates(
     const disbursement =
         toInputDate(saved?.loan_disbursement_date) ||
         toInputDate(saved?.disbursement_date) ||
+        toInputDate(app?.loan_agreement_data?.disbursement_date) ||
         toInputDate(app?.disbursed_at);
     let repayment =
         toInputDate(saved?.loan_repayment_date) ||

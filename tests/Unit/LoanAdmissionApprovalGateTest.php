@@ -330,7 +330,14 @@ it('lets a field officer submit a loan before member admission is approved', fun
         'submitted_by' => $ctx['fo']->id,
         'status' => LoanApplication::STATUS_DRAFT,
         'requested_amount' => 15000,
-        'loan_agreement_data' => ['agreement_text' => 'weekly agreement filled'],
+        'loan_agreement_data' => [
+            'agreement_text' => 'weekly agreement filled',
+            'village' => 'গ্রাম',
+            'union' => 'ইউনিয়ন',
+            'upazila' => 'উপজেলা',
+            'district' => 'জেলা',
+            '_user_saved' => true,
+        ],
     ]);
 
     $this->actingAs($ctx['fo'])
@@ -341,6 +348,60 @@ it('lets a field officer submit a loan before member admission is approved', fun
 
     expect($loan->fresh()->status)->toBe(LoanApplication::STATUS_SUBMITTED)
         ->and($ctx['admission']->fresh()->status)->toBe('submitted');
+});
+
+it('stops a field officer submitting until the guarantor identity is complete', function () {
+    $ctx = createLoanAdmissionGateContext('approved');
+
+    $loan = LoanApplication::create([
+        'application_no' => 'LN-GATE-GUARANTOR',
+        'member_admission_id' => $ctx['admission']->id,
+        'loan_product_id' => $ctx['product']->id,
+        'branch_id' => $ctx['branch']->id,
+        'submitted_by' => $ctx['fo']->id,
+        'status' => LoanApplication::STATUS_DRAFT,
+        'requested_amount' => 25000,
+        'loan_agreement_data' => [
+            'agreement_text' => 'weekly agreement filled',
+            'village' => 'গ্রাম',
+            'union' => 'ইউনিয়ন',
+            'upazila' => 'উপজেলা',
+            'district' => 'জেলা',
+            '_user_saved' => true,
+        ],
+        'guarantor_info' => [
+            'guarantor_name' => 'করিম',
+            '_prefill_only' => true,
+        ],
+    ]);
+
+    $this->actingAs($ctx['fo'])
+        ->from('/member/loan-applications/'.$loan->id)
+        ->patch(route('member.loan-applications.submit', $loan->id))
+        ->assertRedirect()
+        ->assertSessionHasErrors('error');
+
+    expect($loan->fresh()->status)->toBe(LoanApplication::STATUS_DRAFT);
+
+    $loan->guarantor_info = [
+        'guarantor_name' => 'করিম',
+        'guarantor_nid' => '1234567890',
+        'guarantor_mobile' => '01700000000',
+        'guarantor_village' => 'গ্রাম',
+        'guarantor_post_office' => 'ডাকঘর',
+        'guarantor_upazila' => 'উপজেলা',
+        'guarantor_district' => 'ঢাকা',
+        '_user_saved' => true,
+    ];
+    $loan->save();
+
+    $this->actingAs($ctx['fo'])
+        ->from('/member/loan-applications/'.$loan->id)
+        ->patch(route('member.loan-applications.submit', $loan->id))
+        ->assertRedirect()
+        ->assertSessionHas('success');
+
+    expect($loan->fresh()->status)->toBe(LoanApplication::STATUS_SUBMITTED);
 });
 
 it('blocks a branch user from sending a loan to head office before admission approval', function () {

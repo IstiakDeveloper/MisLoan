@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { Head, useForm, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { Save, Printer, Eye, Upload, X, ArrowLeft, CheckCircle2 } from 'lucide-react';
-import { formatDateBangla, todayIsoDate } from '@/utils/dateUtils';
+import { formatDateBangla, todayIsoDate, toIsoDate } from '@/utils/dateUtils';
 import { numberToWordsBangla } from './ApprovalForm/PrintPreview';
-import { afterLoanFormSaveUrl, continueDisburseWizardUrl, disburseWizardParamsFromContext, isDisburseWizardSearch, loanDisburseShowUrl } from '@/utils/loanFormNavigation';
+import { afterLoanFormSaveUrl, continueDisburseWizardUrl, disburseWizardParamsFromContext, isDisburseWizardSearch, loanDisburseShowUrl, savedDisbursementDate } from '@/utils/loanFormNavigation';
 import { useAutoFitPrint, triggerPrintWithAutoFit } from '@/hooks/useAutoFitPrint';
 import { withLiveMemberCode } from '@/utils/memberCodeUtils';
 import { fileToCompressedDataUrl } from '@/utils/imageUpload';
@@ -355,6 +355,7 @@ function buildDeathRiskFundDefaults(
     loanCategory: any,
     requestedAmount: number,
     branch?: any,
+    disbursementDate?: string | null,
 ): DeathRiskFundData {
     const memberPhotoUrl = member?.customer_photo_path
         ? member.customer_photo_path.startsWith('http')
@@ -385,7 +386,7 @@ function buildDeathRiskFundDefaults(
         nid_number: member?.smart_card_number || member?.nid_number || '',
         mobile_number: member?.mobile_number || member?.mobile || '',
         component_name: loanCategory?.category_name_bn || loanCategory?.category_name || '',
-        loan_sanction_date: todayIsoDate(),
+        loan_sanction_date: toIsoDate(disbursementDate) || todayIsoDate(),
         loan_amount_received: amount,
         loan_amount_words: words ? words + ' টাকা' : '',
         loan_term: loanProduct?.duration_months ? `${loanProduct.duration_months} মাস` : '',
@@ -454,14 +455,22 @@ function resolveContinueUrl(
     return resolveBackUrl(afterSaveUrl, isLegacy, member, loanProduct, loanCategory, requestedAmount, existingApplication);
 }
 
-function DeathRiskFundOnlyPreview({ member, loanProduct, loanCategory, requestedAmount, branch, savedData }: any) {
+function DeathRiskFundOnlyPreview({ member, loanProduct, loanCategory, requestedAmount, branch, savedData, existingApplication }: any) {
     const baseAmount = Number(requestedAmount) || 0;
-    const defaults = buildDeathRiskFundDefaults(member, loanProduct, loanCategory, requestedAmount, branch);
+    const defaults = buildDeathRiskFundDefaults(
+        member,
+        loanProduct,
+        loanCategory,
+        requestedAmount,
+        branch,
+        toIsoDate(savedData?.loan_sanction_date) || savedDisbursementDate(existingApplication),
+    );
     const previewData = withLiveMemberCode(
         savedData && Object.keys(savedData).length > 0
             ? {
                 ...defaults,
                 ...savedData,
+                loan_sanction_date: toIsoDate(savedData?.loan_sanction_date) || defaults.loan_sanction_date,
                 ...(baseAmount > 0 ? {
                     loan_amount_received: defaults.loan_amount_received,
                     loan_amount_words: defaults.loan_amount_words,
@@ -531,6 +540,7 @@ export default function DeathRiskFund({
                 requestedAmount={requestedAmount}
                 branch={branch}
                 savedData={savedData}
+                existingApplication={existingApplication}
             />
         );
     }
@@ -571,7 +581,7 @@ export default function DeathRiskFund({
         nid_number: member?.smart_card_number || member?.nid_number || '',
         mobile_number: member?.mobile_number || member?.mobile || '',
         component_name: loanCategory?.category_name_bn || loanCategory?.category_name || '', // External
-        loan_sanction_date: todayIsoDate(), // External
+        loan_sanction_date: toIsoDate(savedData?.loan_sanction_date) || savedDisbursementDate(existingApplication) || todayIsoDate(),
         loan_amount_received: baseAmount, // External
         loan_amount_words: initialWords, // Will be auto-calculated
         loan_term: loanProduct?.duration_months ? `${loanProduct.duration_months} মাস` : '', // External
@@ -626,6 +636,7 @@ export default function DeathRiskFund({
             setData(prev => withLiveMemberCode({
                 ...prev,
                 ...savedData,
+                loan_sanction_date: toIsoDate(savedData.loan_sanction_date) || savedDisbursementDate(existingApplication) || prev.loan_sanction_date,
                 // Keep photos from MemberAdmission if not in savedData
                 loan_recipient_photo: savedData.loan_recipient_photo || memberPhotoUrl || prev.loan_recipient_photo,
                 guardian_photo: savedData.guardian_photo || guardianPhotoUrl || prev.guardian_photo,
