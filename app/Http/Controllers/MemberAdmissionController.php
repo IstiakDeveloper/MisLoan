@@ -28,6 +28,7 @@ use App\Support\LoanFormVisibility;
 use App\Support\RoleListWorkQueue;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
@@ -409,6 +410,8 @@ class MemberAdmissionController extends Controller
         $user = auth()->user();
         $user->loadMissing('role');
         $isFieldOfficer = $user->role?->name === Role::FIELD_OFFICER;
+        $accessibleBranches = $user->getAccessibleBranches();
+        $accessibleBranchIds = $accessibleBranches->pluck('id');
         $workQueue = RoleListWorkQueue::resolveWithDates($request, false, $user);
         $statusFilter = $workQueue['status'];
         $fromDate = $workQueue['date_from'];
@@ -429,7 +432,7 @@ class MemberAdmissionController extends Controller
 
         // List stays personal for field officers. Loans for other branch members go through ঋণ আবেদন search.
         if (! $user->has_all_access && ! $user->isApproverRole() && ! $user->isEd() && ! $user->isSuperAdmin() && ! $user->isHeadOffice()) {
-            $query->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
+            $query->whereIn('branch_id', $accessibleBranchIds);
         }
         if ($isFieldOfficer) {
             $query->assignedToOfficer((int) $user->id);
@@ -438,7 +441,7 @@ class MemberAdmissionController extends Controller
         // Build stats query with active date, branch, and search filters (excluding status filter for stats)
         $statsQuery = MemberAdmission::query()->masterMembers();
         if (! $user->has_all_access && ! $user->isApproverRole() && ! $user->isEd() && ! $user->isSuperAdmin() && ! $user->isHeadOffice()) {
-            $statsQuery->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
+            $statsQuery->whereIn('branch_id', $accessibleBranchIds);
         }
         if ($isFieldOfficer) {
             $statsQuery->assignedToOfficer((int) $user->id);
@@ -464,17 +467,23 @@ class MemberAdmissionController extends Controller
             $this->applyCoalesceDateRange($statsQuery, $fromDate, $toDate, 'COALESCE(reviewed_at, submitted_at, created_at)');
         }
 
-        // Calculate stats
+        $statusTally = (clone $statsQuery)
+            ->reorder()
+            ->selectRaw('status, COUNT(*) as aggregate')
+            ->groupBy('status')
+            ->pluck('aggregate', 'status');
+        $countStatus = fn (string $status) => (int) ($statusTally[$status] ?? 0);
+
         $stats = [
-            'total' => $statsQuery->count(),
-            'draft' => (clone $statsQuery)->where('status', 'draft')->count(),
-            'submitted' => (clone $statsQuery)->where('status', 'submitted')->count(),
-            'under_review' => (clone $statsQuery)->where('status', 'under_review')->count(),
-            'ready_for_head_office' => (clone $statsQuery)->where('status', 'ready_for_head_office')->count(),
-            'pending_head_office' => (clone $statsQuery)->where('status', 'pending_head_office')->count(),
-            'needs_revision' => (clone $statsQuery)->where('status', 'needs_revision')->count(),
-            'approved' => (clone $statsQuery)->where('status', 'approved')->count(),
-            'rejected' => (clone $statsQuery)->where('status', 'rejected')->count(),
+            'total' => (int) $statusTally->sum(),
+            'draft' => $countStatus('draft'),
+            'submitted' => $countStatus('submitted'),
+            'under_review' => $countStatus('under_review'),
+            'ready_for_head_office' => $countStatus('ready_for_head_office'),
+            'pending_head_office' => $countStatus('pending_head_office'),
+            'needs_revision' => $countStatus('needs_revision'),
+            'approved' => $countStatus('approved'),
+            'rejected' => $countStatus('rejected'),
             'pending_my_approval' => $this->countPendingMyApproval($statsQuery, $user, 'admission'),
         ];
 
@@ -489,7 +498,7 @@ class MemberAdmissionController extends Controller
             $this->applyCoalesceDateRange($query, $fromDate, $toDate, 'COALESCE(reviewed_at, submitted_at, created_at)');
         }
 
-        $accessibleBranches = $user->getAccessibleBranches()->sortBy('code')->values();
+        $accessibleBranches = $accessibleBranches->sortBy('code')->values();
         if ($accessibleBranches->isEmpty()) {
             $accessibleBranches = Branch::all()->sortBy('code')->values();
         }
@@ -526,10 +535,15 @@ class MemberAdmissionController extends Controller
         }
         $admissions = $query->paginate($perPage)->withQueryString();
 
-        $admissions = $admissions->through(function (MemberAdmission $admission) use ($user) {
+        $openLoans = $this->latestOpenLoansForAdmissions($admissions->getCollection());
+
+        $admissions = $admissions->through(function (MemberAdmission $admission) use ($user, $openLoans) {
             $arr = $admission->toArray();
             $arr['tracking_state'] = $admission->getTrackingState();
-            $activeLoan = $admission->existingLoanForm();
+            $loanKey = filled($admission->application_no)
+                ? $admission->branch_id.'|'.$admission->application_no
+                : 'id|'.$admission->id;
+            $activeLoan = $openLoans->get($loanKey);
             $arr['has_active_loan'] = $activeLoan !== null;
             $arr['active_loan_status'] = $activeLoan?->status;
             $arr['existing_loan_form'] = $activeLoan ? [
@@ -738,7 +752,13 @@ class MemberAdmissionController extends Controller
     {
         $branches = Branch::with(['area.zone'])->active()->orderedByCode()->get();
         $categories = MemberCategory::active()->orderBy('category_name')->get();
-        $samities = Samity::with(['branch'])->active()->orderBy('samity_name')->get();
+        $creator = auth()->user();
+        $samityBranchIds = $creator->branch_id
+            ? collect([(int) $creator->branch_id])
+            : $creator->getAccessibleBranches()->pluck('id');
+        $samities = ($creator->has_all_access && ! $creator->branch_id) || $samityBranchIds->count() > 25
+            ? collect()
+            : Samity::with(['branch:id,name,code'])->active()->whereIn('branch_id', $samityBranchIds->isEmpty() ? [0] : $samityBranchIds)->orderBy('samity_name')->get();
 
         // Get available approvers for user's branch
         $approvers = [];
@@ -2352,5 +2372,71 @@ class MemberAdmissionController extends Controller
 
         return redirect()->route('member.loan-applications.index', ['member_id' => $memberAdmission->id])
             ->with('success', 'ভর্তি তথ্য সংরক্ষণ সম্পন্ন হয়েছে। এবার ঋণের তথ্য নির্বাচন করুন।');
+    }
+
+    /**
+     * Latest open loan for each person on the current page, including sister admissions.
+     *
+     * @param  Collection<int, MemberAdmission>  $admissions
+     * @return Collection<string, LoanApplication>
+     */
+    private function latestOpenLoansForAdmissions(Collection $admissions): Collection
+    {
+        if ($admissions->isEmpty()) {
+            return collect();
+        }
+
+        $sisters = MemberAdmission::query()
+            ->where(function ($query) use ($admissions) {
+                foreach ($admissions as $admission) {
+                    $query->orWhere(function ($match) use ($admission) {
+                        if (filled($admission->application_no)) {
+                            $match->where('branch_id', $admission->branch_id)
+                                ->where('application_no', $admission->application_no);
+                        } else {
+                            $match->where('id', $admission->id);
+                        }
+                    });
+                }
+            })
+            ->get(['id', 'branch_id', 'application_no']);
+
+        $loans = LoanApplication::query()
+            ->whereIn('member_admission_id', $sisters->pluck('id')->all() ?: [0])
+            ->whereNotIn('status', MemberAdmission::closedLoanFormStatuses())
+            ->orderByDesc('id')
+            ->get(['id', 'member_admission_id', 'application_no', 'status']);
+
+        $sistersById = $sisters->keyBy('id');
+        $byPerson = [];
+        foreach ($loans as $loan) {
+            $sister = $sistersById->get($loan->member_admission_id);
+            if ($sister === null) {
+                continue;
+            }
+            $key = filled($sister->application_no)
+                ? $sister->branch_id.'|'.$sister->application_no
+                : 'id|'.$sister->id;
+            $byPerson[$key] ??= $loan;
+        }
+
+        return collect($byPerson);
+    }
+
+    public function samitiesForBranch(Request $request)
+    {
+        $branchId = (int) $request->input('branch_id');
+        $user = $request->user();
+        if ($branchId < 1 || ! $user->canAccessBranch($branchId)) {
+            return response()->json([]);
+        }
+
+        return response()->json(
+            Samity::query()
+                ->active()
+                ->where('branch_id', $branchId)
+                ->orderBy('samity_name')
+                ->get(['id', 'branch_id', 'samity_code', 'samity_name', 'samity_name_bn'])
+        );
     }
 }

@@ -10,6 +10,7 @@ use App\Models\MemberAdmissionIssue;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\NotificationService;
+use App\Services\VerificationIndexQuery;
 use App\Services\VerificationIssueService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -29,8 +30,6 @@ class HeadOfficeVerificationController extends Controller
      */
     public function index(Request $request)
     {
-        @ini_set('memory_limit', '512M');
-
         $authUser = auth()->user();
         $authUser->loadMissing('role');
         $roleName = strtolower($authUser->role->name ?? '');
@@ -131,20 +130,8 @@ class HeadOfficeVerificationController extends Controller
             });
         }
 
-        // STAGE 1: Lightweight Summary Query (only loads branch and issues for indexing, avoids heavy relations)
-        $admissionsSummary = ($type === 'loan') ? collect() : (clone $admissionQuery)
-            ->with([
-                'branch' => fn ($q) => $q->withTrashed(),
-                'issues' => fn ($q) => $q->orderBy('created_at', 'asc'),
-            ])
-            ->get();
-
-        $loansSummary = ($type === 'admission') ? collect() : (clone $loanQuery)
-            ->with([
-                'branch' => fn ($q) => $q->withTrashed(),
-                'issues' => fn ($q) => $q->orderBy('created_at', 'asc'),
-            ])
-            ->get();
+        $page = (int) $request->input('page', 1);
+        $perPage = $this->resolvePerPage($request);
 
         // Permissions:
         $isZoneManager = in_array($roleName, [Role::ZONE_MANAGER, 'zone_manager'], true);
@@ -154,211 +141,23 @@ class HeadOfficeVerificationController extends Controller
         $canReply = (! $authUser->isHeadOffice() && ! $authUser->isEd()) || $isZoneManager;
         $isHoAdmin = $canApprove && ! $isZoneManager;
 
-        // Build unified lightweight summary items
-        $summaryItems = collect();
+        $listed = app(VerificationIndexQuery::class)->page(
+            $type === 'loan' ? MemberAdmission::query()->whereRaw('0 = 1') : $admissionQuery,
+            $type === 'admission' ? LoanApplication::query()->whereRaw('0 = 1') : $loanQuery,
+            $type,
+            $issueStatus,
+            $startOfDay,
+            $endOfDay,
+            $page,
+            $perPage,
+        );
 
-        foreach ($admissionsSummary as $admission) {
-            $latestIssue = $admission->issues->last();
-            $hasPendingIssue = $admission->issues->contains(fn ($i) => $i->status === 'pending');
-
-            $branchCode = (string) ($admission->branch?->code ?? $admission->branch?->branch_code ?? '0000');
-            $branchCodeInt = is_numeric($branchCode) ? (int) $branchCode : 999999;
-
-            $parsed = $this->parseObjectionAndReply(
-                $latestIssue?->issue_description,
-                $latestIssue?->resolution_note,
-                $admission->revision_comments
-            );
-
-            $hasReplied = $admission->issues->contains(function ($i) use ($admission, $latestIssue) {
-                $itemParsed = $this->parseObjectionAndReply(
-                    $i->issue_description,
-                    $i->resolution_note,
-                    $latestIssue && $i->id === $latestIssue->id ? $admission->revision_comments : null
-                );
-
-                return ! empty($itemParsed['branch_reply']);
-            }) || ! empty($parsed['branch_reply']);
-
-            $hasUnapprovedIssue = $admission->issues->contains(fn ($i) => empty($i->zm_approved_at));
-            $isZmApproved = $admission->issues->isNotEmpty() && ! $hasUnapprovedIssue;
-
-            $timelineDates = collect();
-            foreach ($admission->issues as $issue) {
-                if (! empty($issue->created_at)) {
-                    $timelineDates->push($issue->created_at->toIso8601String());
-                }
-                if (! empty($issue->resolved_at)) {
-                    $timelineDates->push(Carbon::parse($issue->resolved_at)->toIso8601String());
-                }
-                if (! empty($issue->zm_approved_at)) {
-                    $timelineDates->push(Carbon::parse($issue->zm_approved_at)->toIso8601String());
-                }
-            }
-
-            if (in_array($admission->status, ['approved', 'pending_disbursement', 'disbursed', 'rejected'], true) && $admission->reviewed_at) {
-                $timelineDates->push(Carbon::parse($admission->reviewed_at)->toIso8601String());
-            }
-
-            if ($timelineDates->isEmpty()) {
-                $fallback = $admission->submitted_at ?: $admission->created_at;
-                $timelineDates->push(Carbon::parse($fallback)->toIso8601String());
-            }
-
-            $effectiveActionAt = $timelineDates->max();
-
-            $summaryItems->push([
-                'id' => 'admission_'.$admission->id,
-                'raw_id' => $admission->id,
-                'item_type' => 'admission',
-                'status' => $admission->status,
-                'branch_code_int' => $branchCodeInt,
-                'latest_action_at' => Carbon::parse($effectiveActionAt)->toIso8601String(),
-                'has_pending_issue' => $hasPendingIssue,
-                'has_replied' => $hasReplied,
-                'is_zm_approved' => $isZmApproved,
-            ]);
-        }
-
-        foreach ($loansSummary as $loan) {
-            $latestIssue = $loan->issues->last();
-            $hasPendingIssue = $loan->issues->contains(fn ($i) => $i->status === 'pending');
-
-            $branchCode = (string) ($loan->branch?->code ?? $loan->branch?->branch_code ?? '0000');
-            $branchCodeInt = is_numeric($branchCode) ? (int) $branchCode : 999999;
-
-            $parsed = $this->parseObjectionAndReply(
-                $latestIssue?->issue_description,
-                $latestIssue?->response_message,
-                $loan->revision_comments ?? null
-            );
-
-            $hasReplied = $loan->issues->contains(function ($i) use ($loan, $latestIssue) {
-                $itemParsed = $this->parseObjectionAndReply(
-                    $i->issue_description,
-                    $i->response_message,
-                    $latestIssue && $i->id === $latestIssue->id ? ($loan->revision_comments ?? null) : null
-                );
-
-                return ! empty($itemParsed['branch_reply']);
-            }) || ! empty($parsed['branch_reply']);
-
-            $hasUnapprovedIssue = $loan->issues->contains(fn ($i) => empty($i->zm_approved_at));
-            $isZmApproved = $loan->issues->isNotEmpty() && ! $hasUnapprovedIssue;
-
-            $timelineDates = collect();
-            foreach ($loan->issues as $issue) {
-                if (! empty($issue->created_at)) {
-                    $timelineDates->push($issue->created_at->toIso8601String());
-                }
-                if (! empty($issue->responded_at)) {
-                    $timelineDates->push(Carbon::parse($issue->responded_at)->toIso8601String());
-                }
-                if (! empty($issue->zm_approved_at)) {
-                    $timelineDates->push(Carbon::parse($issue->zm_approved_at)->toIso8601String());
-                }
-            }
-
-            if (in_array($loan->status, [LoanApplication::STATUS_APPROVED, LoanApplication::STATUS_PENDING_DISBURSEMENT, LoanApplication::STATUS_DISBURSED, LoanApplication::STATUS_REJECTED], true) && $loan->reviewed_at) {
-                $timelineDates->push(Carbon::parse($loan->reviewed_at)->toIso8601String());
-            }
-
-            if ($timelineDates->isEmpty()) {
-                $fallback = $loan->submitted_at ?: $loan->created_at;
-                $timelineDates->push(Carbon::parse($fallback)->toIso8601String());
-            }
-
-            $effectiveActionAt = $timelineDates->max();
-
-            $summaryItems->push([
-                'id' => 'loan_'.$loan->id,
-                'raw_id' => $loan->id,
-                'item_type' => 'loan',
-                'status' => $loan->status,
-                'branch_code_int' => $branchCodeInt,
-                'latest_action_at' => Carbon::parse($effectiveActionAt)->toIso8601String(),
-                'has_pending_issue' => $hasPendingIssue,
-                'has_replied' => $hasReplied,
-                'is_zm_approved' => $isZmApproved,
-            ]);
-        }
-
-        // Strict filtering by effective action/sent date range when date filters are specified
-        if ($startOfDay && $endOfDay) {
-            $summaryItems = $summaryItems->filter(function ($item) use ($startOfDay, $endOfDay) {
-                $dt = Carbon::parse($item['latest_action_at']);
-
-                return $dt->between($startOfDay, $endOfDay);
-            });
-        } elseif ($startOfDay) {
-            $summaryItems = $summaryItems->filter(function ($item) use ($startOfDay) {
-                $dt = Carbon::parse($item['latest_action_at']);
-
-                return $dt->gte($startOfDay);
-            });
-        } elseif ($endOfDay) {
-            $summaryItems = $summaryItems->filter(function ($item) use ($endOfDay) {
-                $dt = Carbon::parse($item['latest_action_at']);
-
-                return $dt->lte($endOfDay);
-            });
-        }
-
-        $completedStatuses = [
-            'approved',
-            'pending_disbursement',
-            'disbursed',
-            'rejected',
-            LoanApplication::STATUS_AWAITING_TAKEUP,
-            LoanApplication::STATUS_PENDING_CANCELLATION,
-            LoanApplication::STATUS_CANCELLED,
-        ];
-
-        // Calculate statistics across all active items for the tabs
-        $stats = [
-            'total' => $summaryItems->count(),
-            'pending_action' => $summaryItems->filter(fn ($i) => ! in_array($i['status'], $completedStatuses, true))->count(),
-            'admission_count' => $summaryItems->where('item_type', 'admission')->count(),
-            'loan_count' => $summaryItems->where('item_type', 'loan')->count(),
-            'pending_issues' => $summaryItems->filter(fn ($i) => $i['has_pending_issue'] && ! $i['has_replied'] && ! in_array($i['status'], $completedStatuses, true))->count(),
-            'branch_replied' => $summaryItems->filter(fn ($i) => $i['has_replied'] && ! $i['is_zm_approved'] && ! in_array($i['status'], $completedStatuses, true))->count(),
-            'zm_approved' => $summaryItems->filter(fn ($i) => $i['is_zm_approved'] && ! in_array($i['status'], $completedStatuses, true))->count(),
-            'approved' => $summaryItems->whereIn('status', ['approved', 'pending_disbursement', 'disbursed'])->count(),
-            'rejected' => $summaryItems->where('status', 'rejected')->count(),
-        ];
-
-        // Apply issue status filter
-        $filteredItems = $summaryItems;
-        if ($issueStatus === 'pending_action') {
-            $filteredItems = $summaryItems->filter(fn ($i) => ! in_array($i['status'], $completedStatuses, true));
-        } elseif ($issueStatus === 'zm_approved') {
-            $filteredItems = $summaryItems->filter(fn ($i) => $i['is_zm_approved'] && ! in_array($i['status'], $completedStatuses, true));
-        } elseif ($issueStatus === 'branch_replied') {
-            $filteredItems = $summaryItems->filter(fn ($i) => $i['has_replied'] && ! $i['is_zm_approved'] && ! in_array($i['status'], $completedStatuses, true));
-        } elseif ($issueStatus === 'pending') {
-            $filteredItems = $summaryItems->filter(fn ($i) => $i['has_pending_issue'] && ! $i['has_replied'] && ! in_array($i['status'], $completedStatuses, true));
-        } elseif ($issueStatus === 'approved') {
-            $filteredItems = $summaryItems->filter(fn ($i) => in_array($i['status'], ['approved', 'pending_disbursement', 'disbursed'], true));
-        } elseif ($issueStatus === 'rejected') {
-            $filteredItems = $summaryItems->filter(fn ($i) => $i['status'] === 'rejected');
-        } // 'all' keeps all items
-
-        // Sort items strictly by latest action date DESCENDING (latest update first)
-        $sortedItems = $filteredItems->sort(function ($a, $b) {
-            $timeA = ! empty($a['latest_action_at']) ? strtotime($a['latest_action_at']) : 0;
-            $timeB = ! empty($b['latest_action_at']) ? strtotime($b['latest_action_at']) : 0;
-            if ($timeA !== $timeB) {
-                return $timeB <=> $timeA;
-            }
-
-            return $a['branch_code_int'] <=> $b['branch_code_int'];
-        })->values();
-
-        // Paginate in memory
-        $page = (int) $request->input('page', 1);
-        $perPage = $this->resolvePerPage($request);
-        $totalItems = $sortedItems->count();
-        $pageSummaryItems = $sortedItems->slice(($page - 1) * $perPage, $perPage)->values();
+        $stats = $listed['stats'];
+        $totalItems = $listed['total'];
+        $pageSummaryItems = $listed['rows']->map(fn ($row) => [
+            'raw_id' => (int) $row->raw_id,
+            'item_type' => $row->item_type,
+        ])->values();
 
         // STAGE 2: Hydrate full relationships ONLY for the items on the current page (e.g. 25 items max)
         $pageAdmissionIds = $pageSummaryItems->where('item_type', 'admission')->pluck('raw_id')->all();

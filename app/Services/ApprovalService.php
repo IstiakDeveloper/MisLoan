@@ -14,6 +14,7 @@ use App\Models\TeamBasedApprovalReview;
 use App\Models\User;
 use App\Support\LoanFormVisibility;
 use App\Support\NumberToWordsBangla;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -311,32 +312,48 @@ class ApprovalService
     }
 
     /**
+     * Pending admission approvals that are the current sequence step, or a
+     * non-branch row on an under-review admission. One query, no per-row lookup.
+     *
+     * @return Builder<MemberAdmissionApproval>
+     */
+    public function currentPendingMemberApprovalsQuery(User $user): Builder
+    {
+        return MemberAdmissionApproval::query()
+            ->where('member_admission_approvals.user_id', $user->id)
+            ->where('member_admission_approvals.status', 'pending')
+            ->whereHas('memberAdmission', function ($query) {
+                $query->whereIn('status', ['submitted', 'under_review']);
+            })
+            ->where(function ($query) {
+                $query->whereRaw('NOT EXISTS (
+                    SELECT 1 FROM member_admission_approvals AS prev
+                    WHERE prev.member_admission_id = member_admission_approvals.member_admission_id
+                      AND prev.sequence < member_admission_approvals.sequence
+                      AND prev.status != ?
+                )', ['approved'])
+                    ->orWhere(function ($forwarded) {
+                        $forwarded->where('member_admission_approvals.level', '!=', 'branch')
+                            ->whereHas('memberAdmission', fn ($admission) => $admission->where('status', 'under_review'));
+                    });
+            });
+    }
+
+    public function countCurrentPendingAdmissionsForUser(User $user): int
+    {
+        return $this->currentPendingMemberApprovalsQuery($user)->count();
+    }
+
+    /**
      * Get pending approvals for a user (only rows that are "current" in sequence).
      * Includes: (1) current pending in sequence, or (2) under_review admission assigned to this approver (non-branch level).
      */
     public function getPendingApprovalsForUser(User $user)
     {
-        $approvals = MemberAdmissionApproval::where('user_id', $user->id)
-            ->where('status', 'pending')
-            ->whereHas('memberAdmission', function ($query) {
-                $query->whereIn('status', ['submitted', 'under_review']);
-            })
+        return $this->currentPendingMemberApprovalsQuery($user)
             ->with(['memberAdmission.branch.area.zone', 'memberAdmission.samity'])
-            ->get();
-
-        return $approvals->filter(function ($approval) {
-            // Normal case: this is the current step in sequence
-            if ($approval->isCurrentPending()) {
-                return true;
-            }
-            // Under review: admission was forwarded to an approver; show if this row is for this user and not branch level
-            $admission = $approval->memberAdmission;
-            if ($admission && $admission->status === 'under_review' && $approval->level !== 'branch') {
-                return true;
-            }
-
-            return false;
-        })->values();
+            ->get()
+            ->values();
     }
 
     /**
@@ -344,10 +361,11 @@ class ApprovalService
      */
     public function pendingAdmissionIdsForUser(User $user): array
     {
-        return $this->getPendingApprovalsForUser($user)
-            ->pluck('member_admission_id')
+        return $this->currentPendingMemberApprovalsQuery($user)
+            ->pluck('member_admission_approvals.member_admission_id')
             ->filter()
             ->unique()
+            ->map(fn ($id) => (int) $id)
             ->values()
             ->all();
     }
@@ -1650,15 +1668,23 @@ class ApprovalService
      */
     public function lastLoanAmountApproval(LoanApplication $loan): ?LoanApplicationApproval
     {
-        $approved = LoanApplicationApproval::query()
-            ->where('loan_application_id', $loan->id)
-            ->where('status', 'approved')
-            ->with('user.role')
-            ->orderByDesc('sequence')
-            ->orderByDesc('id')
-            ->get()
-            ->filter(fn (LoanApplicationApproval $approval) => ! $this->isNonFinalApprovalComment($approval->comments))
-            ->values();
+        if ($loan->relationLoaded('approvals')) {
+            $approved = $loan->approvals
+                ->where('status', 'approved')
+                ->sortByDesc(fn (LoanApplicationApproval $approval) => sprintf('%010d-%010d', (int) $approval->sequence, (int) $approval->id))
+                ->filter(fn (LoanApplicationApproval $approval) => ! $this->isNonFinalApprovalComment($approval->comments))
+                ->values();
+        } else {
+            $approved = LoanApplicationApproval::query()
+                ->where('loan_application_id', $loan->id)
+                ->where('status', 'approved')
+                ->with('user.role')
+                ->orderByDesc('sequence')
+                ->orderByDesc('id')
+                ->get()
+                ->filter(fn (LoanApplicationApproval $approval) => ! $this->isNonFinalApprovalComment($approval->comments))
+                ->values();
+        }
 
         $higherLevel = $approved->first(
             fn (LoanApplicationApproval $approval) => in_array($approval->level, ['escalation', 'zone', 'area'], true)
@@ -2020,10 +2046,14 @@ class ApprovalService
     /**
      * Get pending loan approvals for a user (branch/area/zone/escalation approvers)
      */
-    public function getPendingLoanApprovalsForUser(User $user)
+    /**
+     * @return Builder<LoanApplicationApproval>
+     */
+    public function currentPendingLoanApprovalsQuery(User $user): Builder
     {
-        $approvals = LoanApplicationApproval::where('user_id', $user->id)
-            ->where('status', 'pending')
+        return LoanApplicationApproval::query()
+            ->where('loan_application_approvals.user_id', $user->id)
+            ->where('loan_application_approvals.status', 'pending')
             ->whereHas('loanApplication', function ($query) {
                 $query->whereIn('status', [
                     LoanApplication::STATUS_SUBMITTED,
@@ -2032,26 +2062,30 @@ class ApprovalService
                     LoanApplication::STATUS_PENDING_CANCELLATION,
                 ]);
             })
+            ->where(function ($query) {
+                $query->whereRaw('NOT EXISTS (
+                    SELECT 1 FROM loan_application_approvals AS prev
+                    WHERE prev.loan_application_id = loan_application_approvals.loan_application_id
+                      AND prev.sequence < loan_application_approvals.sequence
+                      AND prev.status NOT IN (?, ?)
+                )', ['approved', 'rejected'])
+                    ->orWhere(function ($forwarded) {
+                        $forwarded->where('loan_application_approvals.level', '!=', 'branch')
+                            ->whereHas('loanApplication', fn ($loan) => $loan->where('status', LoanApplication::STATUS_UNDER_REVIEW));
+                    })
+                    ->orWhereHas('loanApplication', fn ($loan) => $loan->whereIn('status', [
+                        LoanApplication::STATUS_PENDING_AMOUNT_APPROVAL,
+                        LoanApplication::STATUS_PENDING_CANCELLATION,
+                    ]));
+            });
+    }
+
+    public function getPendingLoanApprovalsForUser(User $user)
+    {
+        return $this->currentPendingLoanApprovalsQuery($user)
             ->with(['loanApplication.memberAdmission', 'loanApplication.branch.area.zone', 'loanApplication.loanProduct', 'loanApplication.loanCategory'])
-            ->get();
-
-        return $approvals->filter(function ($approval) {
-            if ($approval->isCurrentPending()) {
-                return true;
-            }
-            $loan = $approval->loanApplication;
-            if ($loan && $loan->status === LoanApplication::STATUS_UNDER_REVIEW && $approval->level !== 'branch') {
-                return true;
-            }
-            if ($loan && $loan->status === LoanApplication::STATUS_PENDING_AMOUNT_APPROVAL) {
-                return true;
-            }
-            if ($loan && $loan->status === LoanApplication::STATUS_PENDING_CANCELLATION) {
-                return true;
-            }
-
-            return false;
-        })->values();
+            ->get()
+            ->values();
     }
 
     /**
@@ -2059,10 +2093,11 @@ class ApprovalService
      */
     public function pendingLoanApplicationIdsForUser(User $user): array
     {
-        return $this->getPendingLoanApprovalsForUser($user)
-            ->pluck('loan_application_id')
+        return $this->currentPendingLoanApprovalsQuery($user)
+            ->pluck('loan_application_approvals.loan_application_id')
             ->filter()
             ->unique()
+            ->map(fn ($id) => (int) $id)
             ->values()
             ->all();
     }

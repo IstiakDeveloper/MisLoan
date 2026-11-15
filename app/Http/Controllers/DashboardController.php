@@ -2,23 +2,26 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\User;
-use App\Models\Zone;
 use App\Models\Area;
 use App\Models\Branch;
-use App\Models\Role;
 use App\Models\LoanApplication;
 use App\Models\LoanApplicationIssue;
 use App\Models\MemberAdmission;
 use App\Models\RecentDeletion;
+use App\Models\Role;
 use App\Models\TeamBasedApproval;
 use App\Models\TeamBasedApprovalItem;
 use App\Models\TeamBasedApprovalReview;
+use App\Models\User;
+use App\Models\Zone;
 use App\Services\ApprovalService;
+use App\Services\Dashboard\PipelineRollup;
+use App\Support\IndexedDate;
+use App\Support\NavBadgeCache;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 use Inertia\Inertia;
 
 class DashboardController extends Controller
@@ -88,7 +91,7 @@ class DashboardController extends Controller
             $scopeLabel = $user->zone?->name ?? 'জোন জুরিসডিকশন';
         } elseif ($approverType === 'financial' || in_array($roleName, [Role::ADMF, Role::DMF, Role::ED], true)) {
             $branchIds = Branch::pluck('id')->toArray();
-            $roleLabel = 'উর্ধ্বতন আর্থিক অনুমোদক (' . strtoupper($roleName ?? 'APPROVER') . ')';
+            $roleLabel = 'উর্ধ্বতন আর্থিক অনুমোদক ('.strtoupper($roleName ?? 'APPROVER').')';
             $scopeLabel = 'সার্বিক আর্থিক অনুমোদন';
         } else {
             $branchIds = Branch::pluck('id')->toArray();
@@ -152,7 +155,7 @@ class DashboardController extends Controller
         $lnOtherPending = max(0, $pendingLoans->count() - $lnMyPending);
 
         // 4. Team-Based Reviews Assigned to THIS User
-        $personalReviewsQuery = \App\Models\TeamBasedApprovalReview::where('user_id', $user->id);
+        $personalReviewsQuery = TeamBasedApprovalReview::where('user_id', $user->id);
         $teamPendingCount = (clone $personalReviewsQuery)->where('status', 'pending')->count();
         $teamApprovedCount = (clone $personalReviewsQuery)->where('status', 'approved')->count();
         $teamRejectedCount = (clone $personalReviewsQuery)->where('status', 'rejected')->count();
@@ -168,7 +171,7 @@ class DashboardController extends Controller
             ->sum('approved_amount');
 
         // Total Team Based Sheets in Jurisdiction
-        $teamBasedQuery = \App\Models\TeamBasedApproval::whereIn('branch_id', $branchIds);
+        $teamBasedQuery = TeamBasedApproval::whereIn('branch_id', $branchIds);
         $teamBasedStats = [
             'my_pending_reviews' => $teamPendingCount,
             'my_pending_amount' => $teamPendingProposedAmount,
@@ -180,30 +183,34 @@ class DashboardController extends Controller
             'jurisdiction_rejected' => (clone $teamBasedQuery)->where('status', 'rejected')->count(),
         ];
 
+        $approverPipeline = app(PipelineRollup::class);
+        $approverAdm = $approverPipeline->admissionCounts($branchIds);
+        $approverLoans = $approverPipeline->loanRollup($branchIds);
+
         // 5. Approved in Jurisdiction
-        $admApproved = MemberAdmission::whereIn('branch_id', $branchIds)->where('status', 'approved')->count();
-        $lnApproved = LoanApplication::whereIn('branch_id', $branchIds)->where('status', 'approved')->count();
-        $lnApprovedAmount = (float) LoanApplication::whereIn('branch_id', $branchIds)->where('status', 'approved')->sum('approved_amount');
+        $admApproved = $approverPipeline->countOf($approverAdm, 'approved');
+        $lnApproved = $approverPipeline->loanCount($approverLoans, 'approved');
+        $lnApprovedAmount = $approverPipeline->loanSum($approverLoans, 'approved_amount', 'approved');
 
         // 6. Pending Disbursement
-        $lnPendingDisbursement = LoanApplication::whereIn('branch_id', $branchIds)->where('status', 'pending_disbursement')->count();
-        $lnPendingDisbursementAmount = (float) LoanApplication::whereIn('branch_id', $branchIds)->where('status', 'pending_disbursement')->sum('approved_amount');
+        $lnPendingDisbursement = $approverPipeline->loanCount($approverLoans, 'pending_disbursement');
+        $lnPendingDisbursementAmount = $approverPipeline->loanSum($approverLoans, 'approved_amount', 'pending_disbursement');
 
         // 7. Disbursed & Active in Jurisdiction
-        $lnDisbursed = LoanApplication::whereIn('branch_id', $branchIds)->where('status', 'disbursed')->count();
-        $lnDisbursedAmount = (float) LoanApplication::whereIn('branch_id', $branchIds)->where('status', 'disbursed')->sum('disbursed_amount');
+        $lnDisbursed = $approverPipeline->loanCount($approverLoans, 'disbursed');
+        $lnDisbursedAmount = $approverPipeline->loanSum($approverLoans, 'disbursed_amount', 'disbursed');
 
         // 8. Returned for Correction in Jurisdiction
-        $admNeedsCorrection = MemberAdmission::whereIn('branch_id', $branchIds)->where('status', 'needs_revision')->count();
-        $lnNeedsCorrection = LoanApplication::whereIn('branch_id', $branchIds)->where('status', 'needs_correction')->count();
+        $admNeedsCorrection = $approverPipeline->countOf($approverAdm, 'needs_revision');
+        $lnNeedsCorrection = $approverPipeline->loanCount($approverLoans, 'needs_correction');
 
         // 9. Drafts in Jurisdiction
-        $admDraft = MemberAdmission::whereIn('branch_id', $branchIds)->where('status', 'draft')->count();
-        $lnDraft = LoanApplication::whereIn('branch_id', $branchIds)->where('status', 'draft')->count();
+        $admDraft = $approverPipeline->countOf($approverAdm, 'draft');
+        $lnDraft = $approverPipeline->loanCount($approverLoans, 'draft');
 
         // 10. Rejected in Jurisdiction
-        $admRejected = MemberAdmission::whereIn('branch_id', $branchIds)->where('status', 'rejected')->count();
-        $lnRejected = LoanApplication::whereIn('branch_id', $branchIds)->where('status', 'rejected')->count();
+        $admRejected = $approverPipeline->countOf($approverAdm, 'rejected');
+        $lnRejected = $approverPipeline->loanCount($approverLoans, 'rejected');
 
         // 11. Immediate Decision Action Queue for this Approver
         $urgentLoans = LoanApplication::whereIn('branch_id', $branchIds)
@@ -253,7 +260,7 @@ class DashboardController extends Controller
                 ];
             });
 
-        $urgentTeamReviews = \App\Models\TeamBasedApprovalReview::with(['approval.branch', 'item'])
+        $urgentTeamReviews = TeamBasedApprovalReview::with(['approval.branch', 'item'])
             ->where('user_id', $user->id)
             ->where('status', 'pending')
             ->latest('id')
@@ -261,10 +268,11 @@ class DashboardController extends Controller
             ->get()
             ->map(function ($review) {
                 $item = $review->item;
+
                 return [
                     'id' => $review->id,
                     'type' => 'team_based',
-                    'application_no' => $item?->member_code ?? ('TBA-' . $review->team_based_approval_id),
+                    'application_no' => $item?->member_code ?? ('TBA-'.$review->team_based_approval_id),
                     'applicant_name' => $item?->member_name ?? 'টিম-বেসড ঋণ অনুমোদন',
                     'detail' => 'টিম ভিত্তিক আর্থিক অনুমোদন',
                     'branch_name' => $review->approval?->branch?->name ?? 'শাখা',
@@ -330,13 +338,14 @@ class DashboardController extends Controller
                 'total' => $admRejected + $lnRejected,
             ],
             'totals' => [
-                'admission' => MemberAdmission::whereIn('branch_id', $branchIds)->count(),
-                'loan' => LoanApplication::whereIn('branch_id', $branchIds)->count(),
-                'total' => MemberAdmission::whereIn('branch_id', $branchIds)->count() + LoanApplication::whereIn('branch_id', $branchIds)->count(),
+                'admission' => array_sum($approverAdm),
+                'loan' => $approverPipeline->loanCount($approverLoans, ...array_keys($approverLoans)),
+                'total' => array_sum($approverAdm) + $approverPipeline->loanCount($approverLoans, ...array_keys($approverLoans)),
             ],
         ];
 
         // 12. Subordinate Managers Breakdown with Name & Pending Counts
+        $pendingByBranch = app(PipelineRollup::class)->pendingByBranch($branchIds);
         $subordinateList = [];
         $subordinateTitle = '';
         $subordinateType = '';
@@ -353,15 +362,14 @@ class DashboardController extends Controller
                     $bmUser = User::where('branch_id', $branch->id)->first();
                 }
 
-                $admPendingCount = MemberAdmission::where('branch_id', $branch->id)
-                    ->whereIn('status', ['submitted', 'under_review', 'pending_head_office'])
-                    ->count();
-
-                $loanPendingQuery = LoanApplication::where('branch_id', $branch->id)
-                    ->whereIn('status', ['submitted', 'under_review', 'pending_head_office']);
-
-                $loanPendingCount = (clone $loanPendingQuery)->count();
-                $loanPendingAmount = (float) (clone $loanPendingQuery)->sum('requested_amount');
+                $branchPending = $pendingByBranch[(int) $branch->id] ?? [
+                    'admission_pending' => 0,
+                    'loan_pending' => 0,
+                    'loan_amount' => 0.0,
+                ];
+                $admPendingCount = $branchPending['admission_pending'];
+                $loanPendingCount = $branchPending['loan_pending'];
+                $loanPendingAmount = $branchPending['loan_amount'];
 
                 $subordinateList[] = [
                     'id' => $branch->id,
@@ -385,23 +393,17 @@ class DashboardController extends Controller
             $areas = Area::whereIn('zone_id', $zoneIds ?? ($user->zone_id ? [$user->zone_id] : []))->with(['branches', 'zone'])->get();
             foreach ($areas as $area) {
                 $rmUser = User::where(function ($q) use ($area) {
-                        $q->where('area_id', $area->id)
-                          ->orWhereHas('areas', fn ($sq) => $sq->where('areas.id', $area->id));
-                    })
+                    $q->where('area_id', $area->id)
+                        ->orWhereHas('areas', fn ($sq) => $sq->where('areas.id', $area->id));
+                })
                     ->whereHas('role', fn ($q) => $q->where('name', Role::AREA_MANAGER))
                     ->first();
 
                 $areaBranchIds = $area->branches->pluck('id')->toArray();
-
-                $admPendingCount = MemberAdmission::whereIn('branch_id', $areaBranchIds)
-                    ->whereIn('status', ['submitted', 'under_review', 'pending_head_office'])
-                    ->count();
-
-                $loanPendingQuery = LoanApplication::whereIn('branch_id', $areaBranchIds)
-                    ->whereIn('status', ['submitted', 'under_review', 'pending_head_office']);
-
-                $loanPendingCount = (clone $loanPendingQuery)->count();
-                $loanPendingAmount = (float) (clone $loanPendingQuery)->sum('requested_amount');
+                $areaPending = app(PipelineRollup::class)->sumBranches($pendingByBranch, $areaBranchIds);
+                $admPendingCount = $areaPending['admission_pending'];
+                $loanPendingCount = $areaPending['loan_pending'];
+                $loanPendingAmount = $areaPending['loan_amount'];
 
                 $subordinateList[] = [
                     'id' => $area->id,
@@ -426,23 +428,17 @@ class DashboardController extends Controller
             $zones = Zone::with(['areas.branches'])->get();
             foreach ($zones as $zone) {
                 $zmUser = User::where(function ($q) use ($zone) {
-                        $q->where('zone_id', $zone->id)
-                          ->orWhereHas('zones', fn ($sq) => $sq->where('zones.id', $zone->id));
-                    })
+                    $q->where('zone_id', $zone->id)
+                        ->orWhereHas('zones', fn ($sq) => $sq->where('zones.id', $zone->id));
+                })
                     ->whereHas('role', fn ($q) => $q->where('name', Role::ZONE_MANAGER))
                     ->first();
 
                 $zoneBranchIds = Branch::whereHas('area', fn ($q) => $q->where('zone_id', $zone->id))->pluck('id')->toArray();
-
-                $admPendingCount = MemberAdmission::whereIn('branch_id', $zoneBranchIds)
-                    ->whereIn('status', ['submitted', 'under_review', 'pending_head_office'])
-                    ->count();
-
-                $loanPendingQuery = LoanApplication::whereIn('branch_id', $zoneBranchIds)
-                    ->whereIn('status', ['submitted', 'under_review', 'pending_head_office']);
-
-                $loanPendingCount = (clone $loanPendingQuery)->count();
-                $loanPendingAmount = (float) (clone $loanPendingQuery)->sum('requested_amount');
+                $zonePending = app(PipelineRollup::class)->sumBranches($pendingByBranch, $zoneBranchIds);
+                $admPendingCount = $zonePending['admission_pending'];
+                $loanPendingCount = $zonePending['loan_pending'];
+                $loanPendingAmount = $zonePending['loan_amount'];
 
                 $subordinateList[] = [
                     'id' => $zone->id,
@@ -534,13 +530,17 @@ class DashboardController extends Controller
             $period = 'monthly';
         }
 
+        $pipeline = app(PipelineRollup::class);
+        $admCounts = $pipeline->admissionCounts();
+        $loanRollup = $pipeline->loanRollup();
+
         // 1. Head Office Pending Approvals (১ম ও প্রধান কাজ)
-        $admPendingHO = MemberAdmission::where('status', 'pending_head_office')->count();
-        $lnPendingHO = LoanApplication::where('status', 'pending_head_office')->count();
+        $admPendingHO = $pipeline->countOf($admCounts, 'pending_head_office');
+        $lnPendingHO = $pipeline->loanCount($loanRollup, 'pending_head_office');
 
         // 2. Ready for Head Office (শাখা থেকে পাঠানো প্রস্তুত)
-        $admReadyHO = MemberAdmission::where('status', 'ready_for_head_office')->count();
-        $lnReadyHO = LoanApplication::where('status', 'ready_for_head_office')->count();
+        $admReadyHO = $pipeline->countOf($admCounts, 'ready_for_head_office');
+        $lnReadyHO = $pipeline->loanCount($loanRollup, 'ready_for_head_office');
 
         // 3. Team-Based Approvals at Head Office
         $tbPendingReviews = TeamBasedApprovalReview::where('status', 'pending')->count();
@@ -548,37 +548,37 @@ class DashboardController extends Controller
         $tbApprovedAmount = (float) TeamBasedApprovalReview::where('status', 'approved')->sum('approved_amount');
 
         // 4. Approved & Completed Nationwide
-        $admApproved = MemberAdmission::where('status', 'approved')->count();
-        $lnApproved = LoanApplication::where('status', 'approved')->count();
-        $lnApprovedAmount = (float) LoanApplication::where('status', 'approved')->sum('approved_amount');
+        $admApproved = $pipeline->countOf($admCounts, 'approved');
+        $lnApproved = $pipeline->loanCount($loanRollup, 'approved');
+        $lnApprovedAmount = $pipeline->loanSum($loanRollup, 'approved_amount', 'approved');
 
         // 5. Pending Disbursement
-        $lnPendingDisbursement = LoanApplication::where('status', 'pending_disbursement')->count();
-        $lnPendingDisbursementAmount = (float) LoanApplication::where('status', 'pending_disbursement')->sum('approved_amount');
+        $lnPendingDisbursement = $pipeline->loanCount($loanRollup, 'pending_disbursement');
+        $lnPendingDisbursementAmount = $pipeline->loanSum($loanRollup, 'approved_amount', 'pending_disbursement');
 
         // 6. Active Disbursed Portfolio
-        $lnDisbursed = LoanApplication::where('status', 'disbursed')->count();
-        $lnDisbursedAmount = (float) LoanApplication::where('status', 'disbursed')->sum('disbursed_amount');
+        $lnDisbursed = $pipeline->loanCount($loanRollup, 'disbursed');
+        $lnDisbursedAmount = $pipeline->loanSum($loanRollup, 'disbursed_amount', 'disbursed');
 
         // 7. In Branch / Field Stage
-        $admBranchLevel = MemberAdmission::where('status', 'submitted')->count();
-        $lnBranchLevel = LoanApplication::where('status', 'submitted')->count();
+        $admBranchLevel = $pipeline->countOf($admCounts, 'submitted');
+        $lnBranchLevel = $pipeline->loanCount($loanRollup, 'submitted');
 
         // 8. In Area / Zone Review Stage
-        $admAreaZoneLevel = MemberAdmission::where('status', 'under_review')->count();
-        $lnAreaZoneLevel = LoanApplication::where('status', 'under_review')->count();
+        $admAreaZoneLevel = $pipeline->countOf($admCounts, 'under_review');
+        $lnAreaZoneLevel = $pipeline->loanCount($loanRollup, 'under_review');
 
         // 9. Returned for Correction / Needs Revision
-        $admNeedsCorrection = MemberAdmission::where('status', 'needs_revision')->count();
-        $lnNeedsCorrection = LoanApplication::where('status', 'needs_correction')->count();
+        $admNeedsCorrection = $pipeline->countOf($admCounts, 'needs_revision');
+        $lnNeedsCorrection = $pipeline->loanCount($loanRollup, 'needs_correction');
 
         // 10. Drafts
-        $admDraft = MemberAdmission::where('status', 'draft')->count();
-        $lnDraft = LoanApplication::where('status', 'draft')->count();
+        $admDraft = $pipeline->countOf($admCounts, 'draft');
+        $lnDraft = $pipeline->loanCount($loanRollup, 'draft');
 
         // 11. Rejected
-        $admRejected = MemberAdmission::where('status', 'rejected')->count();
-        $lnRejected = LoanApplication::where('status', 'rejected')->count();
+        $admRejected = $pipeline->countOf($admCounts, 'rejected');
+        $lnRejected = $pipeline->loanCount($loanRollup, 'rejected');
 
         // System Network Scale
         $systemScale = [
@@ -586,8 +586,8 @@ class DashboardController extends Controller
             'total_areas' => Area::where('is_active', true)->count(),
             'total_branches' => Branch::where('is_active', true)->count(),
             'total_users' => User::where('is_active', true)->count(),
-            'total_admissions' => MemberAdmission::count(),
-            'total_loans' => LoanApplication::count(),
+            'total_admissions' => array_sum($admCounts),
+            'total_loans' => $pipeline->loanCount($loanRollup, ...array_keys($loanRollup)),
         ];
 
         // Immediate Action Queue for Head Office
@@ -703,189 +703,12 @@ class DashboardController extends Controller
             'system_scale' => $systemScale,
         ];
 
-        // 12. Head Office All Tiers Managers & Approvers Breakdown (RM up to Senior Approvers & BM)
-        // A. Regional Managers (RM)
-        $rmList = [];
-        $areas = Area::with(['branches', 'zone'])->get();
-        foreach ($areas as $area) {
-            $rmUser = User::where(function ($q) use ($area) {
-                    $q->where('area_id', $area->id)
-                      ->orWhereHas('areas', fn ($sq) => $sq->where('areas.id', $area->id));
-                })
-                ->whereHas('role', fn ($q) => $q->where('name', Role::AREA_MANAGER))
-                ->first();
-
-            $areaBranchIds = $area->branches->pluck('id')->toArray();
-
-            $admPendingCount = MemberAdmission::whereIn('branch_id', $areaBranchIds)
-                ->whereIn('status', ['submitted', 'under_review', 'pending_head_office'])
-                ->count();
-
-            $loanPendingQuery = LoanApplication::whereIn('branch_id', $areaBranchIds)
-                ->whereIn('status', ['submitted', 'under_review', 'pending_head_office']);
-
-            $loanPendingCount = (clone $loanPendingQuery)->count();
-            $loanPendingAmount = (float) (clone $loanPendingQuery)->sum('requested_amount');
-
-            $rmList[] = [
-                'id' => $area->id,
-                'tier' => 'rm',
-                'manager_id' => $rmUser?->id,
-                'manager_name' => $rmUser?->name ?? 'নিযুক্ত নেই',
-                'manager_phone' => $rmUser?->phone,
-                'manager_role' => 'আঞ্চলিক ব্যবস্থাপক (RM)',
-                'unit_name' => $area->name,
-                'unit_code' => $area->code,
-                'parent_name' => $area->zone?->name ?? '—',
-                'admission_pending' => $admPendingCount,
-                'loan_pending' => $loanPendingCount,
-                'total_pending' => $admPendingCount + $loanPendingCount,
-                'loan_amount' => $loanPendingAmount,
-                'branches_count' => count($areaBranchIds),
-            ];
-        }
-        usort($rmList, fn ($a, $b) => $b['total_pending'] <=> $a['total_pending']);
-
-        // B. Zonal Managers (ZM)
-        $zmList = [];
-        $zones = Zone::with(['areas.branches'])->get();
-        foreach ($zones as $zone) {
-            $zmUser = User::where(function ($q) use ($zone) {
-                    $q->where('zone_id', $zone->id)
-                      ->orWhereHas('zones', fn ($sq) => $sq->where('zones.id', $zone->id));
-                })
-                ->whereHas('role', fn ($q) => $q->where('name', Role::ZONE_MANAGER))
-                ->first();
-
-            $zoneBranchIds = Branch::whereHas('area', fn ($q) => $q->where('zone_id', $zone->id))->pluck('id')->toArray();
-
-            $admPendingCount = MemberAdmission::whereIn('branch_id', $zoneBranchIds)
-                ->whereIn('status', ['submitted', 'under_review', 'pending_head_office'])
-                ->count();
-
-            $loanPendingQuery = LoanApplication::whereIn('branch_id', $zoneBranchIds)
-                ->whereIn('status', ['submitted', 'under_review', 'pending_head_office']);
-
-            $loanPendingCount = (clone $loanPendingQuery)->count();
-            $loanPendingAmount = (float) (clone $loanPendingQuery)->sum('requested_amount');
-
-            $zmList[] = [
-                'id' => $zone->id,
-                'tier' => 'zm',
-                'manager_id' => $zmUser?->id,
-                'manager_name' => $zmUser?->name ?? 'নিযুক্ত নেই',
-                'manager_phone' => $zmUser?->phone,
-                'manager_role' => 'জোনাল ম্যানেজার (ZM)',
-                'unit_name' => $zone->name,
-                'unit_code' => $zone->code,
-                'parent_name' => 'হেড অফিস',
-                'admission_pending' => $admPendingCount,
-                'loan_pending' => $loanPendingCount,
-                'total_pending' => $admPendingCount + $loanPendingCount,
-                'loan_amount' => $loanPendingAmount,
-                'branches_count' => count($zoneBranchIds),
-                'areas_count' => $zone->areas->count(),
-            ];
-        }
-        usort($zmList, fn ($a, $b) => $b['total_pending'] <=> $a['total_pending']);
-
-        // C. Senior Approvers (ADMF, DMF, ED)
-        $seniorApprovers = User::whereHas('role', fn ($q) => $q->whereIn('name', [Role::ADMF, Role::DMF, Role::ED]))
-            ->with('role')
-            ->get();
-        $seniorList = [];
-        foreach ($seniorApprovers as $sa) {
-            $pendingReviews = TeamBasedApprovalReview::where('user_id', $sa->id)
-                ->where('status', 'pending')
-                ->count();
-            $pendingProposedAmount = (float) TeamBasedApprovalReview::where('user_id', $sa->id)
-                ->where('status', 'pending')
-                ->join('team_based_approval_items', 'team_based_approval_reviews.team_based_approval_item_id', '=', 'team_based_approval_items.id')
-                ->sum('team_based_approval_items.proposed_loan_amount');
-
-            $roleTitle = match ($sa->role?->name) {
-                Role::ADMF => 'সহকারী পরিচালক (ADMF)',
-                Role::DMF => 'পরিচালক ক্ষুদ্রঋণ (DMF)',
-                Role::ED => 'নির্বাহী পরিচালক (ED)',
-                default => strtoupper($sa->role?->name ?? 'APPROVER'),
-            };
-
-            $seniorList[] = [
-                'id' => $sa->id,
-                'tier' => 'senior',
-                'manager_id' => $sa->id,
-                'manager_name' => $sa->name,
-                'manager_phone' => $sa->phone,
-                'manager_role' => $roleTitle,
-                'unit_name' => 'হেড অফিস অনুমোদন টিম',
-                'unit_code' => 'HO-APP',
-                'parent_name' => 'প্রধান কার্যালয়',
-                'admission_pending' => 0,
-                'loan_pending' => $pendingReviews,
-                'total_pending' => $pendingReviews,
-                'loan_amount' => $pendingProposedAmount,
-                'branches_count' => null,
-            ];
-        }
-        usort($seniorList, fn ($a, $b) => $b['total_pending'] <=> $a['total_pending']);
-
-        // D. Branch Managers (BM)
-        $bmList = [];
-        $allBranches = Branch::with('area.zone')->get();
-        foreach ($allBranches as $branch) {
-            $bmUser = User::where('branch_id', $branch->id)
-                ->whereHas('role', fn ($q) => $q->where('name', Role::BRANCH_MANAGER))
-                ->first();
-            if (! $bmUser) {
-                $bmUser = User::where('branch_id', $branch->id)->first();
-            }
-
-            $admPendingCount = MemberAdmission::where('branch_id', $branch->id)
-                ->whereIn('status', ['submitted', 'under_review', 'pending_head_office'])
-                ->count();
-
-            $loanPendingQuery = LoanApplication::where('branch_id', $branch->id)
-                ->whereIn('status', ['submitted', 'under_review', 'pending_head_office']);
-
-            $loanPendingCount = (clone $loanPendingQuery)->count();
-            $loanPendingAmount = (float) (clone $loanPendingQuery)->sum('requested_amount');
-
-            $bmList[] = [
-                'id' => $branch->id,
-                'tier' => 'bm',
-                'manager_id' => $bmUser?->id,
-                'manager_name' => $bmUser?->name ?? 'নিযুক্ত নেই',
-                'manager_phone' => $bmUser?->phone,
-                'manager_role' => 'শাখা ব্যবস্থাপক (BM)',
-                'unit_name' => $branch->name,
-                'unit_code' => $branch->code,
-                'parent_name' => ($branch->area?->name ?? '') . ($branch->area?->zone ? ' • ' . $branch->area->zone->name : ''),
-                'admission_pending' => $admPendingCount,
-                'loan_pending' => $loanPendingCount,
-                'total_pending' => $admPendingCount + $loanPendingCount,
-                'loan_amount' => $loanPendingAmount,
-                'branches_count' => 1,
-            ];
-        }
-        usort($bmList, fn ($a, $b) => $b['total_pending'] <=> $a['total_pending']);
-
-        $hierarchyTree = $this->buildHierarchicalPendingTree();
-
-        $hoManagersSummary = [
-            'rm_list' => $rmList,
-            'zm_list' => $zmList,
-            'senior_list' => $seniorList,
-            'bm_list' => $bmList,
-            'hierarchy_tree' => $hierarchyTree,
-            'total_rm' => count($rmList),
-            'total_zm' => count($zmList),
-            'total_senior' => count($seniorList),
-            'total_bm' => count($bmList),
-            'rm_total_pending' => array_sum(array_column($rmList, 'total_pending')),
-            'zm_total_pending' => array_sum(array_column($zmList, 'total_pending')),
-            'senior_total_pending' => array_sum(array_column($seniorList, 'total_pending')),
-            'bm_total_pending' => array_sum(array_column($bmList, 'total_pending')),
-        ];
+        // 12. Head Office manager tree is deferred so the stat cards paint first.
+        $hoManagersSummary = Inertia::defer(fn () => Cache::remember(
+            'dashboard:ho-managers:'.NavBadgeCache::version(),
+            45,
+            fn () => $this->headOfficeManagerSummary()
+        ));
 
         // 13. Recent 7 Days Deletions Summary for Head Office Dashboard
         $sevenDaysAgo = Carbon::now()->subDays(7)->startOfDay();
@@ -951,6 +774,23 @@ class DashboardController extends Controller
      */
     private function buildHierarchicalPendingTree(?array $scopeZoneIds = null, ?array $scopeAreaIds = null, ?array $scopeBranchIds = null): array
     {
+        $cacheKey = 'dashboard:hierarchy:'.NavBadgeCache::version().':'.md5(json_encode([$scopeZoneIds, $scopeAreaIds, $scopeBranchIds]));
+        $cached = Cache::get($cacheKey);
+        if (is_array($cached)) {
+            return $cached;
+        }
+
+        $tree = $this->assembleHierarchicalPendingTree($scopeZoneIds, $scopeAreaIds, $scopeBranchIds);
+        Cache::put($cacheKey, $tree, 45);
+
+        return $tree;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function assembleHierarchicalPendingTree(?array $scopeZoneIds = null, ?array $scopeAreaIds = null, ?array $scopeBranchIds = null): array
+    {
         // 1. Fetch Zones with Areas and Branches
         $zonesQuery = Zone::query();
         if (! empty($scopeZoneIds)) {
@@ -967,7 +807,7 @@ class DashboardController extends Controller
                 if (! empty($scopeBranchIds)) {
                     $q->whereIn('id', $scopeBranchIds);
                 }
-            }
+            },
         ])->get();
 
         // If zone filtering wasn't applied directly but area filtering was, locate parent zones
@@ -980,7 +820,7 @@ class DashboardController extends Controller
                         if (! empty($scopeBranchIds)) {
                             $q->whereIn('id', $scopeBranchIds);
                         }
-                    }
+                    },
                 ])->get();
             }
         }
@@ -1014,9 +854,9 @@ class DashboardController extends Controller
             }
         }
         $rmUsers = User::where(function ($q) use ($allAreaIds) {
-                $q->whereIn('area_id', $allAreaIds)
-                  ->orWhereHas('areas', fn ($sq) => $sq->whereIn('areas.id', $allAreaIds));
-            })
+            $q->whereIn('area_id', $allAreaIds)
+                ->orWhereHas('areas', fn ($sq) => $sq->whereIn('areas.id', $allAreaIds));
+        })
             ->where('is_active', 1)
             ->whereHas('role', fn ($q) => $q->where('name', Role::AREA_MANAGER))
             ->with('areas:id')
@@ -1033,9 +873,9 @@ class DashboardController extends Controller
 
         $allZoneIds = $zones->pluck('id')->toArray();
         $zmUsers = User::where(function ($q) use ($allZoneIds) {
-                $q->whereIn('zone_id', $allZoneIds)
-                  ->orWhereHas('zones', fn ($sq) => $sq->whereIn('zones.id', $allZoneIds));
-            })
+            $q->whereIn('zone_id', $allZoneIds)
+                ->orWhereHas('zones', fn ($sq) => $sq->whereIn('zones.id', $allZoneIds));
+        })
             ->where('is_active', 1)
             ->whereHas('role', fn ($q) => $q->where('name', Role::ZONE_MANAGER))
             ->with('zones:id')
@@ -1053,12 +893,14 @@ class DashboardController extends Controller
         // 3. Query all pending Admissions and Loans for these branches
         $admissions = MemberAdmission::whereIn('branch_id', $allBranchIds)
             ->whereIn('status', ['submitted', 'under_review', 'pending_head_office', 'ready_for_head_office'])
-            ->with(['approvals' => fn ($q) => $q->orderBy('sequence')])
+            ->select(['id', 'branch_id', 'status'])
+            ->with(['approvals' => fn ($q) => $q->select('id', 'member_admission_id', 'sequence', 'status', 'level')->orderBy('sequence')])
             ->get();
 
         $loans = LoanApplication::whereIn('branch_id', $allBranchIds)
             ->whereIn('status', ['submitted', 'under_review', 'pending_head_office', 'ready_for_head_office', 'needs_correction'])
-            ->with(['approvals' => fn ($q) => $q->orderBy('sequence')])
+            ->select(['id', 'branch_id', 'status', 'requested_amount'])
+            ->with(['approvals' => fn ($q) => $q->select('id', 'loan_application_id', 'sequence', 'status', 'level')->orderBy('sequence')])
             ->get();
 
         // 4. Group by branch_id and calculate stage breakdowns
@@ -1081,7 +923,9 @@ class DashboardController extends Controller
 
         foreach ($admissions as $adm) {
             $bId = $adm->branch_id;
-            if (! isset($branchData[$bId])) continue;
+            if (! isset($branchData[$bId])) {
+                continue;
+            }
 
             $branchData[$bId]['admission_pending']++;
             $branchData[$bId]['total_pending']++;
@@ -1101,10 +945,15 @@ class DashboardController extends Controller
                 }
                 if ($curr) {
                     $lvl = $curr->level;
-                    if ($lvl === 'area') $stage = 'area';
-                    elseif ($lvl === 'zone') $stage = 'zone';
-                    elseif (in_array($lvl, ['escalation', 'head_office'], true)) $stage = 'senior_ho';
-                    else $stage = 'branch';
+                    if ($lvl === 'area') {
+                        $stage = 'area';
+                    } elseif ($lvl === 'zone') {
+                        $stage = 'zone';
+                    } elseif (in_array($lvl, ['escalation', 'head_office'], true)) {
+                        $stage = 'senior_ho';
+                    } else {
+                        $stage = 'branch';
+                    }
                 }
             }
 
@@ -1114,11 +963,14 @@ class DashboardController extends Controller
 
         foreach ($loans as $loan) {
             $bId = $loan->branch_id;
-            if (! isset($branchData[$bId])) continue;
+            if (! isset($branchData[$bId])) {
+                continue;
+            }
 
             if ($loan->status === 'needs_correction') {
                 $branchData[$bId]['stages']['correction']['loan']++;
                 $branchData[$bId]['stages']['correction']['total']++;
+
                 continue;
             }
 
@@ -1141,10 +993,15 @@ class DashboardController extends Controller
                 }
                 if ($curr) {
                     $lvl = $curr->level;
-                    if ($lvl === 'area') $stage = 'area';
-                    elseif ($lvl === 'zone') $stage = 'zone';
-                    elseif (in_array($lvl, ['escalation', 'head_office'], true)) $stage = 'senior_ho';
-                    else $stage = 'branch';
+                    if ($lvl === 'area') {
+                        $stage = 'area';
+                    } elseif ($lvl === 'zone') {
+                        $stage = 'zone';
+                    } elseif (in_array($lvl, ['escalation', 'head_office'], true)) {
+                        $stage = 'senior_ho';
+                    } else {
+                        $stage = 'branch';
+                    }
                 }
             }
 
@@ -1159,7 +1016,7 @@ class DashboardController extends Controller
             $zm = $zmByZoneId[$zone->id] ?? null;
             $zoneNode = [
                 'id' => $zone->id,
-                'key' => 'zone-' . $zone->id,
+                'key' => 'zone-'.$zone->id,
                 'type' => 'zone',
                 'name' => $zone->name,
                 'code' => $zone->code,
@@ -1186,7 +1043,7 @@ class DashboardController extends Controller
                 $rm = $rmByAreaId[$area->id] ?? null;
                 $areaNode = [
                     'id' => $area->id,
-                    'key' => 'area-' . $area->id,
+                    'key' => 'area-'.$area->id,
                     'type' => 'area',
                     'name' => $area->name,
                     'code' => $area->code,
@@ -1221,11 +1078,11 @@ class DashboardController extends Controller
 
                     $branchNode = [
                         'id' => $branch->id,
-                        'key' => 'branch-' . $branch->id,
+                        'key' => 'branch-'.$branch->id,
                         'type' => 'branch',
                         'name' => $branch->name,
                         'code' => $branch->code,
-                        'parent_name' => $area->name . ' • ' . $zone->name,
+                        'parent_name' => $area->name.' • '.$zone->name,
                         'manager_name' => $bm?->name ?? 'নিযুক্ত নেই',
                         'manager_phone' => $bm?->phone,
                         'manager_role' => 'শাখা ব্যবস্থাপক (BM)',
@@ -1382,15 +1239,17 @@ class DashboardController extends Controller
         ];
 
         // Today badges: ajker admission pathano / ajker loan pathano
-        $todayAdmissionCount = MemberAdmission::whereIn('branch_id', $branchIds)
-            ->whereNotNull('submitted_at')
-            ->whereDate('submitted_at', $today)
-            ->count();
+        $todayAdmissionCount = IndexedDate::onDay(
+            MemberAdmission::whereIn('branch_id', $branchIds)->whereNotNull('submitted_at'),
+            'submitted_at',
+            $today
+        )->count();
 
-        $todayLoanCount = LoanApplication::whereIn('branch_id', $branchIds)
-            ->whereNotNull('submitted_at')
-            ->whereDate('submitted_at', $today)
-            ->count();
+        $todayLoanCount = IndexedDate::onDay(
+            LoanApplication::whereIn('branch_id', $branchIds)->whereNotNull('submitted_at'),
+            'submitted_at',
+            $today
+        )->count();
 
         $todayBadges = [
             'today_admission_submitted' => $todayAdmissionCount > 0,
@@ -1406,7 +1265,7 @@ class DashboardController extends Controller
             ->toArray();
 
         // Calculate Team-Based stats for branch Dashboard
-        $teamBasedQuery = \App\Models\TeamBasedApproval::whereIn('branch_id', $branchIds);
+        $teamBasedQuery = TeamBasedApproval::whereIn('branch_id', $branchIds);
         if ($period === 'monthly') {
             $teamBasedQuery->whereBetween('sheet_date', [$startStr, $endStr]);
         } elseif ($period === 'date_to_date' && $dateFrom && $dateTo) {
@@ -1423,19 +1282,24 @@ class DashboardController extends Controller
         ];
 
         // === COMPREHENSIVE WORKFLOW & PORTFOLIO BREAKDOWN ===
+        $branchPipeline = app(PipelineRollup::class);
+        $branchAdm = $branchPipeline->admissionCounts($branchIds);
+        $branchLoans = $branchPipeline->loanRollup($branchIds);
+
         // 1. Ready for Head Office
-        $admReadyHO = MemberAdmission::whereIn('branch_id', $branchIds)->where('status', 'ready_for_head_office')->count();
-        $lnReadyHO = LoanApplication::whereIn('branch_id', $branchIds)->where('status', 'ready_for_head_office')->count();
+        $admReadyHO = $branchPipeline->countOf($branchAdm, 'ready_for_head_office');
+        $lnReadyHO = $branchPipeline->loanCount($branchLoans, 'ready_for_head_office');
 
         // 2. Pending at Head Office
-        $admPendingHO = MemberAdmission::whereIn('branch_id', $branchIds)->where('status', 'pending_head_office')->count();
-        $lnPendingHO = LoanApplication::whereIn('branch_id', $branchIds)->where('status', 'pending_head_office')->count();
+        $admPendingHO = $branchPipeline->countOf($branchAdm, 'pending_head_office');
+        $lnPendingHO = $branchPipeline->loanCount($branchLoans, 'pending_head_office');
 
         // 3. Pending by Stage (Branch Manager, Area Manager, Zone Manager, Other Approvers)
         $pendingAdmissions = MemberAdmission::whereIn('branch_id', $branchIds)
             ->whereIn('status', ['submitted', 'under_review'])
+            ->select(['id', 'branch_id', 'status'])
             ->with(['approvals' => function ($q) {
-                $q->orderBy('sequence');
+                $q->select('id', 'member_admission_id', 'sequence', 'status', 'level')->orderBy('sequence');
             }])
             ->get();
 
@@ -1452,10 +1316,6 @@ class DashboardController extends Controller
                     }
                 }
             }
-            if (! $curr) {
-                $curr = $adm->currentPendingApproval();
-            }
-
             if (! $curr) {
                 $admByLevel['branch']++;
             } else {
@@ -1474,8 +1334,9 @@ class DashboardController extends Controller
 
         $pendingLoans = LoanApplication::whereIn('branch_id', $branchIds)
             ->whereIn('status', ['submitted', 'under_review'])
+            ->select(['id', 'branch_id', 'status', 'requested_amount'])
             ->with(['approvals' => function ($q) {
-                $q->orderBy('sequence');
+                $q->select('id', 'loan_application_id', 'sequence', 'status', 'level')->orderBy('sequence');
             }])
             ->get();
 
@@ -1493,7 +1354,9 @@ class DashboardController extends Controller
                 }
             }
             if (! $curr) {
-                $curr = $loan->approvals()->where('status', 'pending')->orderBy('sequence')->first();
+                $curr = $loan->relationLoaded('approvals')
+                    ? $loan->approvals->where('status', 'pending')->sortBy('sequence')->first()
+                    : null;
             }
 
             if (! $curr) {
@@ -1512,57 +1375,21 @@ class DashboardController extends Controller
             }
         }
 
-        // 4. Pending Disbursement (Awaiting Disbursement)
-        $lnPendingDisbursementCount = LoanApplication::whereIn('branch_id', $branchIds)
-            ->where('status', 'pending_disbursement')
-            ->count();
-        $lnPendingDisbursementAmount = (float) LoanApplication::whereIn('branch_id', $branchIds)
-            ->where('status', 'pending_disbursement')
-            ->sum('approved_amount');
-
-        // 5. Active / Disbursed Loans
-        $lnDisbursedCount = LoanApplication::whereIn('branch_id', $branchIds)
-            ->where('status', 'disbursed')
-            ->count();
-        $lnDisbursedAmount = (float) LoanApplication::whereIn('branch_id', $branchIds)
-            ->where('status', 'disbursed')
-            ->sum('disbursed_amount');
-
-        // 6. Approved / Complete
-        $admApprovedCount = MemberAdmission::whereIn('branch_id', $branchIds)
-            ->where('status', 'approved')
-            ->count();
-        $lnApprovedCount = LoanApplication::whereIn('branch_id', $branchIds)
-            ->whereIn('status', ['approved', 'disbursed'])
-            ->count();
-
-        // 7. Needs Revision / Correction
-        $admNeedsRevision = MemberAdmission::whereIn('branch_id', $branchIds)
-            ->where('status', 'needs_revision')
-            ->count();
-        $lnNeedsCorrection = LoanApplication::whereIn('branch_id', $branchIds)
-            ->where('status', 'needs_correction')
-            ->count();
-
-        // 8. Drafts
-        $admDrafts = MemberAdmission::whereIn('branch_id', $branchIds)
-            ->where('status', 'draft')
-            ->count();
-        $lnDrafts = LoanApplication::whereIn('branch_id', $branchIds)
-            ->where('status', 'draft')
-            ->count();
-
-        // 9. Rejected
-        $admRejected = MemberAdmission::whereIn('branch_id', $branchIds)
-            ->where('status', 'rejected')
-            ->count();
-        $lnRejected = LoanApplication::whereIn('branch_id', $branchIds)
-            ->where('status', 'rejected')
-            ->count();
-
-        // Totals
-        $totalMembers = MemberAdmission::whereIn('branch_id', $branchIds)->count();
-        $totalLoans = LoanApplication::whereIn('branch_id', $branchIds)->count();
+        // 4-9 and totals come from the same two grouped queries as the cards above.
+        $lnPendingDisbursementCount = $branchPipeline->loanCount($branchLoans, 'pending_disbursement');
+        $lnPendingDisbursementAmount = $branchPipeline->loanSum($branchLoans, 'approved_amount', 'pending_disbursement');
+        $lnDisbursedCount = $branchPipeline->loanCount($branchLoans, 'disbursed');
+        $lnDisbursedAmount = $branchPipeline->loanSum($branchLoans, 'disbursed_amount', 'disbursed');
+        $admApprovedCount = $branchPipeline->countOf($branchAdm, 'approved');
+        $lnApprovedCount = $branchPipeline->loanCount($branchLoans, 'approved', 'disbursed');
+        $admNeedsRevision = $branchPipeline->countOf($branchAdm, 'needs_revision');
+        $lnNeedsCorrection = $branchPipeline->loanCount($branchLoans, 'needs_correction');
+        $admDrafts = $branchPipeline->countOf($branchAdm, 'draft');
+        $lnDrafts = $branchPipeline->loanCount($branchLoans, 'draft');
+        $admRejected = $branchPipeline->countOf($branchAdm, 'rejected');
+        $lnRejected = $branchPipeline->loanCount($branchLoans, 'rejected');
+        $totalMembers = array_sum($branchAdm);
+        $totalLoans = $branchPipeline->loanCount($branchLoans, ...array_keys($branchLoans));
 
         $workflowStats = [
             'ready_for_head_office' => [
@@ -1750,7 +1577,8 @@ class DashboardController extends Controller
                         ->orWhere('assigned_officer_id', $user->id);
                 });
             }
-            return ! empty($branchIds) ? $query->whereIn('branch_id', $branchIds) : $query;
+
+            return ! empty($branchIds) ? $query->whereIn('branch_id', $branchIds) : $query->whereRaw('0 = 1');
         };
 
         $applyLoanScope = function ($query) use ($user, $branchIds, $hasSpecificLoan) {
@@ -1759,42 +1587,47 @@ class DashboardController extends Controller
                     $q->where('submitted_by', $user->id);
                 });
             }
-            return ! empty($branchIds) ? $query->whereIn('branch_id', $branchIds) : $query;
+
+            return ! empty($branchIds) ? $query->whereIn('branch_id', $branchIds) : $query->whereRaw('0 = 1');
         };
 
+        $foPipeline = app(PipelineRollup::class);
+        $foAdm = $foPipeline->countsByStatus($applyAdmScope(MemberAdmission::query()));
+        $foLoans = $foPipeline->loanRollupFrom($applyLoanScope(LoanApplication::query()));
+
         // 1. Draft Applications (খসড়া আবেদন - জমা দেওয়ার অপেক্ষায়)
-        $admDraft = $applyAdmScope(MemberAdmission::query())->where('status', 'draft')->count();
-        $lnDraft = $applyLoanScope(LoanApplication::query())->where('status', 'draft')->count();
+        $admDraft = $foPipeline->countOf($foAdm, 'draft');
+        $lnDraft = $foPipeline->loanCount($foLoans, 'draft');
 
         // 2. Pending with Branch Manager (ম্যানেজারের কাছে পেন্ডিং)
-        $admPendingBM = $applyAdmScope(MemberAdmission::query())->where('status', 'submitted')->count();
-        $lnPendingBM = $applyLoanScope(LoanApplication::query())->where('status', 'submitted')->count();
+        $admPendingBM = $foPipeline->countOf($foAdm, 'submitted');
+        $lnPendingBM = $foPipeline->loanCount($foLoans, 'submitted');
 
         // 3. Higher Approvers (উর্ধ্বতন অনুমোদক - RM / ZM / ADMF / DMF / ED / HO)
         $higherStatuses = ['under_review', 'ready_for_head_office', 'pending_head_office'];
-        $admHigher = $applyAdmScope(MemberAdmission::query())->whereIn('status', $higherStatuses)->count();
-        $lnHigher = $applyLoanScope(LoanApplication::query())->whereIn('status', $higherStatuses)->count();
+        $admHigher = $foPipeline->countOf($foAdm, ...$higherStatuses);
+        $lnHigher = $foPipeline->loanCount($foLoans, ...$higherStatuses);
 
         // 4. Returned for Correction (সংশোধনের জন্য ফেরত)
-        $admCorrection = $applyAdmScope(MemberAdmission::query())->whereIn('status', ['needs_correction', 'needs_revision'])->count();
-        $lnCorrection = $applyLoanScope(LoanApplication::query())->whereIn('status', ['needs_correction', 'needs_revision'])->count();
+        $admCorrection = $foPipeline->countOf($foAdm, 'needs_correction', 'needs_revision');
+        $lnCorrection = $foPipeline->loanCount($foLoans, 'needs_correction', 'needs_revision');
 
         // 5. Approved & Ready for Disbursement (অনুমোদিত আবেদনসমূহ)
-        $admApproved = $applyAdmScope(MemberAdmission::query())->where('status', 'approved')->count();
-        $lnApproved = $applyLoanScope(LoanApplication::query())->whereIn('status', ['approved', 'pending_disbursement'])->count();
-        $lnApprovedAmount = (float) $applyLoanScope(LoanApplication::query())->whereIn('status', ['approved', 'pending_disbursement'])->sum('approved_amount');
+        $admApproved = $foPipeline->countOf($foAdm, 'approved');
+        $lnApproved = $foPipeline->loanCount($foLoans, 'approved', 'pending_disbursement');
+        $lnApprovedAmount = $foPipeline->loanSum($foLoans, 'approved_amount', 'approved', 'pending_disbursement');
 
         // 6. Disbursed / Active Portfolio (বিতরণকৃত ও সক্রিয় ঋণ)
-        $lnDisbursed = $applyLoanScope(LoanApplication::query())->where('status', 'disbursed')->count();
-        $lnDisbursedAmount = (float) $applyLoanScope(LoanApplication::query())->where('status', 'disbursed')->sum('disbursed_amount');
+        $lnDisbursed = $foPipeline->loanCount($foLoans, 'disbursed');
+        $lnDisbursedAmount = $foPipeline->loanSum($foLoans, 'disbursed_amount', 'disbursed');
 
         // 7. Rejected / Cancelled (বাতিল / প্রত্যাখ্যাত)
-        $admRejected = $applyAdmScope(MemberAdmission::query())->where('status', 'rejected')->count();
-        $lnRejected = $applyLoanScope(LoanApplication::query())->where('status', 'rejected')->count();
+        $admRejected = $foPipeline->countOf($foAdm, 'rejected');
+        $lnRejected = $foPipeline->loanCount($foLoans, 'rejected');
 
         // Total Counts
-        $totalAdm = $applyAdmScope(MemberAdmission::query())->count();
-        $totalLoan = $applyLoanScope(LoanApplication::query())->count();
+        $totalAdm = array_sum($foAdm);
+        $totalLoan = $foPipeline->loanCount($foLoans, ...array_keys($foLoans));
 
         // Recent Applications for FO
         $recentLoans = $applyLoanScope(LoanApplication::query())
@@ -1939,19 +1772,24 @@ class DashboardController extends Controller
             ->with(['area.zone'])
             ->get();
 
+        $bmPipeline = app(PipelineRollup::class);
+        $bmAdm = $bmPipeline->admissionCounts($branchIds);
+        $bmLoans = $bmPipeline->loanRollup($branchIds);
+
         // 1. Ready for Head Office
-        $admReadyHO = MemberAdmission::whereIn('branch_id', $branchIds)->where('status', 'ready_for_head_office')->count();
-        $lnReadyHO = LoanApplication::whereIn('branch_id', $branchIds)->where('status', 'ready_for_head_office')->count();
+        $admReadyHO = $bmPipeline->countOf($bmAdm, 'ready_for_head_office');
+        $lnReadyHO = $bmPipeline->loanCount($bmLoans, 'ready_for_head_office');
 
         // 2. Pending at Head Office
-        $admPendingHO = MemberAdmission::whereIn('branch_id', $branchIds)->where('status', 'pending_head_office')->count();
-        $lnPendingHO = LoanApplication::whereIn('branch_id', $branchIds)->where('status', 'pending_head_office')->count();
+        $admPendingHO = $bmPipeline->countOf($bmAdm, 'pending_head_office');
+        $lnPendingHO = $bmPipeline->loanCount($bmLoans, 'pending_head_office');
 
         // 3. Pending by Stage (Branch Manager, Area Manager, Zone Manager, Other Approvers)
         $pendingAdmissions = MemberAdmission::whereIn('branch_id', $branchIds)
             ->whereIn('status', ['submitted', 'under_review'])
+            ->select(['id', 'branch_id', 'status'])
             ->with(['approvals' => function ($q) {
-                $q->orderBy('sequence');
+                $q->select('id', 'member_admission_id', 'sequence', 'status', 'level')->orderBy('sequence');
             }])
             ->get();
 
@@ -1968,10 +1806,6 @@ class DashboardController extends Controller
                     }
                 }
             }
-            if (! $curr) {
-                $curr = $adm->currentPendingApproval();
-            }
-
             if (! $curr) {
                 $admByLevel['branch']++;
             } else {
@@ -1990,8 +1824,9 @@ class DashboardController extends Controller
 
         $pendingLoans = LoanApplication::whereIn('branch_id', $branchIds)
             ->whereIn('status', ['submitted', 'under_review'])
+            ->select(['id', 'branch_id', 'status', 'requested_amount'])
             ->with(['approvals' => function ($q) {
-                $q->orderBy('sequence');
+                $q->select('id', 'loan_application_id', 'sequence', 'status', 'level')->orderBy('sequence');
             }])
             ->get();
 
@@ -2009,7 +1844,9 @@ class DashboardController extends Controller
                 }
             }
             if (! $curr) {
-                $curr = $loan->approvals()->where('status', 'pending')->orderBy('sequence')->first();
+                $curr = $loan->relationLoaded('approvals')
+                    ? $loan->approvals->where('status', 'pending')->sortBy('sequence')->first()
+                    : null;
             }
 
             if (! $curr) {
@@ -2028,60 +1865,23 @@ class DashboardController extends Controller
             }
         }
 
-        // 4. Pending Disbursement
-        $lnPendingDisbursementCount = LoanApplication::whereIn('branch_id', $branchIds)
-            ->where('status', 'pending_disbursement')
-            ->count();
-        $lnPendingDisbursementAmount = (float) LoanApplication::whereIn('branch_id', $branchIds)
-            ->where('status', 'pending_disbursement')
-            ->sum('approved_amount');
-
-        // 5. Active Disbursed Loans
-        $lnDisbursedCount = LoanApplication::whereIn('branch_id', $branchIds)
-            ->where('status', 'disbursed')
-            ->count();
-        $lnDisbursedAmount = (float) LoanApplication::whereIn('branch_id', $branchIds)
-            ->where('status', 'disbursed')
-            ->sum('disbursed_amount');
-
-        // 6. Fully Completed / Approved
-        $admApprovedCount = MemberAdmission::whereIn('branch_id', $branchIds)
-            ->where('status', 'approved')
-            ->count();
-        $lnApprovedCount = LoanApplication::whereIn('branch_id', $branchIds)
-            ->where('status', 'approved')
-            ->count();
-
-        // 7. Needs Correction / Revision
-        $admNeedsRevision = MemberAdmission::whereIn('branch_id', $branchIds)
-            ->where('status', 'needs_revision')
-            ->count();
-        $lnNeedsCorrection = LoanApplication::whereIn('branch_id', $branchIds)
-            ->where('status', 'needs_correction')
-            ->count();
-
-        // 8. Drafts
-        $admDrafts = MemberAdmission::whereIn('branch_id', $branchIds)
-            ->where('status', 'draft')
-            ->count();
-        $lnDrafts = LoanApplication::whereIn('branch_id', $branchIds)
-            ->where('status', 'draft')
-            ->count();
-
-        // 9. Rejected
-        $admRejected = MemberAdmission::whereIn('branch_id', $branchIds)
-            ->where('status', 'rejected')
-            ->count();
-        $lnRejected = LoanApplication::whereIn('branch_id', $branchIds)
-            ->where('status', 'rejected')
-            ->count();
-
-        // Total Counts
-        $totalMembers = MemberAdmission::whereIn('branch_id', $branchIds)->count();
-        $totalLoans = LoanApplication::whereIn('branch_id', $branchIds)->count();
+        $lnPendingDisbursementCount = $bmPipeline->loanCount($bmLoans, 'pending_disbursement');
+        $lnPendingDisbursementAmount = $bmPipeline->loanSum($bmLoans, 'approved_amount', 'pending_disbursement');
+        $lnDisbursedCount = $bmPipeline->loanCount($bmLoans, 'disbursed');
+        $lnDisbursedAmount = $bmPipeline->loanSum($bmLoans, 'disbursed_amount', 'disbursed');
+        $admApprovedCount = $bmPipeline->countOf($bmAdm, 'approved');
+        $lnApprovedCount = $bmPipeline->loanCount($bmLoans, 'approved');
+        $admNeedsRevision = $bmPipeline->countOf($bmAdm, 'needs_revision');
+        $lnNeedsCorrection = $bmPipeline->loanCount($bmLoans, 'needs_correction');
+        $admDrafts = $bmPipeline->countOf($bmAdm, 'draft');
+        $lnDrafts = $bmPipeline->loanCount($bmLoans, 'draft');
+        $admRejected = $bmPipeline->countOf($bmAdm, 'rejected');
+        $lnRejected = $bmPipeline->loanCount($bmLoans, 'rejected');
+        $totalMembers = array_sum($bmAdm);
+        $totalLoans = $bmPipeline->loanCount($bmLoans, ...array_keys($bmLoans));
 
         // Team-Based Approval stats for Branch Manager
-        $teamBasedQuery = \App\Models\TeamBasedApproval::whereIn('branch_id', $branchIds);
+        $teamBasedQuery = TeamBasedApproval::whereIn('branch_id', $branchIds);
         $teamBasedStats = [
             'draft_count' => (clone $teamBasedQuery)->where('status', 'draft')->count(),
             'pending_count' => (clone $teamBasedQuery)->where('status', 'submitted')->count(),
@@ -2226,6 +2026,245 @@ class DashboardController extends Controller
                 'branch' => $myBranches[0]->name ?? 'শাখা',
             ],
         ]);
+    }
+
+    /**
+     * Organization-wide manager lists and hierarchy. Counts come from two grouped queries.
+     *
+     * @return array<string, mixed>
+     */
+    private function headOfficeManagerSummary(): array
+    {
+        $pipeline = app(PipelineRollup::class);
+        $byBranch = $pipeline->pendingByBranch();
+
+        $areas = Area::with(['branches:id,area_id', 'zone:id,name'])->get();
+        $areaIds = $areas->pluck('id')->all();
+        $rmByArea = $this->managersByArea($areaIds);
+
+        $rmList = [];
+        foreach ($areas as $area) {
+            $rmUser = $rmByArea[$area->id] ?? null;
+            $stats = $pipeline->sumBranches($byBranch, $area->branches->pluck('id'));
+            $rmList[] = [
+                'id' => $area->id,
+                'tier' => 'rm',
+                'manager_id' => $rmUser?->id,
+                'manager_name' => $rmUser?->name ?? 'নিযুক্ত নেই',
+                'manager_phone' => $rmUser?->phone,
+                'manager_role' => 'আঞ্চলিক ব্যবস্থাপক (RM)',
+                'unit_name' => $area->name,
+                'unit_code' => $area->code,
+                'parent_name' => $area->zone?->name ?? '—',
+                'admission_pending' => $stats['admission_pending'],
+                'loan_pending' => $stats['loan_pending'],
+                'total_pending' => $stats['admission_pending'] + $stats['loan_pending'],
+                'loan_amount' => $stats['loan_amount'],
+                'branches_count' => $area->branches->count(),
+            ];
+        }
+        usort($rmList, fn ($a, $b) => $b['total_pending'] <=> $a['total_pending']);
+
+        $zones = Zone::with(['areas.branches:id,area_id'])->get();
+        $zoneIds = $zones->pluck('id')->all();
+        $zmByZone = $this->managersByZone($zoneIds);
+
+        $zmList = [];
+        foreach ($zones as $zone) {
+            $zmUser = $zmByZone[$zone->id] ?? null;
+            $zoneBranchIds = $zone->areas->flatMap(fn ($area) => $area->branches->pluck('id'));
+            $stats = $pipeline->sumBranches($byBranch, $zoneBranchIds);
+            $zmList[] = [
+                'id' => $zone->id,
+                'tier' => 'zm',
+                'manager_id' => $zmUser?->id,
+                'manager_name' => $zmUser?->name ?? 'নিযুক্ত নেই',
+                'manager_phone' => $zmUser?->phone,
+                'manager_role' => 'জোনাল ম্যানেজার (ZM)',
+                'unit_name' => $zone->name,
+                'unit_code' => $zone->code,
+                'parent_name' => 'হেড অফিস',
+                'admission_pending' => $stats['admission_pending'],
+                'loan_pending' => $stats['loan_pending'],
+                'total_pending' => $stats['admission_pending'] + $stats['loan_pending'],
+                'loan_amount' => $stats['loan_amount'],
+                'branches_count' => $zoneBranchIds->unique()->count(),
+                'areas_count' => $zone->areas->count(),
+            ];
+        }
+        usort($zmList, fn ($a, $b) => $b['total_pending'] <=> $a['total_pending']);
+
+        $seniorApprovers = User::whereHas('role', fn ($q) => $q->whereIn('name', [Role::ADMF, Role::DMF, Role::ED]))
+            ->with('role')
+            ->get();
+        $seniorIds = $seniorApprovers->pluck('id')->all();
+        $reviewCounts = $seniorIds === []
+            ? collect()
+            : TeamBasedApprovalReview::query()
+                ->whereIn('user_id', $seniorIds)
+                ->where('status', 'pending')
+                ->selectRaw('user_id, COUNT(*) as aggregate')
+                ->groupBy('user_id')
+                ->pluck('aggregate', 'user_id');
+        $reviewAmounts = $seniorIds === []
+            ? collect()
+            : TeamBasedApprovalReview::query()
+                ->whereIn('team_based_approval_reviews.user_id', $seniorIds)
+                ->where('team_based_approval_reviews.status', 'pending')
+                ->join('team_based_approval_items', 'team_based_approval_reviews.team_based_approval_item_id', '=', 'team_based_approval_items.id')
+                ->selectRaw('team_based_approval_reviews.user_id as user_id, COALESCE(SUM(team_based_approval_items.proposed_loan_amount), 0) as amount')
+                ->groupBy('team_based_approval_reviews.user_id')
+                ->pluck('amount', 'user_id');
+
+        $seniorList = [];
+        foreach ($seniorApprovers as $sa) {
+            $pendingReviews = (int) ($reviewCounts[$sa->id] ?? 0);
+            $pendingProposedAmount = (float) ($reviewAmounts[$sa->id] ?? 0);
+            $roleTitle = match ($sa->role?->name) {
+                Role::ADMF => 'সহকারী পরিচালক (ADMF)',
+                Role::DMF => 'পরিচালক ক্ষুদ্রঋণ (DMF)',
+                Role::ED => 'নির্বাহী পরিচালক (ED)',
+                default => strtoupper($sa->role?->name ?? 'APPROVER'),
+            };
+            $seniorList[] = [
+                'id' => $sa->id,
+                'tier' => 'senior',
+                'manager_id' => $sa->id,
+                'manager_name' => $sa->name,
+                'manager_phone' => $sa->phone,
+                'manager_role' => $roleTitle,
+                'unit_name' => 'হেড অফিস অনুমোদন টিম',
+                'unit_code' => 'HO-APP',
+                'parent_name' => 'প্রধান কার্যালয়',
+                'admission_pending' => 0,
+                'loan_pending' => $pendingReviews,
+                'total_pending' => $pendingReviews,
+                'loan_amount' => $pendingProposedAmount,
+                'branches_count' => null,
+            ];
+        }
+        usort($seniorList, fn ($a, $b) => $b['total_pending'] <=> $a['total_pending']);
+
+        $allBranches = Branch::with('area.zone')->get();
+        $branchIds = $allBranches->pluck('id');
+        $bmUsers = User::query()
+            ->whereIn('branch_id', $branchIds->isEmpty() ? [0] : $branchIds)
+            ->whereHas('role', fn ($q) => $q->where('name', Role::BRANCH_MANAGER))
+            ->get()
+            ->keyBy('branch_id');
+        $missingIds = $branchIds->diff($bmUsers->keys());
+        $fallbackUsers = $missingIds->isEmpty()
+            ? collect()
+            : User::query()->whereIn('branch_id', $missingIds)->orderBy('id')->get()->unique('branch_id')->keyBy('branch_id');
+
+        $bmList = [];
+        foreach ($allBranches as $branch) {
+            $bmUser = $bmUsers->get($branch->id) ?? $fallbackUsers->get($branch->id);
+            $stats = $byBranch[(int) $branch->id] ?? [
+                'admission_pending' => 0,
+                'loan_pending' => 0,
+                'loan_amount' => 0.0,
+            ];
+            $bmList[] = [
+                'id' => $branch->id,
+                'tier' => 'bm',
+                'manager_id' => $bmUser?->id,
+                'manager_name' => $bmUser?->name ?? 'নিযুক্ত নেই',
+                'manager_phone' => $bmUser?->phone,
+                'manager_role' => 'শাখা ব্যবস্থাপক (BM)',
+                'unit_name' => $branch->name,
+                'unit_code' => $branch->code,
+                'parent_name' => ($branch->area?->name ?? '').($branch->area?->zone ? ' • '.$branch->area->zone->name : ''),
+                'admission_pending' => $stats['admission_pending'],
+                'loan_pending' => $stats['loan_pending'],
+                'total_pending' => $stats['admission_pending'] + $stats['loan_pending'],
+                'loan_amount' => $stats['loan_amount'],
+                'branches_count' => 1,
+            ];
+        }
+        usort($bmList, fn ($a, $b) => $b['total_pending'] <=> $a['total_pending']);
+
+        $hierarchyTree = $this->buildHierarchicalPendingTree();
+
+        return [
+            'rm_list' => $rmList,
+            'zm_list' => $zmList,
+            'senior_list' => $seniorList,
+            'bm_list' => $bmList,
+            'hierarchy_tree' => $hierarchyTree,
+            'total_rm' => count($rmList),
+            'total_zm' => count($zmList),
+            'total_senior' => count($seniorList),
+            'total_bm' => count($bmList),
+            'rm_total_pending' => array_sum(array_column($rmList, 'total_pending')),
+            'zm_total_pending' => array_sum(array_column($zmList, 'total_pending')),
+            'senior_total_pending' => array_sum(array_column($seniorList, 'total_pending')),
+            'bm_total_pending' => array_sum(array_column($bmList, 'total_pending')),
+        ];
+    }
+
+    /**
+     * @param  list<int>  $areaIds
+     * @return array<int, User>
+     */
+    private function managersByArea(array $areaIds): array
+    {
+        if ($areaIds === []) {
+            return [];
+        }
+
+        $users = User::query()
+            ->where(function ($query) use ($areaIds) {
+                $query->whereIn('area_id', $areaIds)
+                    ->orWhereHas('areas', fn ($areas) => $areas->whereIn('areas.id', $areaIds));
+            })
+            ->whereHas('role', fn ($query) => $query->where('name', Role::AREA_MANAGER))
+            ->with('areas:id')
+            ->get();
+
+        $byArea = [];
+        foreach ($users as $user) {
+            if ($user->area_id) {
+                $byArea[$user->area_id] ??= $user;
+            }
+            foreach ($user->areas as $area) {
+                $byArea[$area->id] ??= $user;
+            }
+        }
+
+        return $byArea;
+    }
+
+    /**
+     * @param  list<int>  $zoneIds
+     * @return array<int, User>
+     */
+    private function managersByZone(array $zoneIds): array
+    {
+        if ($zoneIds === []) {
+            return [];
+        }
+
+        $users = User::query()
+            ->where(function ($query) use ($zoneIds) {
+                $query->whereIn('zone_id', $zoneIds)
+                    ->orWhereHas('zones', fn ($zones) => $zones->whereIn('zones.id', $zoneIds));
+            })
+            ->whereHas('role', fn ($query) => $query->where('name', Role::ZONE_MANAGER))
+            ->with('zones:id')
+            ->get();
+
+        $byZone = [];
+        foreach ($users as $user) {
+            if ($user->zone_id) {
+                $byZone[$user->zone_id] ??= $user;
+            }
+            foreach ($user->zones as $zone) {
+                $byZone[$zone->id] ??= $user;
+            }
+        }
+
+        return $byZone;
     }
 
     /**

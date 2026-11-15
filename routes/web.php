@@ -1,7 +1,7 @@
 <?php
 
-use App\Http\Controllers\ApprovalController;
 use App\Http\Controllers\AppRegistrationController;
+use App\Http\Controllers\ApprovalController;
 use App\Http\Controllers\ClusterHandoverController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\HeadOffice\ApproverLoanApprovalReportController;
@@ -220,6 +220,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('export/excel', [MemberAdmissionController::class, 'exportExcel'])->name('export.excel')->middleware('branch.user');
         Route::get('create', [MemberAdmissionController::class, 'create'])->name('create')->middleware('branch.user');
         Route::get('check-unique', [MemberAdmissionController::class, 'checkUnique'])->name('check-unique')->middleware('branch.user');
+        Route::get('samities', [MemberAdmissionController::class, 'samitiesForBranch'])->name('samities')->middleware('branch.user');
         Route::post('/', [MemberAdmissionController::class, 'store'])->name('store')->middleware('branch.user');
         Route::post('send-to-head-office-bulk', [MemberAdmissionController::class, 'sendToHeadOfficeBulk'])->name('send-to-head-office-bulk')->middleware('branch.user');
         Route::get('{memberAdmission}', [MemberAdmissionController::class, 'show'])->name('show')->middleware('member.admission.view');
@@ -332,6 +333,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::get('products', [App\Http\Controllers\Member\LoanApplicationController::class, 'getProducts'])->name('products');
             Route::get('search-members', [App\Http\Controllers\Member\LoanApplicationController::class, 'searchMembers'])->name('search-members');
             Route::get('samities-for-branch', [App\Http\Controllers\Member\LoanApplicationController::class, 'samitiesForBranch'])->name('samities-for-branch');
+            Route::get('filter-samities', [App\Http\Controllers\Member\LoanApplicationController::class, 'filterSamities'])->name('filter-samities');
             Route::post('start-legacy-application', [App\Http\Controllers\Member\LoanApplicationController::class, 'startLegacyApplication'])->name('start-legacy-application');
             Route::get('form-selection', [App\Http\Controllers\Member\LoanApplicationController::class, 'formSelection'])->name('form-selection');
 

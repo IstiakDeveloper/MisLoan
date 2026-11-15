@@ -512,6 +512,39 @@ export default function Index({
         setSelectedProductId(filters?.loan_product_id ? String(filters.loan_product_id) : '');
     }, [filters?.zone_id, filters?.area_id, filters?.branch_id, filters?.samity_id, filters?.loan_category_id, filters?.loan_product_id]);
 
+    const [loadedSamities, setLoadedSamities] = useState<SamityOption[]>(samities);
+
+    useEffect(() => {
+        setLoadedSamities(samities);
+    }, [samities]);
+
+    useEffect(() => {
+        if (!selectedBranch) {
+            return;
+        }
+        if (loadedSamities.some((samity) => String(samity.branch_id) === String(selectedBranch))) {
+            return;
+        }
+        const controller = new AbortController();
+        fetch(`/member/loan-applications/filter-samities?branch_id=${selectedBranch}`, {
+            headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+            signal: controller.signal,
+        })
+            .then((response) => (response.ok ? response.json() : []))
+            .then((rows: SamityOption[]) => {
+                if (!Array.isArray(rows) || rows.length === 0) {
+                    return;
+                }
+                setLoadedSamities((current) => {
+                    const ids = new Set(current.map((samity) => samity.id));
+                    return [...current, ...rows.filter((row) => !ids.has(row.id))];
+                });
+            })
+            .catch(() => undefined);
+
+        return () => controller.abort();
+    }, [selectedBranch, loadedSamities]);
+
     const samitiesInScope = useCallback((zoneVal: string, areaVal: string, branchVal: string) => {
         let scopedBranches = branches;
         if (zoneVal) {
@@ -528,8 +561,8 @@ export default function Index({
         }
         const branchIds = new Set(scopedBranches.map((b) => String(b.id)));
 
-        return samities.filter((s) => branchIds.has(String(s.branch_id)));
-    }, [areas, branches, samities]);
+        return loadedSamities.filter((s) => branchIds.has(String(s.branch_id)));
+    }, [areas, branches, loadedSamities]);
 
     const filteredAreas = useMemo(() => {
         if (!selectedZone) return areas;

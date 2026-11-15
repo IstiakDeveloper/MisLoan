@@ -544,15 +544,28 @@ export default function Create({
         });
     }, [data.applicant_name_bn, data.applicant_name_en, data.gender, data.marital_status]);
 
-    // Sync available samities when branch changes
+    // Sync available samities when branch changes. Large organizations load one branch at a time.
     useEffect(() => {
         const bId = Number(data.branch_id);
-        if (bId > 0) {
-            const filtered = samities.filter((s) => Number(s.branch_id) === bId);
-            setAvailableSamities(filtered);
-        } else {
+        if (!bId) {
             setAvailableSamities(samities);
+            return;
         }
+        const filtered = samities.filter((s) => Number(s.branch_id) === bId);
+        if (filtered.length > 0) {
+            setAvailableSamities(filtered);
+            return;
+        }
+        const controller = new AbortController();
+        fetch(`/member-admissions/samities?branch_id=${bId}`, {
+            headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+            signal: controller.signal,
+        })
+            .then((response) => (response.ok ? response.json() : []))
+            .then((rows) => setAvailableSamities(Array.isArray(rows) ? rows : []))
+            .catch(() => setAvailableSamities([]));
+
+        return () => controller.abort();
     }, [data.branch_id, samities]);
 
     // Sync samity search query when samity_id is set

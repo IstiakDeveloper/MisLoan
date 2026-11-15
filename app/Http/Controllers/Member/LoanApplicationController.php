@@ -31,6 +31,7 @@ use App\Services\MemberAdmissionLoanSyncService;
 use App\Services\MemberCodeService;
 use App\Services\MemberSamityService;
 use App\Services\NotificationService;
+use App\Support\IndexedDate;
 use App\Support\LoanFormVisibility;
 use App\Support\NumberToWordsBangla;
 use App\Support\RoleListWorkQueue;
@@ -112,7 +113,7 @@ class LoanApplicationController extends Controller
      */
     private function applyHeadOfficeSentDay(Builder $query, string $day): void
     {
-        $query->whereDate('head_office_sent_at', $day);
+        IndexedDate::onDay($query, 'head_office_sent_at', $day);
     }
 
     /**
@@ -296,8 +297,11 @@ class LoanApplicationController extends Controller
         );
         $lastAmountApproval = app(ApprovalService::class)->lastLoanAmountApproval($application);
         $application->amount_change_pending = $application->hasPendingAmountChange();
+        $pendingApproverName = $application->relationLoaded('approvals')
+            ? $application->approvals->where('status', 'pending')->sortByDesc('id')->first()?->user?->name
+            : $application->approvals()->where('status', 'pending')->reorder()->latest('id')->first()?->user?->name;
         $application->amount_change_approver_name = $application->hasPendingAmountChange()
-            ? ($application->approvals()->where('status', 'pending')->reorder()->latest('id')->first()?->user?->name)
+            ? $pendingApproverName
             : $lastAmountApproval?->user?->name;
         $application->cancellation_approver_name = $lastAmountApproval?->user?->name;
         $application->cancellation_pending = $application->hasPendingCancellation();
@@ -318,16 +322,24 @@ class LoanApplicationController extends Controller
 
         $pendingApproval = null;
         if ($isBranchManagerUser) {
-            $pendingApproval = $application->approvals()
-                ->where('level', 'branch')
-                ->where('status', 'pending')
-                ->first();
-
-            if (! $pendingApproval) {
+            if ($application->relationLoaded('approvals')) {
+                $pendingApproval = $application->approvals->first(
+                    fn ($approval) => $approval->level === 'branch' && $approval->status === 'pending'
+                ) ?? $application->approvals->first(
+                    fn ($approval) => (int) $approval->user_id === (int) $user->id && $approval->status === 'pending'
+                );
+            } else {
                 $pendingApproval = $application->approvals()
-                    ->where('user_id', $user->id)
+                    ->where('level', 'branch')
                     ->where('status', 'pending')
                     ->first();
+
+                if (! $pendingApproval) {
+                    $pendingApproval = $application->approvals()
+                        ->where('user_id', $user->id)
+                        ->where('status', 'pending')
+                        ->first();
+                }
             }
         }
 
@@ -848,6 +860,8 @@ class LoanApplicationController extends Controller
         $searchFilter = $request->input('search', '');
         $perPage = $this->resolvePerPage($request);
         $isFieldOfficer = $this->isFieldOfficer($user);
+        $accessibleBranches = $user->getAccessibleBranches();
+        $accessibleBranchIds = $accessibleBranches->pluck('id');
 
         // Get loan categories with active products using the correct relationship name
         $categories = LoanCategory::with(['loanProducts' => function ($query) {
@@ -879,8 +893,8 @@ class LoanApplicationController extends Controller
             'branch:id,name,code,area_id',
             'branch.area:id,name,code,zone_id',
             'approvals' => function ($query) {
-                $query->select('id', 'loan_application_id', 'user_id', 'level', 'sequence', 'status')
-                    ->with('user:id,name');
+                $query->select('id', 'loan_application_id', 'user_id', 'level', 'sequence', 'status', 'comments')
+                    ->with(['user:id,name,role_id', 'user.role:id,name,display_name']);
             },
             'issues' => function ($query) {
                 $query->select('id', 'loan_application_id', 'issue_description', 'status', 'reported_by', 'created_at')
@@ -888,8 +902,8 @@ class LoanApplicationController extends Controller
                     ->orderBy('created_at', 'desc');
             },
         ])
-            ->when(! $user->has_all_access && ! $user->isApproverRole() && ! $user->isEd() && ! $user->isSuperAdmin() && ! $user->isHeadOffice(), function ($query) use ($user) {
-                $query->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
+            ->when(! $user->has_all_access && ! $user->isApproverRole() && ! $user->isEd() && ! $user->isSuperAdmin() && ! $user->isHeadOffice(), function ($query) use ($accessibleBranchIds) {
+                $query->whereIn('branch_id', $accessibleBranchIds);
             })
             ->when($isFieldOfficer, function ($query) use ($user) {
                 $query->where('submitted_by', $user->id);
@@ -918,8 +932,11 @@ class LoanApplicationController extends Controller
         $readyForHoTotalAmount = 0;
 
         if ($this->isBranchUserRole($user) && $this->loanHeadOfficeSentColumnReady()) {
-            $hoSentScopedQuery = (clone $applicationsQuery)
-                ->whereDate('head_office_sent_at', $hoSentDay);
+            $hoSentScopedQuery = IndexedDate::onDay(
+                (clone $applicationsQuery),
+                'head_office_sent_at',
+                $hoSentDay
+            );
             $hoSentCount = (clone $hoSentScopedQuery)->count();
             $hoSentTotalAmount = (float) ((clone $hoSentScopedQuery)->sum(DB::raw('COALESCE(approved_amount, requested_amount, 0)')));
 
@@ -968,6 +985,11 @@ class LoanApplicationController extends Controller
         }
 
         // ফর্ম অনুযায়ী কমপ্লিশন: প্রতিটি আবেদনের জন্য stage-aware form meta
+        $applications->getCollection()->loadMissing([
+            'loanProduct.loanCategory',
+            'loanCategory',
+            'memberAdmission',
+        ]);
         $applications->getCollection()->transform(function ($app) use ($request, $formRows) {
             $row = $formRows->get($app->id);
             $formSavedOverride = $row
@@ -981,8 +1003,8 @@ class LoanApplicationController extends Controller
 
         // Base query for stats (without status filter)
         $statsBaseQuery = LoanApplication::query()
-            ->when(! $user->has_all_access && ! $user->isApproverRole() && ! $user->isEd() && ! $user->isSuperAdmin() && ! $user->isHeadOffice(), function ($query) use ($user) {
-                $query->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
+            ->when(! $user->has_all_access && ! $user->isApproverRole() && ! $user->isEd() && ! $user->isSuperAdmin() && ! $user->isHeadOffice(), function ($query) use ($accessibleBranchIds) {
+                $query->whereIn('branch_id', $accessibleBranchIds);
             })
             ->when($isFieldOfficer, function ($query) use ($user) {
                 $query->where('submitted_by', $user->id);
@@ -999,7 +1021,7 @@ class LoanApplicationController extends Controller
         $this->applyLoanListSelectors($statsBaseQuery, $request);
         $this->applyCoalesceDateRange($statsBaseQuery, $dateFrom, $dateTo, $dateExpression);
 
-        $accessibleBranches = $user->getAccessibleBranches()->sortBy('code')->values();
+        $accessibleBranches = $accessibleBranches->sortBy('code')->values();
         if ($accessibleBranches->isEmpty()) {
             $accessibleBranches = Branch::all()->sortBy('code')->values();
         }
@@ -1023,32 +1045,41 @@ class LoanApplicationController extends Controller
             ->orderBy('name')
             ->get(['id', 'name', 'code']);
 
-        $branchIds = $branches->pluck('id');
-        $samities = $branchIds->isEmpty()
+        $samityBranchIds = $branchId
+            ? collect([(int) $branchId])
+            : ($branches->count() <= 25 ? $branches->pluck('id') : collect());
+        $samities = $samityBranchIds->isEmpty()
             ? collect()
             : Samity::query()
                 ->where('is_active', true)
-                ->whereIn('branch_id', $branchIds)
+                ->whereIn('branch_id', $samityBranchIds)
                 ->orderBy('samity_code')
                 ->get(['id', 'branch_id', 'samity_code', 'samity_name', 'samity_name_bn']);
 
+        $statusTally = (clone $statsBaseQuery)
+            ->reorder()
+            ->selectRaw('status, COUNT(*) as aggregate')
+            ->groupBy('status')
+            ->pluck('aggregate', 'status');
+        $countStatus = fn (string $status) => (int) ($statusTally[$status] ?? 0);
+
         $stats = [
-            'total' => (clone $statsBaseQuery)->where('status', '!=', 'draft')->count(),
-            'draft' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_DRAFT)->count(),
-            'submitted' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_SUBMITTED)->count(),
-            'approved' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_APPROVED)->count(),
-            'pending_disbursement' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_PENDING_DISBURSEMENT)->count(),
-            'awaiting_takeup' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_AWAITING_TAKEUP)->count(),
-            'pending_cancellation' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_PENDING_CANCELLATION)->count(),
+            'total' => (int) $statusTally->except([LoanApplication::STATUS_DRAFT])->sum(),
+            'draft' => $countStatus(LoanApplication::STATUS_DRAFT),
+            'submitted' => $countStatus(LoanApplication::STATUS_SUBMITTED),
+            'approved' => $countStatus(LoanApplication::STATUS_APPROVED),
+            'pending_disbursement' => $countStatus(LoanApplication::STATUS_PENDING_DISBURSEMENT),
+            'awaiting_takeup' => $countStatus(LoanApplication::STATUS_AWAITING_TAKEUP),
+            'pending_cancellation' => $countStatus(LoanApplication::STATUS_PENDING_CANCELLATION),
             'ho_pending_cancellation' => (clone $statsBaseQuery)
                 ->where('status', LoanApplication::STATUS_PENDING_CANCELLATION)
                 ->where('cancellation_from_status', LoanApplication::STATUS_PENDING_HEAD_OFFICE)
                 ->count(),
-            'rejected' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_REJECTED)->count(),
-            'ready_for_head_office' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_READY_FOR_HEAD_OFFICE)->count(),
-            'pending_head_office' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_PENDING_HEAD_OFFICE)->count(),
-            'under_review' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_UNDER_REVIEW)->count(),
-            'disbursed' => (clone $statsBaseQuery)->where('status', LoanApplication::STATUS_DISBURSED)->count(),
+            'rejected' => $countStatus(LoanApplication::STATUS_REJECTED),
+            'ready_for_head_office' => $countStatus(LoanApplication::STATUS_READY_FOR_HEAD_OFFICE),
+            'pending_head_office' => $countStatus(LoanApplication::STATUS_PENDING_HEAD_OFFICE),
+            'under_review' => $countStatus(LoanApplication::STATUS_UNDER_REVIEW),
+            'disbursed' => $countStatus(LoanApplication::STATUS_DISBURSED),
             'pending_my_approval' => $this->countPendingMyApproval($statsBaseQuery, $user, 'loan'),
         ];
 
@@ -1101,6 +1132,7 @@ class LoanApplicationController extends Controller
         $statusFilter = $workQueue['status'];
         $searchFilter = $request->input('search', '');
         $isFieldOfficer = $this->isFieldOfficer($user);
+        $accessibleBranchIds = $user->getAccessibleBranches()->pluck('id');
 
         $query = LoanApplication::with([
             'loanProduct',
@@ -1110,8 +1142,8 @@ class LoanApplicationController extends Controller
             'samity',
             'submittedBy',
         ])
-            ->when(! $user->has_all_access && ! $user->isApproverRole() && ! $user->isEd() && ! $user->isSuperAdmin() && ! $user->isHeadOffice(), function ($query) use ($user) {
-                $query->whereIn('branch_id', $user->getAccessibleBranches()->pluck('id'));
+            ->when(! $user->has_all_access && ! $user->isApproverRole() && ! $user->isEd() && ! $user->isSuperAdmin() && ! $user->isHeadOffice(), function ($query) use ($accessibleBranchIds) {
+                $query->whereIn('branch_id', $accessibleBranchIds);
             })
             ->when($isFieldOfficer, function ($query) use ($user) {
                 $query->where('submitted_by', $user->id);
@@ -1530,6 +1562,23 @@ class LoanApplicationController extends Controller
     /**
      * Get samities for current user's branch (for legacy member form).
      */
+    public function filterSamities(Request $request)
+    {
+        $branchId = (int) $request->input('branch_id');
+        $user = $request->user();
+        if ($branchId < 1 || ! $user->canAccessBranch($branchId)) {
+            return response()->json([]);
+        }
+
+        return response()->json(
+            Samity::query()
+                ->where('branch_id', $branchId)
+                ->where('is_active', true)
+                ->orderBy('samity_code')
+                ->get(['id', 'branch_id', 'samity_code', 'samity_name', 'samity_name_bn'])
+        );
+    }
+
     public function samitiesForBranch(Request $request)
     {
         $user = $request->user();

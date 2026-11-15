@@ -3,6 +3,13 @@
 namespace App\Providers;
 
 use App\Models\LoanApplication;
+use App\Models\LoanApplicationApproval;
+use App\Models\LoanApplicationIssue;
+use App\Models\MemberAdmission;
+use App\Models\MemberAdmissionApproval;
+use App\Models\MemberAdmissionIssue;
+use App\Models\Notification;
+use App\Support\NavBadgeCache;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Support\Facades\DB;
@@ -10,7 +17,6 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
-use Inertia\Inertia;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -53,15 +59,21 @@ class AppServiceProvider extends ServiceProvider
             }
         });
 
-        // Share unread submissions count with all Inertia views
-        Inertia::share([
-            'unreadSubmissionsCount' => function () {
-                if (auth()->check() && auth()->user()->has_all_access) {
-                    return LoanApplication::whereNull('reviewed_at')->count();
-                }
+        $bumpBadges = static function (): void {
+            NavBadgeCache::bump();
+        };
 
-                return 0;
-            },
-        ]);
+        foreach ([
+            MemberAdmission::class,
+            LoanApplication::class,
+            MemberAdmissionIssue::class,
+            LoanApplicationIssue::class,
+            MemberAdmissionApproval::class,
+            LoanApplicationApproval::class,
+            Notification::class,
+        ] as $model) {
+            $model::saved($bumpBadges);
+            $model::deleted($bumpBadges);
+        }
     }
 }
