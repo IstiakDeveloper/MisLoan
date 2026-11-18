@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import {
     ArrowLeft,
@@ -39,10 +39,12 @@ import { isSufolonLoan } from '@/utils/loanInterest';
 import CycleOverrideModal from './CycleOverrideModal';
 
 interface Props {
+    cycle?: { id: number; number: number; revision: number; state: string; loan_id: number | null } | null;
     admission: any;
     loanApplication: any | null;
     formSaved?: Record<number, boolean>;
     visibleFormIds?: number[];
+    editableFormIds?: number[];
     otherCycles: Array<{
         id: number;
         loan_id?: number | null;
@@ -63,14 +65,17 @@ interface Props {
         isFieldOfficer: boolean;
         isBranchUser: boolean;
         canSuperAdminEdit?: boolean;
+        canManageLoan?: boolean;
     };
 }
 
 export default function CycleView({
     admission,
+    cycle = null,
     loanApplication,
     formSaved = {},
     visibleFormIds,
+    editableFormIds = [],
     otherCycles,
     currentDofa,
     canDeleteAdmission = false,
@@ -83,6 +88,8 @@ export default function CycleView({
     const [viewMode, setViewMode] = useState<'single' | 'tabs'>('single');
     const [activeTab, setActiveTab] = useState<string>('admission');
     const [overrideModalOpen, setOverrideModalOpen] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
+    const page = usePage<{ errors?: Record<string, string>; flash?: { error?: string; success?: string } }>();
 
     const hasLoan = !!loanApplication;
     const previewAmount = Number(loanApplication?.approved_amount || loanApplication?.requested_amount || 0);
@@ -114,11 +121,14 @@ export default function CycleView({
     };
 
     // Determine strictly which forms are saved, filled, and required for this product
-    const hasAgreement = formIsVisible(1) && !!loanApplication && (formSaved[1] === true || (formSaved[1] === undefined && hasMeaningfulData(loanApplication.loan_agreement_data)));
-    const hasGuarantor = formIsVisible(2) && !!loanApplication && (formSaved[2] === true || (formSaved[2] === undefined && hasMeaningfulData(loanApplication.guarantor_info)));
-    const hasDeathRisk = formIsVisible(3) && !!loanApplication && (formSaved[3] === true || (formSaved[3] === undefined && hasMeaningfulData(loanApplication.nominee_info)));
-    const hasInvestigation = formIsVisible(4) && !!loanApplication && (formSaved[4] === true || (formSaved[4] === undefined && hasMeaningfulData(loanApplication.asset_info)));
-    const hasApproval = formIsVisible(5) && !!loanApplication && (formSaved[5] === true || (formSaved[5] === undefined && (hasMeaningfulData(loanApplication.business_plan) || loanApplication.approved_amount != null)));
+    const hasAgreement = formIsVisible(1) && !!loanApplication && (cycle !== null || formSaved[1] === true || (formSaved[1] === undefined && hasMeaningfulData(loanApplication.loan_agreement_data)));
+    const hasGuarantor = formIsVisible(2) && !!loanApplication && (cycle !== null || formSaved[2] === true || (formSaved[2] === undefined && hasMeaningfulData(loanApplication.guarantor_info)));
+    const hasDeathRisk = formIsVisible(3) && !!loanApplication && (cycle !== null || formSaved[3] === true || (formSaved[3] === undefined && hasMeaningfulData(loanApplication.nominee_info)));
+    const hasInvestigation = formIsVisible(4) && !!loanApplication && (cycle !== null || formSaved[4] === true || (formSaved[4] === undefined && hasMeaningfulData(loanApplication.asset_info)));
+    const hasApproval = formIsVisible(5) && !!loanApplication && (cycle !== null || formSaved[5] === true || (formSaved[5] === undefined && (hasMeaningfulData(loanApplication.business_plan) || loanApplication.approved_amount != null)));
+
+    const cycleEditable = !!cycle && (!loanApplication || ['draft', 'rejected', 'needs_correction'].includes(loanApplication.status));
+    const formNames: Record<number, string> = { 1: 'ঋণ চুক্তিপত্র', 2: 'জামিনদার অঙ্গীকারনামা', 3: 'মৃত্যুঝুঁকি তহবিল', 4: 'সরেজমিন তদন্ত', 5: 'ঋণ আবেদন ও অনুমোদনপত্র' };
 
     // Available active tabs
     const availableTabs: Array<{ id: string; label: string; icon: any }> = [
@@ -333,9 +343,9 @@ export default function CycleView({
                         )}
 
                         {/* Draft Loan Edit & Delete buttons */}
-                        {hasLoan && loanApplication.status === 'draft' && (
+                        {!cycle && hasLoan && loanApplication.status === 'draft' && (
                             <>
-                                <a href={`/member/loan-applications/form-selection?member_id=${admission.id}`}>
+                                <a href={`/member/loan-applications/${loanApplication.id}`}>
                                     <Button size="sm" variant="outline" className="h-8 text-xs font-semibold text-emerald-700 border-emerald-300 hover:bg-emerald-50 rounded-xl">
                                         <Pencil className="w-3.5 h-3.5 mr-1 text-emerald-600" />
                                         ঋণ এডিট
@@ -354,7 +364,7 @@ export default function CycleView({
                         )}
 
                         {(!hasLoan || loanApplication.status === 'draft') && (
-                            <a href={`/member-admissions/${admission.id}/edit?cycle_renewal=1`}>
+                            <a href={cycle ? `/member/cycle-hub/renewals/${cycle.id}/admission` : `/member/cycle-hub?member_id=${admission.id}`}>
                                 <Button size="sm" variant="outline" className="h-8 text-xs font-semibold text-blue-700 border-blue-200 hover:bg-blue-50 rounded-xl">
                                     <Pencil className="w-3.5 h-3.5 mr-1 text-blue-600" />
                                     ভর্তি আপডেট
@@ -362,7 +372,7 @@ export default function CycleView({
                             </a>
                         )}
 
-                        {canDeleteAdmission && (!hasLoan || loanApplication.status === 'draft' || loanApplication.status === 'rejected') && (
+                        {!cycle && canDeleteAdmission && (!hasLoan || loanApplication.status === 'draft' || loanApplication.status === 'rejected') && (
                             <Button
                                 size="sm"
                                 variant="outline"
@@ -390,7 +400,7 @@ export default function CycleView({
 
                         <div className="flex items-center gap-1.5 flex-wrap">
                             <a
-                                href={`/member-admissions/${admission.id}/print`}
+                                href={cycle ? `/member/cycle-hub/renewals/${cycle.id}/print?form=0` : `/member-admissions/${admission.id}/print`}
                                 target="_blank"
                                 rel="noreferrer"
                             >
@@ -402,7 +412,7 @@ export default function CycleView({
 
                             {hasLoan && (
                                 <a
-                                    href={`/member/loan-applications/${loanApplication.id}/print`}
+                                    href={cycle ? `/member/cycle-hub/renewals/${cycle.id}/print` : `/member/loan-applications/${loanApplication.id}/print`}
                                     target="_blank"
                                     rel="noreferrer"
                                 >
@@ -460,6 +470,32 @@ export default function CycleView({
                     </div>
                 )}
 
+                {cycle && (
+                    <div className="space-y-4 rounded-2xl border border-emerald-200 bg-white p-4 sm:p-6">
+                        {(page.props.flash?.error || Object.keys(page.props.errors || {}).length > 0) && <div role="alert" className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-800">{page.props.flash?.error}{Object.entries(page.props.errors || {}).map(([key, message]) => <p key={key} className="whitespace-pre-line">{message}</p>)}</div>}
+                        {page.props.flash?.success && <p role="status" className="text-sm font-semibold text-emerald-800">{page.props.flash.success}</p>}
+                        <p className="text-sm text-slate-700">এই দফার আলাদা সদস্য ফাইল। আগের তথ্য থেকে পূরণ করা ফর্ম যাচাই করে সংরক্ষণ করুন।</p>
+                        <div className="flex flex-wrap gap-3">
+                            {cycleEditable && <>
+                                <Link href={`/member/cycle-hub/renewals/${cycle.id}/admission`} className="rounded-lg border px-4 py-2 text-sm">ভর্তি তথ্য দেখুন / সংশোধন</Link>
+                                <Link href={`/member/cycle-hub/renewals/${cycle.id}/loan`} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm text-white">{hasLoan ? 'ঋণের নির্বাচন পরিবর্তন' : 'ঋণ নির্বাচন করুন'}</Link>
+                            </>}
+                            <a href={`/member/cycle-hub/renewals/${cycle.id}/print`} target="_blank" rel="noreferrer" className="rounded-lg border px-4 py-2 text-sm">এই দফার ফাইল প্রিন্ট</a>
+                            {hasLoan && (!cycleEditable || userPermissions.canManageLoan) && <Link href={`/member/loan-applications/${loanApplication.id}?workflow=1`} className="rounded-lg border px-4 py-2 text-sm">ঋণের অনুমোদন ও প্রক্রিয়াকরণ</Link>}
+                            {cycleEditable && cycle.state === 'draft' && <button type="button" className="rounded-lg border border-red-200 px-4 py-2 text-sm text-red-700" onClick={() => {
+                                if (confirm('এই দফার খসড়া বাতিল করতে চান?')) router.delete(`/member/cycle-hub/renewals/${cycle.id}`, { data: { revision: cycle.revision } });
+                            }}>খসড়া বাতিল</button>}
+                        </div>
+                        {hasLoan && <div className="grid gap-2 sm:grid-cols-2">
+                            {(visibleFormIds || []).map((id) => <div key={id} className="flex items-center justify-between gap-2 rounded-lg border p-3 text-sm">
+                                <span>{formNames[id]}<small className="block text-slate-500">{formSaved[id] ? 'সংরক্ষিত' : 'যাচাই / পূরণ ও সংরক্ষণ বাকি'}</small></span>
+                                {editableFormIds.includes(id) ? <Link href={`/member/cycle-hub/renewals/${cycle.id}/forms/${id}`} className="font-semibold text-emerald-700">ফর্ম খুলুন</Link> : <a href={`#section-${({ 1: 'agreement', 2: 'guarantor', 3: 'death-risk', 4: 'investigation', 5: 'approval' } as Record<number, string>)[id]}`} className="text-slate-600">ফর্ম দেখুন</a>}
+                            </div>)}
+                        </div>}
+                        {cycleEditable && hasLoan && <Button disabled={submitting} onClick={() => router.patch(`/member/loan-applications/${loanApplication.id}/submit`, { cycle_revision: cycle.revision }, { onStart: () => setSubmitting(true), onFinish: () => setSubmitting(false) })}>{submitting ? 'জমা হচ্ছে…' : 'যাচাই করে ঋণ আবেদন জমা দিন'}</Button>}
+                    </div>
+                )}
+
                 {/* CONTENT AREA: SINGLE PAGE OR TABBED FULL PREVIEW DOSSIERS */}
                 <div className="space-y-4 sm:space-y-6">
 
@@ -490,7 +526,7 @@ export default function CycleView({
                                         </Button>
                                     )}
                                     <a
-                                        href={`/member-admissions/${admission.id}/print`}
+                                        href={cycle ? `/member/cycle-hub/renewals/${cycle.id}/print?form=0` : `/member-admissions/${admission.id}/print`}
                                         target="_blank"
                                         rel="noreferrer"
                                     >
@@ -525,7 +561,7 @@ export default function CycleView({
                                 </div>
                                 <div className="self-start sm:self-auto">
                                     <a
-                                        href={`/member/loan-applications/${loanApplication.id}/print?form=1`}
+                                        href={cycle ? `/member/cycle-hub/renewals/${cycle.id}/print?form=1` : `/member/loan-applications/${loanApplication.id}/print?form=1`}
                                         target="_blank"
                                         rel="noreferrer"
                                     >
@@ -541,7 +577,6 @@ export default function CycleView({
                                 <div className="w-full min-w-0 flex justify-center">
                                     <LoanAgreement
                                         onlyPreview={true}
-                                        embedded={true}
                                         existingApplication={loanApplication}
                                         member={admission}
                                         loanProduct={loanApplication.loan_product}
@@ -570,7 +605,7 @@ export default function CycleView({
                                 </div>
                                 <div className="self-start sm:self-auto">
                                     <a
-                                        href={`/member/loan-applications/${loanApplication.id}/print?form=2`}
+                                        href={cycle ? `/member/cycle-hub/renewals/${cycle.id}/print?form=2` : `/member/loan-applications/${loanApplication.id}/print?form=2`}
                                         target="_blank"
                                         rel="noreferrer"
                                     >
@@ -615,7 +650,7 @@ export default function CycleView({
                                 </div>
                                 <div className="self-start sm:self-auto">
                                     <a
-                                        href={`/member/loan-applications/${loanApplication.id}/print?form=3`}
+                                        href={cycle ? `/member/cycle-hub/renewals/${cycle.id}/print?form=3` : `/member/loan-applications/${loanApplication.id}/print?form=3`}
                                         target="_blank"
                                         rel="noreferrer"
                                     >
@@ -660,7 +695,7 @@ export default function CycleView({
                                 </div>
                                 <div className="self-start sm:self-auto">
                                     <a
-                                        href={`/member/loan-applications/${loanApplication.id}/print?form=4`}
+                                        href={cycle ? `/member/cycle-hub/renewals/${cycle.id}/print?form=4` : `/member/loan-applications/${loanApplication.id}/print?form=4`}
                                         target="_blank"
                                         rel="noreferrer"
                                     >
@@ -676,7 +711,6 @@ export default function CycleView({
                                 <div className="w-full min-w-0 flex justify-center">
                                     <FieldInvestigation
                                         onlyPreview={true}
-                                        embedded={true}
                                         existingApplication={loanApplication}
                                         member={admission}
                                         loanProduct={loanApplication.loan_product}
@@ -723,7 +757,7 @@ export default function CycleView({
                                         </Button>
                                     )}
                                     <a
-                                        href={`/member/loan-applications/${loanApplication.id}/print?form=5`}
+                                        href={cycle ? `/member/cycle-hub/renewals/${cycle.id}/print?form=5` : `/member/loan-applications/${loanApplication.id}/print?form=5`}
                                         target="_blank"
                                         rel="noreferrer"
                                     >
@@ -739,7 +773,6 @@ export default function CycleView({
                                 <div className="w-full min-w-0 flex justify-center">
                                     <LoanApplicationApproval
                                         onlyPreview={true}
-                                        embedded={true}
                                         existingApplication={loanApplication}
                                         member={admission}
                                         loanProduct={loanApplication.loan_product}

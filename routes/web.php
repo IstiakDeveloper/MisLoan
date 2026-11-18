@@ -22,6 +22,7 @@ use App\Http\Controllers\LoanCategoryController;
 use App\Http\Controllers\LoanProductController;
 use App\Http\Controllers\MaintenanceController;
 use App\Http\Controllers\Member\CycleOverrideController;
+use App\Http\Controllers\Member\CycleRenewalController;
 use App\Http\Controllers\Member\MemberCycleHubController;
 use App\Http\Controllers\Member\SavingsApplicationController;
 use App\Http\Controllers\MemberAdmissionController;
@@ -38,6 +39,7 @@ use App\Http\Controllers\TeamBasedApprovalController;
 use App\Http\Controllers\TeamBasedApprovalPrintController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\UserSessionController;
+use App\Http\Middleware\PreserveCycleLoanContext;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Redirect;
 use Illuminate\Support\Facades\Route;
@@ -313,6 +315,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::prefix('member')->name('member.')->middleware('auth')->group(function () {
         // Member Cycle & Portfolio Hub
         Route::prefix('cycle-hub')->name('cycle-hub.')->group(function () {
+            Route::get('renewals/{cycle}/admission', [CycleRenewalController::class, 'edit'])->name('renewals.edit');
+            Route::post('renewals/{cycle}/admission', [CycleRenewalController::class, 'update'])->name('renewals.update');
+            Route::get('renewals/{cycle}/loan', [CycleRenewalController::class, 'loan'])->name('renewals.loan');
+            Route::post('renewals/{cycle}/loan', [CycleRenewalController::class, 'selectLoan'])->name('renewals.select-loan');
+            Route::get('renewals/{cycle}/forms/{form}', [CycleRenewalController::class, 'form'])->whereNumber('form')->name('renewals.form');
+            Route::get('renewals/{cycle}/print', [CycleRenewalController::class, 'print'])->name('renewals.print');
+            Route::delete('renewals/{cycle}', [CycleRenewalController::class, 'discard'])->name('renewals.discard');
             Route::get('/', [MemberCycleHubController::class, 'index'])->name('index');
             Route::get('search', [MemberCycleHubController::class, 'search'])->name('search');
             Route::get('member/{id}', [MemberCycleHubController::class, 'getMemberDetails'])->name('member-details');
@@ -329,7 +338,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         });
 
         // Loan Applications
-        Route::prefix('loan-applications')->name('loan-applications.')->group(function () {
+        Route::prefix('loan-applications')->name('loan-applications.')->middleware(PreserveCycleLoanContext::class)->group(function () {
             Route::get('/', [App\Http\Controllers\Member\LoanApplicationController::class, 'index'])->name('index');
             Route::get('products', [App\Http\Controllers\Member\LoanApplicationController::class, 'getProducts'])->name('products');
             Route::get('search-members', [App\Http\Controllers\Member\LoanApplicationController::class, 'searchMembers'])->name('search-members');

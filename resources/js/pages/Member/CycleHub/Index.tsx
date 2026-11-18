@@ -110,6 +110,9 @@ interface LoanInfo {
 }
 
 interface CycleItem {
+    cycle_id?: number | null;
+    edit_admission_url?: string | null;
+    loan_edit_url?: string | null;
     admission_id: number;
     loan_id?: number | null;
     dofa: number;
@@ -162,6 +165,7 @@ interface MemberDetail {
     can_repay: boolean;
     repayable_loan_id: number | null;
     can_start_next_cycle: boolean;
+    has_open_cycle?: boolean;
     current_max_dofa: number;
     next_dofa: number;
     latest_admission_id: number;
@@ -701,13 +705,13 @@ export default function Index({
 
                                 {/* Primary Action: Start Next Cycle */}
                                 <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
-                                    <a href={`/member-admissions/${memberData.member.latest_admission_id}/edit?cycle_renewal=1`} className="w-full sm:w-auto">
+                                    <a href={`/member/cycle-hub/cycle/${memberData.member.latest_admission_id}`} className="w-full sm:w-auto">
                                         <Button
                                             variant="outline"
                                             className="w-full sm:w-auto h-11 sm:h-12 text-xs sm:text-sm font-bold text-blue-700 border-blue-200 hover:bg-blue-50 rounded-2xl justify-center"
                                         >
                                             <Pencil className="w-4 h-4 mr-2 shrink-0" />
-                                            ভর্তি তথ্য আপডেট
+                                            সদস্যের ফাইল দেখুন
                                         </Button>
                                     </a>
                                     {memberData.member.can_start_next_cycle && userPermissions.canCreateLoan && (
@@ -721,7 +725,7 @@ export default function Index({
                                             ) : (
                                                 <PlusCircle className="w-4 h-4 sm:w-5 sm:h-5 mr-2 shrink-0" />
                                             )}
-                                            পরবর্তী সাইকেল (দফা {memberData.member.next_dofa}) ঋণ আবেদন করুন
+                                            {memberData.member.has_open_cycle ? 'খসড়া চালিয়ে যান' : 'পরবর্তী সাইকেল ঋণ আবেদন'} (দফা {memberData.member.next_dofa})
                                         </Button>
                                     )}
                                 </div>
@@ -741,7 +745,7 @@ export default function Index({
                                                     : memberData.member.active_loan?.application_no
                                                       ? ` (আবেদন নং: ${memberData.member.active_loan.application_no})`
                                                       : ''}
-                                                {' '}— পরিশোধের পর পরবর্তী সাইকেল করা যাবে
+                                                {' '}— নতুন ঋণ নির্বাচন করলে প্রযোজ্য নিয়ম অনুযায়ী যাচাই হবে
                                             </span>
                                         </div>
                                     ) : (
@@ -867,7 +871,7 @@ export default function Index({
                                                     {/* Draft Loan Edit & Delete buttons */}
                                                     {latestLoan && latestLoan.status === 'draft' && (
                                                         <div className="grid grid-cols-2 gap-2">
-                                                            <a href={`/member/loan-applications/form-selection?member_id=${cycle.admission_id}`} className="w-full">
+                                                            <a href={cycle.loan_edit_url || `/member/loan-applications/${latestLoan!.id}`} className="w-full">
                                                                 <Button
                                                                     size="sm"
                                                                     variant="outline"
@@ -890,7 +894,7 @@ export default function Index({
                                                     )}
 
                                                     {(!latestLoan || latestLoan.status === 'draft') && (
-                                                        <a href={`/member-admissions/${cycle.admission_id}/edit?cycle_renewal=1`} className="w-full">
+                                                        <a href={cycle.edit_admission_url || cycleFileUrl(cycle)} className="w-full">
                                                             <Button
                                                                 size="sm"
                                                                 variant="outline"
@@ -901,7 +905,7 @@ export default function Index({
                                                             </Button>
                                                         </a>
                                                     )}
-                                                    {cycle.can_delete_admission && (!latestLoan || latestLoan.status === 'draft' || latestLoan.status === 'rejected') && (
+                                                    {!cycle.cycle_id && cycle.can_delete_admission && (!latestLoan || latestLoan.status === 'draft' || latestLoan.status === 'rejected') && (
                                                         <Button
                                                             size="sm"
                                                             variant="outline"
@@ -1028,7 +1032,7 @@ export default function Index({
                                                                 {/* Draft Loan Edit & Delete buttons */}
                                                                 {latestLoan && latestLoan.status === 'draft' && (
                                                                     <>
-                                                                        <a href={`/member/loan-applications/form-selection?member_id=${cycle.admission_id}`}>
+                                                                        <a href={cycle.loan_edit_url || `/member/loan-applications/${latestLoan!.id}`}>
                                                                             <Button
                                                                                 size="sm"
                                                                                 variant="outline"
@@ -1051,7 +1055,7 @@ export default function Index({
                                                                 )}
 
                                                                 {(!latestLoan || latestLoan.status === 'draft') && (
-                                                                    <a href={`/member-admissions/${cycle.admission_id}/edit?cycle_renewal=1`}>
+                                                                    <a href={cycle.edit_admission_url || cycleFileUrl(cycle)}>
                                                                         <Button
                                                                             size="sm"
                                                                             variant="outline"
@@ -1063,7 +1067,7 @@ export default function Index({
                                                                     </a>
                                                                 )}
 
-                                                                {cycle.can_delete_admission && (!latestLoan || latestLoan.status === 'draft' || latestLoan.status === 'rejected') && (
+                                                                {!cycle.cycle_id && cycle.can_delete_admission && (!latestLoan || latestLoan.status === 'draft' || latestLoan.status === 'rejected') && (
                                                                     <Button
                                                                         size="sm"
                                                                         variant="outline"

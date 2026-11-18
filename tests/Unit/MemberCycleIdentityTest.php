@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Schema;
 
 function createCycleIdentityTables(): void
 {
+    Schema::dropIfExists('member_loan_cycles');
     Schema::dropIfExists('loan_applications');
     Schema::dropIfExists('member_family_members');
     Schema::dropIfExists('member_other_assets');
@@ -101,6 +102,7 @@ function createCycleIdentityTables(): void
         $table->unsignedBigInteger('assigned_officer_id')->nullable();
         $table->decimal('monthly_income', 12, 2)->nullable();
         $table->decimal('monthly_expense', 12, 2)->nullable();
+        $table->unsignedInteger('revision_count')->default(0);
         $table->timestamps();
     });
 
@@ -130,6 +132,8 @@ function createCycleIdentityTables(): void
         $table->timestamps();
         $table->softDeletes();
     });
+
+    (require database_path('migrations/2026_11_18_120000_create_member_loan_cycles_table.php'))->up();
 }
 
 function createCycleHubOfficer(Branch $branch): User
