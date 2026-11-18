@@ -176,8 +176,15 @@
     }
 }
 
-/* প্রিন্টে মেম্বার অ্যাডমিশন কমেন্ট বক্সের ভেতরে প্যাডিং নিশ্চিত */
+/* প্রিন্ট চলাকালীন লোডার বা ব্যাকড্রপ সম্পূর্ণ হাইড রাখা */
 @media print {
+    .misloan-page-loader,
+    aside[aria-label="Application loading"] {
+        display: none !important;
+        visibility: hidden !important;
+        opacity: 0 !important;
+    }
+
     .member-admission-comment-inner {
         padding: 10px !important;
         box-sizing: border-box;
