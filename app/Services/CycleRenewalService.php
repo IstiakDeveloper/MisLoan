@@ -23,14 +23,100 @@ class CycleRenewalService
 {
     public const ADMISSION_RELATIONS = ['branch', 'samity', 'memberCategory', 'familyMembers', 'otherAssets'];
 
+    // A renewal belongs to an existing member. Never accept these from a draft
+    // cache or POST; the captured source remains the authority for identity.
+    public const IDENTITY_FIELDS = ['application_no', 'nid_number', 'smart_card_number', 'branch_id', 'samity_id', 'admission_date'];
+
+    public function admissionForCycle(MemberLoanCycle $cycle): array
+    {
+        if ($cycle->state === 'closed') {
+            return $cycle->admission_snapshot ?? [];
+        }
+
+        return array_replace($cycle->admission_snapshot ?? [], Arr::only(
+            $cycle->source_snapshot['admission'] ?? [], self::IDENTITY_FIELDS,
+        ));
+    }
+
+    public function masterFor(MemberAdmission $member): MemberAdmission
+    {
+        $managed = MemberLoanCycle::where('admission_id', $member->id)->first();
+        if ($managed) {
+            return MemberAdmission::where('branch_id', $member->branch_id)->findOrFail($managed->master_admission_id);
+        }
+        $seen = [];
+        while ($member->previous_admission_id && ! isset($seen[$member->id])) {
+            $seen[$member->id] = true;
+            $parent = MemberAdmission::where('branch_id', $member->branch_id)->find($member->previous_admission_id);
+            if (! $parent) {
+                break;
+            }
+            $member = $parent;
+        }
+
+        return $member->canonicalAdmission();
+    }
+
+    /** Follow stored links, including legacy clones whose code was normalized. */
+    public function familyAdmissionIds(MemberAdmission $master): array
+    {
+        $ids = $master->sisterAdmissionIds();
+        $managed = MemberLoanCycle::where('master_admission_id', $master->id)->where('branch_id', $master->branch_id)->get();
+        $ids = array_values(array_unique([...$ids, (int) $master->id, ...$managed->pluck('admission_id')->all(), ...$managed->pluck('source_admission_id')->all()]));
+        do {
+            $children = MemberAdmission::where('branch_id', $master->branch_id)->whereIn('previous_admission_id', $ids)
+                ->whereNotIn('id', $ids)->pluck('id')->all();
+            $ids = [...$ids, ...$children];
+        } while ($children);
+
+        return $ids;
+    }
+
+    public function duplicateMobile(MemberLoanCycle $cycle, ?string $value): ?MemberAdmission
+    {
+        $normalized = MemberAdmission::normalizeMobileNumber($value);
+        $saved = MemberAdmission::normalizeMobileNumber($cycle->admission_snapshot['mobile_number'] ?? null);
+        // Inherited contact data is not a new assignment to another member.
+        if ($normalized === $saved || strlen($normalized) < 10) {
+            return null;
+        }
+        $master = MemberAdmission::findOrFail($cycle->master_admission_id);
+
+        return MemberAdmission::whereNotIn('id', $this->familyAdmissionIds($master))
+            ->whereRaw(MemberAdmission::englishDigitsSql('mobile_number').' LIKE ?', ['%'.substr($normalized, -10)])
+            ->get()->first(fn ($row) => MemberAdmission::normalizeMobileNumber($row->mobile_number) === $normalized);
+    }
+
+    public function assertLoanAvailable(MemberLoanCycle $cycle, ?LoanProduct $product, int $categoryId): void
+    {
+        $master = MemberAdmission::findOrFail($cycle->master_admission_id);
+        $activeLoans = LoanApplication::whereIn('member_admission_id', $this->familyAdmissionIds($master))
+            ->whereNotIn('status', MemberAdmission::closedLoanFormStatuses())->with('loanProduct')->orderBy('id')->get();
+        $blocking = $activeLoans->first(function ($loan) use ($cycle, $product, $categoryId) {
+            if ((int) $loan->id === (int) $cycle->loan_id) {
+                return false;
+            }
+            if ($product?->isCode38()) {
+                return $loan->isDraft() && (int) $loan->loan_product_id === (int) $product->id
+                    && (int) $loan->loan_category_id === $categoryId;
+            }
+
+            return ! $loan->loanProduct?->isCode38();
+        });
+        if ($blocking) {
+            throw ValidationException::withMessages(['cycle' => MemberAdmission::alreadyLoanFormMessage($blocking)]);
+        }
+    }
+
     public function start(MemberAdmission $member, User $user, ?int $sourceLoanId = null): array
     {
         $manifest = [];
         try {
             return DB::transaction(function () use ($member, $user, $sourceLoanId, &$manifest) {
-                $master = $member->canonicalAdmission();
+                $master = $this->masterFor($member);
                 MemberAdmission::whereKey($master->id)->lockForUpdate()->firstOrFail();
-                if ($member->sisterAdmissionQuery()->whereNull('previous_admission_id')->count() > 1) {
+                $familyIds = $this->familyAdmissionIds($master);
+                if (MemberAdmission::whereIn('id', $familyIds)->whereNull('previous_admission_id')->count() > 1) {
                     throw ValidationException::withMessages(['cycle' => 'এই সদস্য নম্বরে একাধিক মূল ভর্তি রেকর্ড আছে। নতুন দফা শুরুর আগে Head Office থেকে সঠিক সদস্য ফাইল যাচাই করুন।']);
                 }
                 $open = MemberLoanCycle::where('open_member_id', $master->id)->lockForUpdate()->first();
@@ -40,8 +126,9 @@ class CycleRenewalService
                 if ($open) {
                     $open->update(['open_member_id' => null, 'state' => 'submitted']);
                 }
-                $active = $master->existingRegularLoanForm();
-                $sources = $master->sisterLoanQuery()->where('status', LoanApplication::STATUS_REPAID)
+                $active = LoanApplication::whereIn('member_admission_id', $familyIds)->whereNotIn('status', MemberAdmission::closedLoanFormStatuses())
+                    ->with('loanProduct')->get()->first(fn ($loan) => ! $loan->loanProduct?->isCode38());
+                $sources = LoanApplication::whereIn('member_admission_id', $familyIds)->where('status', LoanApplication::STATUS_REPAID)
                     ->when($sourceLoanId, fn ($q) => $q->whereKey($sourceLoanId))
                     ->with(['memberAdmission', 'loanProduct', 'loanCategory'])->latest('id')->get();
                 $sourceLoan = $sourceLoanId ? $sources->first()
@@ -52,9 +139,9 @@ class CycleRenewalService
                 $source = $sourceLoan->memberAdmission->load(self::ADMISSION_RELATIONS);
                 $sourceCycle = MemberLoanCycle::where('loan_id', $sourceLoan->id)->first();
                 $number = max(
-                    (int) $master->sisterAdmissionQuery()->max('loan_dofa'),
+                    (int) MemberAdmission::whereIn('id', $familyIds)->max('loan_dofa'),
                     (int) MemberLoanCycle::where('master_admission_id', $master->id)->max('number'),
-                    $master->sisterLoanQuery()->whereNotIn('status', ['cancelled', 'rejected'])->count(), 1,
+                    LoanApplication::whereIn('member_admission_id', $familyIds)->whereNotIn('status', ['cancelled', 'rejected'])->count(), 1,
                 ) + 1;
                 $directory = 'cycles/'.Str::uuid();
                 $snapshot = app(CycleDocumentService::class)->copyPayload([
@@ -67,12 +154,15 @@ class CycleRenewalService
                 foreach (['submitted_at', 'submitted_by', 'reviewed_at', 'reviewed_by', 'returned_at', 'returned_by', 'rejection_reason', 'revision_comments', 'printed_at', 'surveyor_signature_path', 'surveyor_pin', 'submitted_by_signature_path', 'submitted_by_pin', 'selected_approvers', 'applicant_signature'] as $field) {
                     unset($data[$field]);
                 }
-                $clone = MemberAdmission::create(array_merge($data, [
+                $clone = new MemberAdmission(array_merge($data, [
                     'previous_admission_id' => $source->id, 'loan_dofa' => $number,
                     'is_legacy' => true, 'status' => 'draft', 'revision_count' => 0,
                     'survey_date' => now()->toDateString(), 'created_by' => $user->id,
                     'assigned_officer_id' => $user->id,
                 ]));
+                // Cycle copies keep the existing code verbatim. Admission's
+                // create/update hooks normalize codes and can sync older files.
+                $clone->saveQuietly();
                 foreach (['familyMembers' => 'family_members', 'otherAssets' => 'other_assets'] as $relation => $key) {
                     foreach ($snapshot['admission'][$key] ?? [] as $row) {
                         $clone->{$relation}()->create(Arr::except($row, ['id', 'member_admission_id', 'created_at', 'updated_at']));
@@ -116,25 +206,14 @@ class CycleRenewalService
     public function selectLoan(MemberLoanCycle $cycle, int $productId, int $categoryId, float $amount, int $revision): MemberLoanCycle
     {
         return DB::transaction(function () use ($cycle, $productId, $categoryId, $amount, $revision) {
-            $master = MemberAdmission::whereKey($cycle->master_admission_id)->lockForUpdate()->firstOrFail();
+            MemberAdmission::whereKey($cycle->master_admission_id)->lockForUpdate()->firstOrFail();
             $cycle = $this->lockEditable($cycle, $revision);
             $product = LoanProduct::where('is_active', true)->where('loan_category_id', $categoryId)->find($productId);
             $category = LoanCategory::where('is_active', true)->find($categoryId);
             if (! $product || ! $category || $amount <= 0 || $amount < (float) $product->min_amount || ($product->max_amount !== null && $amount > (float) $product->max_amount)) {
                 throw ValidationException::withMessages(['requested_amount' => 'সঠিক ক্যাটাগরি, প্রোডাক্ট ও অনুমোদিত সীমার ঋণের পরিমাণ দিন।']);
             }
-            $decision = $master->resolveActiveLoanCreate($productId, $categoryId);
-            if ($decision['action'] !== 'create' && (int) $decision['loan']->id !== (int) $cycle->loan_id) {
-                throw ValidationException::withMessages(['cycle' => MemberAdmission::alreadyLoanFormMessage($decision['loan'])]);
-            }
-            // Code 38 loans may coexist; a second regular loan must still be blocked
-            // when switching a cycle draft from Code 38 to a regular product.
-            if (! $product->isCode38()) {
-                $otherRegular = $master->activeLoanForms()->first(fn ($l) => (int) $l->id !== (int) $cycle->loan_id && ! $l->loanProduct?->isCode38());
-                if ($otherRegular) {
-                    throw ValidationException::withMessages(['cycle' => MemberAdmission::alreadyLoanFormMessage($otherRegular)]);
-                }
-            }
+            $this->assertLoanAvailable($cycle, $product, $categoryId);
             $loan = $cycle->loan ?? new LoanApplication;
             $changed = $loan->exists && ((int) $loan->loan_product_id !== $productId || (int) $loan->loan_category_id !== $categoryId || (float) $loan->requested_amount !== $amount);
             $duration = max(1, (int) ($product->duration_months ?: 12));
@@ -191,7 +270,7 @@ class CycleRenewalService
     /** Read-only dossier. Closed cycles use their captured loan and product version. */
     public function display(MemberLoanCycle $cycle): array
     {
-        $admission = $cycle->admission_snapshot;
+        $admission = $this->admissionForCycle($cycle);
         $member = $this->memberForCycle($cycle);
         $loan = $cycle->loan?->load(['loanProduct.loanCategory', 'loanCategory', 'branch', 'samity', 'disbursedBy', 'repaidBy', 'submittedBy']);
         if ($cycle->state === 'closed' && $cycle->working_snapshot) {
@@ -214,7 +293,7 @@ class CycleRenewalService
 
     public function memberForCycle(MemberLoanCycle $cycle): MemberAdmission
     {
-        $admission = $cycle->admission_snapshot;
+        $admission = $this->admissionForCycle($cycle);
         $member = (new MemberAdmission)->forceFill(Arr::only($admission, [...(new MemberAdmission)->getFillable(), 'id', 'created_at', 'updated_at']));
         $member->setRelation('branch', ! empty($admission['branch']) ? (new Branch)->forceFill($admission['branch']) : null);
         $member->setRelation('samity', ! empty($admission['samity']) ? (new Samity)->forceFill($admission['samity']) : null);

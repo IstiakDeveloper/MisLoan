@@ -4,12 +4,16 @@ import AddressSection from '@/pages/MemberAdmission/sections/AddressSection';
 import EconomicPropertySection from '@/pages/MemberAdmission/sections/EconomicPropertySection';
 import FamilyMembersSection from '@/pages/MemberAdmission/sections/FamilyMembersSection';
 import FinancialCommentsSection from '@/pages/MemberAdmission/sections/FinancialCommentsSection';
-import IdentitySection from '@/pages/MemberAdmission/sections/IdentitySection';
 import OtherAssetsSection from '@/pages/MemberAdmission/sections/OtherAssetsSection';
-import PersonalInfoSection from '@/pages/MemberAdmission/sections/PersonalInfoSection';
+import {
+    cycleAdmissionEdits,
+    restoreCycleAdmissionDraft,
+} from '@/utils/cycleAdmissionDraft';
 import { toEnglishDigits } from '@/utils/memberCodeUtils';
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import { useEffect } from 'react';
+import CycleIdentitySection from './CycleIdentitySection';
+import CyclePersonalInfoSection from './CyclePersonalInfoSection';
 
 const photos: Record<string, string> = {
     customer_photo: 'customer_photo_path',
@@ -24,6 +28,7 @@ export default function AdmissionEdit({
     cycle,
     admission,
     categories,
+    editableFields,
     documentManifest = [],
 }: {
     cycle: {
@@ -34,6 +39,7 @@ export default function AdmissionEdit({
     };
     admission: Record<string, any>;
     categories: Array<{ id: number; category_name: string }>;
+    editableFields: string[];
     documentManifest?: Array<{
         source: string | null;
         path: string | null;
@@ -53,8 +59,12 @@ export default function AdmissionEdit({
         });
         try {
             const cached = JSON.parse(localStorage.getItem(localKey) || 'null');
-            if (cached?.revision === cycle.revision)
-                return { ...initial, ...cached };
+            return restoreCycleAdmissionDraft(
+                initial,
+                cached,
+                editableFields,
+                Object.keys(photos),
+            );
         } catch {
             /* Server copy remains available. */
         }
@@ -65,11 +75,13 @@ export default function AdmissionEdit({
     const validationErrors = (page.props as any)?.errors || {};
     const mergedErrors = { ...validationErrors, ...serverErrors };
     const hasErrors = Object.keys(mergedErrors).length > 0;
-    const setData = (field: string, value: any) =>
+    const setData = (field: string, value: any) => {
+        if (!editableFields.includes(field)) return;
         form.setData((previous: Record<string, any>) => ({
             ...previous,
             [field]: value,
         }));
+    };
     useEffect(() => {
         form.setData('revision', cycle.revision);
     }, [cycle.revision]);
@@ -78,8 +90,13 @@ export default function AdmissionEdit({
             try {
                 localStorage.setItem(
                     localKey,
-                    JSON.stringify(data, (_key, value) =>
-                        value instanceof File ? undefined : value,
+                    JSON.stringify(
+                        {
+                            id: admission.id,
+                            ...cycleAdmissionEdits(data, editableFields),
+                        },
+                        (_key, value) =>
+                            value instanceof File ? undefined : value,
                     ),
                 );
             } catch {
@@ -92,7 +109,7 @@ export default function AdmissionEdit({
     const save = (proceed: boolean) => {
         form.transform((values) => {
             const payload: Record<string, any> = {
-                ...values,
+                ...cycleAdmissionEdits(values, editableFields),
                 continue: proceed,
                 family_members: JSON.stringify(values.family_members || []),
                 other_assets: JSON.stringify(values.other_assets || []),
@@ -177,6 +194,10 @@ export default function AdmissionEdit({
                         দফার তথ্য সংশোধন করুন; পরিবর্তন ছাড়াও সংরক্ষণ করে এগোতে
                         পারবেন।
                     </p>
+                    <p className="text-sm text-emerald-900">
+                        সদস্য নম্বর, NID ও স্মার্ট কার্ড আগের সদস্য ফাইলের মতোই
+                        থাকবে। এই দফায় পরিচয়ের তথ্য পরিবর্তন করা যাবে না।
+                    </p>
                     {buttons}
                 </div>
                 {hasErrors && (
@@ -184,13 +205,15 @@ export default function AdmissionEdit({
                         role="alert"
                         className="rounded-xl border border-red-300 bg-red-50 p-4 text-red-800"
                     >
-                        <p className="font-semibold mb-1">
+                        <p className="mb-1 font-semibold">
                             অনুগ্রহ করে নিচের ত্রুটিগুলো সংশোধন করুন:
                         </p>
-                        <ul className="list-disc list-inside space-y-0.5 text-sm">
-                            {Object.entries(mergedErrors).map(([key, message]) => (
-                                <li key={key}>{String(message)}</li>
-                            ))}
+                        <ul className="list-inside list-disc space-y-0.5 text-sm">
+                            {Object.entries(mergedErrors).map(
+                                ([key, message]) => (
+                                    <li key={key}>{String(message)}</li>
+                                ),
+                            )}
                         </ul>
                     </div>
                 )}
@@ -245,11 +268,11 @@ export default function AdmissionEdit({
                         ভর্তির তারিখ: {admission.admission_date}
                     </p>
                 </div>
-                <PersonalInfoSection
+                <CyclePersonalInfoSection
                     data={data}
                     setData={setData}
                     errors={mergedErrors}
-                    ignoreAdmissionId={admission.id}
+                    cycleId={cycle.id}
                 />
                 <AddressSection
                     data={data}
@@ -295,11 +318,10 @@ export default function AdmissionEdit({
                         });
                     }}
                 />
-                <IdentitySection
+                <CycleIdentitySection
                     data={data}
                     setData={setData}
                     errors={mergedErrors}
-                    ignoreAdmissionId={admission.id}
                 />
                 <EconomicPropertySection
                     data={data}

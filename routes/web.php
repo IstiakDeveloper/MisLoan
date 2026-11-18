@@ -317,6 +317,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::prefix('cycle-hub')->name('cycle-hub.')->group(function () {
             Route::get('renewals/{cycle}/admission', [CycleRenewalController::class, 'edit'])->name('renewals.edit');
             Route::post('renewals/{cycle}/admission', [CycleRenewalController::class, 'update'])->name('renewals.update');
+            Route::get('renewals/{cycle}/check-unique', [CycleRenewalController::class, 'checkUnique'])->name('renewals.check-unique');
             Route::get('renewals/{cycle}/loan', [CycleRenewalController::class, 'loan'])->name('renewals.loan');
             Route::post('renewals/{cycle}/loan', [CycleRenewalController::class, 'selectLoan'])->name('renewals.select-loan');
             Route::get('renewals/{cycle}/forms/{form}', [CycleRenewalController::class, 'form'])->whereNumber('form')->name('renewals.form');

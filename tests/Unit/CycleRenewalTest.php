@@ -28,6 +28,7 @@ use App\Services\NotificationService;
 use App\Support\LoanFormVisibility;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
@@ -107,6 +108,139 @@ beforeEach(function () {
     (require database_path('migrations/2026_11_18_120000_create_member_loan_cycles_table.php'))->up();
     Storage::fake('public');
     $this->withoutMiddleware([HandleInertiaRequests::class, EnsurePortfolioHandoverComplete::class, CheckMaintenanceMode::class]);
+});
+
+it('reuses source identity despite posted or cached identity changes without changing original files', function () {
+    extract(renewalContext());
+    $member->update(['smart_card_number' => '9876543210']);
+    $originalMember = $member->fresh()->getRawOriginal();
+    $originalLoan = $source->fresh()->getRawOriginal();
+    [$cycle] = app(CycleRenewalService::class)->start($member, $user);
+    // Simulate a draft saved by the previous editable-identity implementation.
+    $snapshot = $cycle->admission_snapshot;
+    $snapshot['nid_number'] = '1111111111';
+    $snapshot['smart_card_number'] = '2222222222';
+    $cycle->update(['admission_snapshot' => $snapshot]);
+    $url = '/member/cycle-hub/renewals/'.$cycle->id.'/admission';
+    $this->actingAs($user)->get($url, ['X-Inertia' => 'true'])
+        ->assertOk()->assertJsonPath('props.admission.nid_number', '1234567890')
+        ->assertJsonPath('props.admission.smart_card_number', '9876543210');
+    $this->post($url, [
+        'revision' => $cycle->revision, 'nid_number' => ['invalid client identity'],
+        'smart_card_number' => str_repeat('9', 100), 'application_no' => 'other-member',
+        'branch_id' => 999, 'samity_id' => 999, 'previous_admission_id' => 999,
+        'admission_date' => 'invalid-date', 'loan_dofa' => 100, 'status' => 'approved',
+        'monthly_income' => 25000, 'present_village_road' => 'Updated Village',
+        'family_member_mobile' => '01822222222', 'date_of_birth' => '1990-01-02',
+    ])->assertSessionHasNoErrors()->assertRedirect();
+    $cycle->refresh();
+    expect($cycle->admission->nid_number)->toBe('1234567890')
+        ->and($cycle->admission->smart_card_number)->toBe('9876543210')
+        ->and($cycle->admission->application_no)->toBe($member->application_no)
+        ->and((int) $cycle->admission->branch_id)->toBe($branch->id)
+        ->and((int) $cycle->admission->samity_id)->toBe((int) $member->samity_id)
+        ->and((int) $cycle->admission->previous_admission_id)->toBe($member->id)
+        ->and((int) $cycle->admission->loan_dofa)->toBe(8)
+        ->and($cycle->admission->status)->toBe('draft')
+        ->and($cycle->admission->admission_date->format('Y-m-d'))->toBe('2020-01-01')
+        ->and((float) $cycle->admission->monthly_income)->toBe(25000.0)
+        ->and($cycle->admission->present_village_road)->toBe('Updated Village')
+        ->and($cycle->admission->family_member_mobile)->toBe('01822222222')
+        ->and($cycle->admission->date_of_birth->format('Y-m-d'))->toBe('1990-01-02')
+        ->and($cycle->admission_snapshot['nid_number'])->toBe('1234567890')
+        ->and($member->fresh()->getRawOriginal())->toBe($originalMember)
+        ->and($source->fresh()->getRawOriginal())->toBe($originalLoan);
+});
+
+it('does not revalidate inherited NID as a new member while ordinary admission still checks duplicates', function () {
+    extract(renewalContext());
+    $unrelated = MemberAdmission::create(['application_no' => '0001000099', 'branch_id' => $branch->id, 'nid_number' => $member->nid_number]);
+    [$cycle] = app(CycleRenewalService::class)->start($member, $user);
+    $this->actingAs($user)->post('/member/cycle-hub/renewals/'.$cycle->id.'/admission', [
+        'revision' => $cycle->revision, 'nid_number' => $member->nid_number, 'continue' => true,
+    ])->assertSessionHasNoErrors()->assertRedirect('/member/cycle-hub/renewals/'.$cycle->id.'/loan');
+    expect(MemberAdmission::findDuplicateByIdentity($member->nid_number, $cycle->admission_id, $member->application_no)?->id)->toBe($unrelated->id);
+});
+
+it('keeps legacy short member codes verbatim and resumes through a linked normalized legacy copy', function () {
+    extract(renewalContext());
+    DB::table('member_admissions')->where('id', $member->id)->update(['application_no' => '1']);
+    $member->refresh();
+    $legacy = MemberAdmission::create([
+        'application_no' => '1', 'branch_id' => $branch->id, 'previous_admission_id' => $member->id,
+        'nid_number' => $member->nid_number, 'mobile_number' => '01822222222', 'loan_dofa' => 8,
+    ]);
+    expect($legacy->application_no)->not->toBe($member->application_no);
+    $old = $member->fresh()->getRawOriginal();
+    [$cycle] = app(CycleRenewalService::class)->start($legacy, $user, $source->id);
+    expect($cycle->master_admission_id)->toBe($member->id)->and($cycle->number)->toBe(9)
+        ->and($cycle->admission->application_no)->toBe('1');
+    $this->actingAs($user)->post('/member/cycle-hub/renewals/'.$cycle->id.'/admission', [
+        'revision' => $cycle->revision, 'nid_number' => $member->nid_number,
+        'mobile_number' => $legacy->mobile_number,
+    ])->assertSessionHasNoErrors();
+    [$resumed, $reused] = app(CycleRenewalService::class)->start($legacy, $user);
+    expect($reused)->toBeTrue()->and($resumed->id)->toBe($cycle->id)
+        ->and($cycle->admission->fresh()->application_no)->toBe('1')
+        ->and($member->fresh()->getRawOriginal())->toBe($old);
+});
+
+it('accepts inherited mobile duplicates but rejects a changed mobile owned by another member', function () {
+    extract(renewalContext());
+    MemberAdmission::create(['application_no' => '0001000098', 'branch_id' => $branch->id, 'mobile_number' => $member->mobile_number]);
+    MemberAdmission::create(['application_no' => '0001000099', 'branch_id' => $branch->id, 'mobile_number' => '01833333333']);
+    [$cycle] = app(CycleRenewalService::class)->start($member, $user);
+    $base = '/member/cycle-hub/renewals/'.$cycle->id;
+    $this->actingAs($user)->getJson($base.'/check-unique?mobile_number=%2B8801711111111')
+        ->assertOk()->assertJsonPath('errors', []);
+    $this->post($base.'/admission', ['revision' => $cycle->revision, 'mobile_number' => '+8801711111111'])
+        ->assertSessionHasNoErrors();
+    $cycle->refresh();
+    $this->getJson($base.'/check-unique?mobile_number=01833333333')
+        ->assertOk()->assertJsonStructure(['errors' => ['mobile_number']]);
+    $this->from($base.'/admission')->post($base.'/admission', [
+        'revision' => $cycle->revision, 'mobile_number' => '01833333333', 'monthly_income' => 99999,
+    ])->assertSessionHasErrors('mobile_number')->assertRedirect($base.'/admission');
+    expect($cycle->admission->fresh()->mobile_number)->toBe('+8801711111111')
+        ->and((float) $cycle->admission->fresh()->monthly_income)->toBe(10000.0)
+        ->and($cycle->fresh()->revision)->toBe($cycle->revision);
+});
+
+it('does not hide an unrelated mobile conflict behind a related legacy row', function () {
+    extract(renewalContext());
+    MemberAdmission::create(['application_no' => $member->application_no, 'branch_id' => $branch->id,
+        'previous_admission_id' => $member->id, 'mobile_number' => '01833333333']);
+    MemberAdmission::create(['application_no' => '0001000099', 'branch_id' => $branch->id, 'mobile_number' => '01833333333']);
+    [$cycle] = app(CycleRenewalService::class)->start($member, $user);
+    $this->actingAs($user)->post('/member/cycle-hub/renewals/'.$cycle->id.'/admission', [
+        'revision' => $cycle->revision, 'mobile_number' => '01833333333',
+    ])->assertSessionHasErrors('mobile_number');
+});
+
+it('authorizes cycle contact checks against the stored cycle branch', function () {
+    extract(renewalContext());
+    [$cycle] = app(CycleRenewalService::class)->start($member, $user);
+    $user->update(['branch_id' => $branch->id + 100]);
+    $this->actingAs($user)->getJson('/member/cycle-hub/renewals/'.$cycle->id.'/check-unique?mobile_number=01833333333&branch_id='.$branch->id)
+        ->assertForbidden();
+});
+
+it('keeps active regular loan guards across normalized legacy member copies', function () {
+    extract(renewalContext());
+    DB::table('member_admissions')->where('id', $member->id)->update(['application_no' => '1']);
+    $member->refresh();
+    $legacy = MemberAdmission::create(['application_no' => '1', 'branch_id' => $branch->id, 'previous_admission_id' => $member->id]);
+    LoanApplication::create([
+        'application_no' => 'LN-LEGACY-ACTIVE', 'member_admission_id' => $legacy->id,
+        'loan_product_id' => $product->id, 'loan_category_id' => $category->id, 'status' => 'disbursed',
+    ]);
+    $service = app(CycleRenewalService::class);
+    [$cycle] = $service->start($member, $user);
+    expect(fn () => $service->selectLoan($cycle, $product->id, $category->id, 10000, $cycle->revision))
+        ->toThrow(ValidationException::class);
+    expect(fn () => $service->assertLoanAvailable($cycle, $product, $category->id))
+        ->toThrow(ValidationException::class);
+    expect($cycle->fresh()->loan_id)->toBeNull()->and(LoanApplication::count())->toBe(2);
 });
 
 it('copies the entire source file into a stable independent cycle and resumes it', function () {

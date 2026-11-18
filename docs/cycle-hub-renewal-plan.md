@@ -15,6 +15,17 @@ message rather than choosing between duplicate member files.
 
 ## Verification of the implementation
 
+Cycle-only identity fix: member code, NID, Smart Card, branch, samity and original
+admission date are taken from the captured source, never a submitted/cached value.
+The scoped editor keeps the other admission details editable. Unchanged mobile
+numbers are inherited; changed numbers exclude this member's linked files but
+still reject another member's number. Legacy clones are resolved through stored
+parent/cycle links, and cycle saves do not run ordinary admission code-sync hooks.
+Closed history and ordinary Admission/Loan Application validation are unchanged.
+Verification for this fix: 66 related backend tests, four frontend draft tests,
+and a production build passed. Project-wide TypeScript errors remain in existing
+files; none are reported in the changed editor, sections or draft helper.
+
 - All 22 new renewal tests passed, including independent documents, exact loan
   binding, unchanged-admission continuation, current signatures, stale revisions,
   incompatible forms, corrected/cleared values, Code 38 coexistence, existing

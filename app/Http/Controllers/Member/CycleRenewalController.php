@@ -6,7 +6,6 @@ use App\Http\Controllers\Concerns\RequiresSuperAdminDeletePin;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Member\SaveCycleAdmissionRequest;
 use App\Models\LoanCategory;
-use App\Models\MemberAdmission;
 use App\Models\MemberCategory;
 use App\Models\MemberLoanCycle;
 use App\Models\Role;
@@ -46,7 +45,8 @@ class CycleRenewalController extends Controller
 
         return Inertia::render('Member/CycleHub/AdmissionEdit', [
             'cycle' => $cycle->only(['id', 'number', 'revision', 'loan_id', 'master_admission_id']),
-            'admission' => $cycle->admission_snapshot,
+            'admission' => app(CycleRenewalService::class)->admissionForCycle($cycle),
+            'editableFields' => array_values(array_filter(array_keys((new SaveCycleAdmissionRequest)->rules()), fn ($field) => ! str_contains($field, '.'))),
             'categories' => MemberCategory::active()->orderBy('category_name')->get(),
             'documentManifest' => $cycle->document_manifest ?? [],
         ]);
@@ -61,14 +61,9 @@ class CycleRenewalController extends Controller
                 $service = app(CycleRenewalService::class);
                 $cycle = $service->lockEditable($cycle, $request->integer('revision'));
                 $member = $cycle->admission;
-                $member->fill(Arr::only($cycle->admission_snapshot, $member->getFillable()));
+                $member->fill(Arr::only($service->admissionForCycle($cycle), $member->getFillable()));
                 $data = $request->validated();
-                foreach (['nid_number', 'smart_card_number'] as $identity) {
-                    if (array_key_exists($identity, $data) && $data[$identity] && MemberAdmission::findDuplicateByIdentity($data[$identity], $member->id, $member->application_no)) {
-                        throw ValidationException::withMessages([$identity => 'এই পরিচয়পত্র অন্য সদস্যের জন্য ব্যবহার হয়েছে।']);
-                    }
-                }
-                if (! empty($data['mobile_number']) && MemberAdmission::findDuplicateByMobile($data['mobile_number'], $member->id, $member->application_no)) {
+                if (! empty($data['mobile_number']) && $service->duplicateMobile($cycle, $data['mobile_number'])) {
                     throw ValidationException::withMessages(['mobile_number' => 'এই মোবাইল নম্বর অন্য সদস্যের জন্য ব্যবহার হয়েছে।']);
                 }
                 $manifest = $cycle->document_manifest ?? [];
@@ -106,7 +101,9 @@ class CycleRenewalController extends Controller
                 }
                 $member->total_land_amount = (float) $member->cultivable_land_amount + (float) $member->non_cultivable_land_amount;
                 $member->total_land_value = (float) $member->cultivable_land_value + (float) $member->non_cultivable_land_value;
-                $member->save();
+                // Do not run Admission's code-normalization / cross-file sync
+                // hooks on a cycle's independent copy.
+                $member->saveQuietly();
                 foreach (['family_members' => 'familyMembers', 'other_assets' => 'otherAssets'] as $key => $relation) {
                     if (array_key_exists($key, $data)) {
                         $member->{$relation}()->delete();
@@ -144,6 +141,18 @@ class CycleRenewalController extends Controller
         return redirect()->route($request->boolean('continue') ? 'member.cycle-hub.renewals.loan' : 'member.cycle-hub.renewals.edit', $cycle->id)->with('success', 'এই দফার ভর্তি তথ্য সংরক্ষিত হয়েছে।');
     }
 
+    public function checkUnique(Request $request, MemberLoanCycle $cycle)
+    {
+        $this->authorizeCycle($request, $cycle, true);
+        app(CycleRenewalService::class)->lockEditable($cycle);
+        $data = $request->validate(['mobile_number' => 'nullable|string|max:20']);
+        $duplicate = app(CycleRenewalService::class)->duplicateMobile($cycle, $data['mobile_number'] ?? null);
+
+        return response()->json(['errors' => $duplicate
+            ? ['mobile_number' => 'এই মোবাইল নম্বর অন্য সদস্যের জন্য ব্যবহার হয়েছে।']
+            : (object) []]);
+    }
+
     public function loan(Request $request, MemberLoanCycle $cycle)
     {
         $this->authorizeCycle($request, $cycle, true);
@@ -151,7 +160,7 @@ class CycleRenewalController extends Controller
 
         return Inertia::render('Member/CycleHub/LoanSelection', [
             'cycle' => $cycle->only(['id', 'number', 'revision', 'loan_id']),
-            'admission' => $cycle->admission_snapshot,
+            'admission' => app(CycleRenewalService::class)->admissionForCycle($cycle),
             'loan' => $cycle->loan?->only(['id', 'loan_category_id', 'loan_product_id', 'requested_amount']),
             'categories' => LoanCategory::where('is_active', true)->with(['loanProducts' => fn ($q) => $q->where('is_active', true)])->get(),
         ]);

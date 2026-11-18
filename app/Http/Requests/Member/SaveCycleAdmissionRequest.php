@@ -38,7 +38,8 @@ class SaveCycleAdmissionRequest extends FormRequest
         ] as $field) {
             $rules[$field] = 'nullable|string|max:10000';
         }
-        foreach (['mobile_number', 'alternative_mobile', 'family_member_mobile', 'guarantor_mobile', 'nid_number', 'smart_card_number', 'tin_number'] as $field) {
+        // Identity and member code come from the cycle's captured source only.
+        foreach (['mobile_number', 'alternative_mobile', 'family_member_mobile', 'guarantor_mobile', 'tin_number'] as $field) {
             $rules[$field] = 'nullable|string|max:20';
         }
         foreach (['present_post_code', 'permanent_post_code'] as $field) {
@@ -47,7 +48,7 @@ class SaveCycleAdmissionRequest extends FormRequest
         foreach (['present_division', 'present_district', 'present_upazila', 'present_union', 'present_village_road', 'permanent_division', 'permanent_district', 'permanent_upazila', 'permanent_union', 'permanent_village_road', 'house_type', 'other_livestock'] as $field) {
             $rules[$field] = 'nullable|string|max:255';
         }
-        foreach (['survey_date', 'admission_date', 'date_of_birth'] as $field) {
+        foreach (['survey_date', 'date_of_birth'] as $field) {
             $rules[$field] = 'nullable|date';
         }
         foreach (['permanent_address_same', 'want_sms_service', 'nid_both_sides'] as $field) {

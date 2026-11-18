@@ -12,6 +12,7 @@ use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 
 /** Only managed cycle applications participate; normal loan requests pass through. */
 class PreserveCycleLoanContext
@@ -49,7 +50,7 @@ class PreserveCycleLoanContext
         }
 
         return DB::transaction(function () use ($request, $next, $cycle) {
-            $master = MemberAdmission::whereKey($cycle->master_admission_id)->lockForUpdate()->firstOrFail();
+            MemberAdmission::whereKey($cycle->master_admission_id)->lockForUpdate()->firstOrFail();
             $cycle = MemberLoanCycle::whereKey($cycle->id)->lockForUpdate()->firstOrFail();
             $loan = $cycle->loan()->lockForUpdate()->firstOrFail();
             if ($request->isMethod('DELETE')) {
@@ -58,8 +59,11 @@ class PreserveCycleLoanContext
             abort_if($request->routeIs('member.loan-applications.update-member-code', 'member.loan-applications.update-samity'), 422, 'নতুন দফায় সদস্য নম্বর ও সমিতি অপরিবর্তিত থাকবে।');
             if ($request->routeIs('member.loan-applications.forms.*') || $request->routeIs('member.loan-applications.submit')) {
                 abort_unless($request->integer('cycle_revision') === $cycle->revision, 409, 'এই দফার তথ্য বদলেছে। পেজ রিফ্রেশ করে আবার চেষ্টা করুন।');
-                $decision = $master->resolveActiveLoanCreate((int) $loan->loan_product_id, (int) $loan->loan_category_id);
-                abort_if($decision['action'] !== 'create' && (int) $decision['loan']->id !== (int) $loan->id, 422, MemberAdmission::alreadyLoanFormMessage($decision['loan'] ?? null));
+                try {
+                    app(CycleRenewalService::class)->assertLoanAvailable($cycle, $loan->loanProduct, (int) $loan->loan_category_id);
+                } catch (ValidationException $e) {
+                    abort(422, collect($e->errors())->flatten()->first());
+                }
             }
             if ($request->routeIs('member.loan-applications.forms.*')) {
                 foreach (['member_id' => $cycle->admission_id, 'loan_product_id' => $loan->loan_product_id, 'loan_category_id' => $loan->loan_category_id] as $field => $expected) {
