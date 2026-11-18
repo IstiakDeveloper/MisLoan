@@ -35,7 +35,12 @@ export default function PageLoader() {
     };
 
     useEffect(() => {
-        const start = () => {
+        const start = (event?: any) => {
+            // Never trigger loader for prefetch visits
+            if (event?.detail?.visit?.prefetch) return;
+            // Never trigger loader for partial background reloads (e.g. badges, notifications)
+            if (event?.detail?.visit?.only && event.detail.visit.only.length > 0) return;
+
             cleanup();
             setIsLoading(true);
             setProgress(25);

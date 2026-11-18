@@ -193,39 +193,32 @@ class HandleInertiaRequests extends Middleware
             'pendingVerifications' => 0,
         ];
 
-        $badgeCounts = $request->user()
-            ? Inertia::defer(function () use ($request, $emptyBadges) {
-                $user = $request->user();
-                if (! $user) {
-                    return $emptyBadges;
-                }
+        $badgeCounts = $emptyBadges;
+        $notifications = [];
+        $unreadNotificationsCount = 0;
 
-                return Cache::remember(
-                    NavBadgeCache::key((int) $user->id),
-                    30,
-                    fn () => app(NavBadgeService::class)->forUser($user)
-                );
-            }, 'nav')
-            : $emptyBadges;
+        if ($user = $request->user()) {
+            $badgeCounts = Cache::remember(
+                NavBadgeCache::key((int) $user->id),
+                30,
+                fn () => app(NavBadgeService::class)->forUser($user)
+            );
 
-        $notifications = $request->user()
-            ? Inertia::defer(function () use ($request) {
-                return Notification::query()
-                    ->where('user_id', $request->user()->id)
+            try {
+                $notifications = Notification::query()
+                    ->where('user_id', $user->id)
                     ->orderByDesc('created_at')
                     ->limit(8)
                     ->get(['id', 'user_id', 'type', 'title', 'message', 'action_url', 'is_read', 'created_at']);
-            }, 'nav')
-            : [];
 
-        $unreadNotificationsCount = $request->user()
-            ? Inertia::defer(function () use ($request) {
-                return Notification::query()
-                    ->where('user_id', $request->user()->id)
+                $unreadNotificationsCount = Notification::query()
+                    ->where('user_id', $user->id)
                     ->unread()
                     ->count();
-            }, 'nav')
-            : 0;
+            } catch (\Exception $e) {
+                Log::error('Error loading notifications in HandleInertiaRequests: '.$e->getMessage());
+            }
+        }
 
         return array_merge(parent::share($request), [
             'csrf_token' => csrf_token(),

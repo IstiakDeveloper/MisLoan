@@ -181,8 +181,14 @@ export default function ApprovalForm({
     const [saving, setSaving] = useState(false);
     const skipNextLocalSave = useRef(true);
     const isMobile = useIsMobile();
-    const page = usePage<{ flash?: { error?: string | null; success?: string | null } }>();
+    const page = usePage<{ flash?: { error?: string | null; success?: string | null }; errors?: Record<string, string> }>();
     const flashError = page.props.flash?.error || null;
+    const pageErrors = page.props.errors || {};
+
+    const mergedErrors = useMemo(() => ({
+        ...pageErrors,
+        ...errors,
+    }), [pageErrors, errors]);
 
     const draftKey = useMemo(
         () =>
@@ -836,7 +842,7 @@ export default function ApprovalForm({
         requestedAmount,
         savingsProducts,
         loanRound,
-        errors,
+        errors: mergedErrors,
     };
 
     const effectiveApprovedAmount = useMemo(() => {
@@ -1132,11 +1138,11 @@ export default function ApprovalForm({
                             ref={leftPaneRef}
                         >
                             <div className="bg-gray-50/60 p-3 lg:p-5 rounded-lg min-h-full">
-                                {Object.keys(errors).length > 0 && (
+                                {Object.keys(mergedErrors).length > 0 && (
                                     <div className="mb-4 p-4 bg-red-50 text-red-700 rounded-xl border border-red-200 text-xs md:text-sm">
                                         <strong>কিছু ত্রুটি পাওয়া গেছে:</strong>
                                         <ul className="list-disc pl-5 mt-2 space-y-0.5">
-                                            {Object.entries(errors).map(([key, msg]) => (
+                                            {Object.entries(mergedErrors).map(([key, msg]) => (
                                                 <li key={key}>{msg}</li>
                                             ))}
                                         </ul>

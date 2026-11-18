@@ -150,15 +150,6 @@ function getPageTitle(currentPath: string): string {
     return 'Dashboard';
 }
 
-const HOT_NAV_HREFS = new Set([
-    '/dashboard',
-    '/member-admissions',
-    '/member/loan-applications',
-    '/verifications',
-    '/head-office/admission-members',
-    '/head-office/loan-applications',
-]);
-
 export default function AdminLayout({ children }: AdminLayoutProps) {
     const page = usePage<PageProps>();
     const { auth, flash, siteMaintenance = false, badgeCounts = {} } = page.props;
@@ -603,7 +594,6 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                         <li key={item.name}>
                                             <Link
                                                 href={item.href}
-                                                prefetch={HOT_NAV_HREFS.has(item.href) ? true : undefined}
                                                 onClick={() => isMobile && setSidebarOpen(false)}
                                                 className={`group relative flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl text-[12.5px] font-medium transition-all duration-200 ${
                                                     isActive
@@ -672,7 +662,6 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                                 <li key={item.name}>
                                                     <Link
                                                         href={item.href}
-                                                prefetch={HOT_NAV_HREFS.has(item.href) ? true : undefined}
                                                         onClick={() => isMobile && setSidebarOpen(false)}
                                                         className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg text-[11.5px] font-medium transition-all ${
                                                             isActive
@@ -726,7 +715,6 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                                 <li key={item.name}>
                                                     <Link
                                                         href={item.href}
-                                                prefetch={HOT_NAV_HREFS.has(item.href) ? true : undefined}
                                                         onClick={() => isMobile && setSidebarOpen(false)}
                                                         className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg text-[11.5px] font-medium transition-all ${
                                                             isActive
@@ -1182,7 +1170,6 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                 <Link
                                     key={item.name}
                                     href={item.href}
-                                                prefetch={HOT_NAV_HREFS.has(item.href) ? true : undefined}
                                     className={`flex flex-col items-center justify-center w-full h-full space-y-0.5 relative py-1 transition-all ${
                                         isActive ? 'text-brand font-bold' : 'text-slate-500 hover:text-slate-800'
                                     }`}

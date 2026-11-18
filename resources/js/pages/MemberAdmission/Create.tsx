@@ -333,6 +333,11 @@ export default function Create({
             getDefaultFormData(suggested_application_no, initialBranchId, currentUser)
         );
 
+    const serverErrors = errors || {};
+    const validationErrors = (page.props as any).errors || {};
+    const mergedErrors = { ...validationErrors, ...serverErrors };
+    const errorList = Object.entries(mergedErrors);
+
     const isLegacyMember = !!data.is_legacy;
 
     const applyMemberType = (legacy: boolean) => {
@@ -1106,7 +1111,7 @@ export default function Create({
                     </div>
                 )}
 
-                {Object.keys(errors).length > 0 && (
+                {errorList.length > 0 && (
                     <div className="rounded-2xl border-2 border-red-500 bg-red-50 p-4 sm:p-5 shadow-xl transition-all">
                         <div className="flex items-start gap-3.5">
                             <div className="rounded-xl bg-red-600 p-2 text-white shrink-0 shadow-md">
@@ -1114,13 +1119,13 @@ export default function Create({
                             </div>
                             <div className="flex-1 min-w-0">
                                 <h3 className="text-base sm:text-lg font-extrabold text-red-900 leading-tight">
-                                    খসড়া সংরক্ষণ করা যায়নি — নিচের {Object.keys(errors).length}টি ইনপুট ফিল্ডের সমস্যা ঠিক করুন:
+                                    খসড়া সংরক্ষণ করা যায়নি — নিচের {errorList.length}টি ইনপুট ফিল্ডের সমস্যা ঠিক করুন:
                                 </h3>
                                 <p className="text-xs text-red-700 mt-1 mb-3 font-medium">
                                     যেসব ফিল্ডে লাল বর্ডার এসেছে সেগুলো সংশোধন করুন।
                                 </p>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                    {Object.entries(errors).map(([key, msg]) => (
+                                    {errorList.map(([key, msg]) => (
                                         <div key={key} className="flex items-start gap-2 text-xs font-semibold text-red-900 bg-white p-2.5 rounded-xl border border-red-200 shadow-xs">
                                             <span className="w-2 h-2 rounded-full bg-red-600 shrink-0 mt-1" />
                                             <div className="min-w-0 flex-1">
@@ -1145,7 +1150,7 @@ export default function Create({
                     <OrganizationSection
                         data={data}
                         setData={setData}
-                        errors={errors}
+                        errors={mergedErrors}
                         branches={branches}
                         hasAllAccess={hasAllAccess}
                         handleBranchChange={handleBranchChange}
@@ -1163,13 +1168,13 @@ export default function Create({
                     <PersonalInfoSection
                         data={data}
                         setData={setData}
-                        errors={errors}
+                        errors={mergedErrors}
                     />
 
                     <AddressSection
                         data={data}
                         setData={setData}
-                        errors={errors}
+                        errors={mergedErrors}
                         presentDistricts={presentDistricts}
                         presentUpazilas={presentUpazilas}
                         permanentDistricts={permanentDistricts}
@@ -1184,7 +1189,7 @@ export default function Create({
                     <IdentitySection
                         data={data}
                         setData={setData}
-                        errors={errors}
+                        errors={mergedErrors}
                     />
 
                     <EconomicPropertySection
@@ -1192,7 +1197,7 @@ export default function Create({
                         setData={setData}
                         toNumVal={toNumVal}
                         toNumChange={toNumChange}
-                        errors={errors}
+                        errors={mergedErrors}
                     />
 
                     <FamilyMembersSection
@@ -1224,7 +1229,7 @@ export default function Create({
                     <FinancialCommentsSection
                         data={data}
                         setData={setData}
-                        errors={errors}
+                        errors={mergedErrors}
                         toNumVal={toNumVal}
                         toNumChange={toNumChange}
                     />

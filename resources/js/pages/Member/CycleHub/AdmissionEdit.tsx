@@ -61,6 +61,10 @@ export default function AdmissionEdit({
         return initial;
     });
     const { data, errors, processing } = form;
+    const serverErrors = errors || {};
+    const validationErrors = (page.props as any)?.errors || {};
+    const mergedErrors = { ...validationErrors, ...serverErrors };
+    const hasErrors = Object.keys(mergedErrors).length > 0;
     const setData = (field: string, value: any) =>
         form.setData((previous: Record<string, any>) => ({
             ...previous,
@@ -175,14 +179,19 @@ export default function AdmissionEdit({
                     </p>
                     {buttons}
                 </div>
-                {Object.keys(errors).length > 0 && (
+                {hasErrors && (
                     <div
                         role="alert"
                         className="rounded-xl border border-red-300 bg-red-50 p-4 text-red-800"
                     >
-                        {Object.entries(errors).map(([key, message]) => (
-                            <p key={key}>{message}</p>
-                        ))}
+                        <p className="font-semibold mb-1">
+                            অনুগ্রহ করে নিচের ত্রুটিগুলো সংশোধন করুন:
+                        </p>
+                        <ul className="list-disc list-inside space-y-0.5 text-sm">
+                            {Object.entries(mergedErrors).map(([key, message]) => (
+                                <li key={key}>{String(message)}</li>
+                            ))}
+                        </ul>
                     </div>
                 )}
                 {documentManifest.some((file) => file.missing) && (
@@ -239,13 +248,13 @@ export default function AdmissionEdit({
                 <PersonalInfoSection
                     data={data}
                     setData={setData}
-                    errors={errors}
+                    errors={mergedErrors}
                     ignoreAdmissionId={admission.id}
                 />
                 <AddressSection
                     data={data}
                     setData={setData}
-                    errors={errors}
+                    errors={mergedErrors}
                     presentDistricts={districts[data.present_division] || []}
                     presentUpazilas={upazilas[data.present_district] || []}
                     permanentDistricts={
@@ -289,13 +298,13 @@ export default function AdmissionEdit({
                 <IdentitySection
                     data={data}
                     setData={setData}
-                    errors={errors}
+                    errors={mergedErrors}
                     ignoreAdmissionId={admission.id}
                 />
                 <EconomicPropertySection
                     data={data}
                     setData={setData}
-                    errors={errors}
+                    errors={mergedErrors}
                     {...numericProps}
                 />
                 <FamilyMembersSection
@@ -371,7 +380,7 @@ export default function AdmissionEdit({
                 <FinancialCommentsSection
                     data={data}
                     setData={setData}
-                    errors={errors}
+                    errors={mergedErrors}
                     {...numericProps}
                 />
                 {buttons}
