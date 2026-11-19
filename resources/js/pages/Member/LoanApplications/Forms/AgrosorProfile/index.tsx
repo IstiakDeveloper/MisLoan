@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
-import { AlertCircle, ArrowLeft, Eye, Printer, Save, X } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Eye, Printer, Save, Trash2, X } from 'lucide-react';
 import {
     clearLoanDraftLocal,
     loadLoanDraftLocal,
@@ -433,6 +433,20 @@ function buildInitialData(
         installment_total: schedule
             ? String(schedule.principal + schedule.serviceCharge)
             : '',
+        // Prefer admission when saved draft left these empty or zero
+        last_year_total_income:
+            (savedData?.last_year_total_income != null && String(savedData.last_year_total_income).trim() !== '' && Number(savedData.last_year_total_income) > 0)
+                ? String(savedData.last_year_total_income)
+                : (yearlyIncome || base.last_year_total_income),
+        last_year_total_expense:
+            (savedData?.last_year_total_expense != null && String(savedData.last_year_total_expense).trim() !== '' && Number(savedData.last_year_total_expense) >= 0)
+                ? String(savedData.last_year_total_expense)
+                : (yearlyExpense || base.last_year_total_expense),
+        last_year_net_profit:
+            str(savedData?.last_year_net_profit) ||
+            ((savedData?.last_year_total_income || yearlyIncome) && (savedData?.last_year_total_expense || yearlyExpense)
+                ? String(Math.round(Number(savedData?.last_year_total_income || yearlyIncome) - Number(savedData?.last_year_total_expense || yearlyExpense)))
+                : (yearlyNet || annualNet)),
         member_signature: '',
     };
 }
@@ -603,6 +617,22 @@ export default function AgrosorProfile({
             delete (merged as any).zonal_manager_comments;
             delete (merged as any).final_approver_comments;
             delete (merged as any).final_approver_remarks;
+            // Auto-populate from admission if local draft income/expense is blank or 0
+            const mIncome = Number(member?.monthly_income) || 0;
+            const mExpense = Number(member?.monthly_expense) || 0;
+            const yIncome = mIncome > 0 ? String(Math.round(mIncome * 12)) : '';
+            const yExpense = mExpense > 0 ? String(Math.round(mExpense * 12)) : '';
+            if ((!merged.last_year_total_income || Number(merged.last_year_total_income) === 0) && yIncome) {
+                merged.last_year_total_income = yIncome;
+            }
+            if ((!merged.last_year_total_expense || Number(merged.last_year_total_expense) === 0) && yExpense) {
+                merged.last_year_total_expense = yExpense;
+            }
+            if (merged.last_year_total_income && merged.last_year_total_expense) {
+                merged.last_year_net_profit = String(
+                    Math.round(Number(merged.last_year_total_income) - Number(merged.last_year_total_expense)),
+                );
+            }
             setData((prev) => withLiveMemberCode({ ...prev, ...merged }, member));
             setLocalRestored(true);
         }
@@ -828,6 +858,25 @@ export default function AgrosorProfile({
                             >
                                 <Eye className="w-4 h-4" /> {showPreview ? 'ফর্মে ফিরে যান' : 'লাইভ প্রিভিউ'}
                             </button>
+                            {existingApplication?.id && existingApplication?.status === 'draft' && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        if (
+                                            confirm(
+                                                `আপনি কি নিশ্চিত যে আপনি এই খসড়া ঋণ আবেদনটি মুছে ফেলতে চান?\n\nআবেদন নং: ${existingApplication.application_no || ''}`,
+                                            )
+                                        ) {
+                                            clearLoanDraftLocal(draftKey);
+                                            router.delete(`/member/loan-applications/${existingApplication.id}`);
+                                        }
+                                    }}
+                                    className="flex items-center gap-1.5 px-3 py-2 bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 rounded-lg text-xs md:text-sm transition-all font-medium whitespace-nowrap cursor-pointer"
+                                    title="খসড়া ঋণ আবেদন মুছে ফেলুন"
+                                >
+                                    <Trash2 className="w-4 h-4" /> <span className="hidden sm:inline">খসড়া মুছুন</span>
+                                </button>
+                            )}
                             <button
                                 type="button"
                                 onClick={handleSaveDraft}

@@ -336,6 +336,13 @@ class MemberAdmissionLoanSyncService
         $samity = $member->samity;
         $self = $this->selfOccupationAndEducation($member);
         $project = (string) ($member->project_name ?: '');
+        $monthlyIncome = (float) ($member->monthly_income ?? 0);
+        $monthlyExpense = (float) ($member->monthly_expense ?? 0);
+        $yearlyIncome = $monthlyIncome > 0 ? (string) round($monthlyIncome * 12) : null;
+        $yearlyExpense = $monthlyExpense > 0 ? (string) round($monthlyExpense * 12) : null;
+        $yearlyNet = ($yearlyIncome !== null && $yearlyExpense !== null)
+            ? (string) round((float) $yearlyIncome - (float) $yearlyExpense)
+            : null;
 
         $fields = [
             'committee_name' => $this->samityDisplayName($samity),
@@ -374,6 +381,9 @@ class MemberAdmissionLoanSyncService
             'immovable_homestead_qty' => $this->positiveString($member->non_cultivable_land_amount),
             'immovable_homestead_value' => $this->positiveString($member->non_cultivable_land_value),
             'family_assets' => $this->familyAssets($member),
+            'last_year_total_income' => $yearlyIncome,
+            'last_year_total_expense' => $yearlyExpense,
+            'last_year_net_profit' => $yearlyNet,
         ];
 
         return array_filter($fields, fn ($v) => $v !== null && $v !== '' && $v !== []);

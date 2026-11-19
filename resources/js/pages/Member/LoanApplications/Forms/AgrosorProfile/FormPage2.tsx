@@ -213,19 +213,53 @@ export default function FormPage2({
 
             {/* 9. Last year */}
             <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm space-y-3">
-                <p className="font-bold text-sm text-gray-800 border-b pb-2">৯. উদ্যোক্তার গত বছরের সংক্ষিপ্ত আয়-ব্যয় বিবরণী</p>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b pb-2">
+                    <p className="font-bold text-sm text-gray-800">৯. উদ্যোক্তার গত বছরের সংক্ষিপ্ত আয়-ব্যয় বিবরণী</p>
+                    {member && (
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const mIncome = Number(member?.monthly_income) || 0;
+                                const mExpense = Number(member?.monthly_expense) || 0;
+                                const yIncome = mIncome > 0 ? String(Math.round(mIncome * 12)) : '';
+                                const yExpense = mExpense > 0 ? String(Math.round(mExpense * 12)) : '';
+                                setData('last_year_total_income', yIncome);
+                                setData('last_year_total_expense', yExpense);
+                                if (yIncome !== '' && yExpense !== '') {
+                                    setData('last_year_net_profit', String(Math.round(Number(yIncome) - Number(yExpense))));
+                                }
+                            }}
+                            className="text-[11px] font-medium text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded transition self-start sm:self-auto cursor-pointer"
+                            title="সদস্য ভর্তি ফরমের মাসিক আয় ও ব্যয় থেকে বার্ষিক হিসাব আনুন"
+                        >
+                            ভর্তি ফরম থেকে হিসাব আনুন
+                        </button>
+                    )}
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     <div>
                         <label className="text-xs font-semibold text-gray-700 mb-1 block">
                             মোট আয় <span className="text-red-500 font-bold">*</span>
                         </label>
-                        <input type="number" className={admissionClass} readOnly={fromAdmission} value={data.last_year_total_income || ''} onChange={(e) => setData('last_year_total_income', e.target.value)} />
+                        <input
+                            type="number"
+                            className={inputClass}
+                            placeholder="বার্ষিক মোট আয়"
+                            value={data.last_year_total_income || ''}
+                            onChange={(e) => setData('last_year_total_income', e.target.value)}
+                        />
                     </div>
                     <div>
                         <label className="text-xs font-semibold text-gray-700 mb-1 block">
                             মোট ব্যয় <span className="text-red-500 font-bold">*</span>
                         </label>
-                        <input type="number" className={admissionClass} readOnly={fromAdmission} value={data.last_year_total_expense || ''} onChange={(e) => setData('last_year_total_expense', e.target.value)} />
+                        <input
+                            type="number"
+                            className={inputClass}
+                            placeholder="বার্ষিক মোট ব্যয়"
+                            value={data.last_year_total_expense || ''}
+                            onChange={(e) => setData('last_year_total_expense', e.target.value)}
+                        />
                     </div>
                     <div>
                         <label className="text-xs font-semibold text-gray-700 mb-1 block">নিট লাভ</label>

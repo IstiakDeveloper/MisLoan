@@ -36,6 +36,7 @@ import {
     X,
     Wrench,
     PauseCircle,
+    Trash2,
 } from 'lucide-react';
 import SuperAdminDeletePinModal from '@/components/SuperAdminDeletePinModal';
 import { toEnglishDigits, formatBranchCode, parseMemberCode } from '@/utils/memberCodeUtils';
@@ -1558,32 +1559,51 @@ export default function Show({ application, routes, categories = [], can_update_
                             )}
 
                             {application.status === 'draft' && (
-                                <Button
-                                    className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs font-semibold rounded-xl text-xs sm:text-sm h-9 sm:h-10"
-                                    onClick={() => {
-                                        if (application.guarantor_submit_error) {
-                                            if (fillableFormIds.includes(2)) {
-                                                router.visit(buildFormUrl(2, { complete: '1' }));
+                                <>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        className="w-full sm:w-auto border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700 shadow-xs font-semibold rounded-xl text-xs sm:text-sm h-9 sm:h-10 cursor-pointer"
+                                        onClick={() => {
+                                            if (
+                                                confirm(
+                                                    `আপনি কি নিশ্চিত যে আপনি এই খসড়া ঋণ আবেদনটি মুছে ফেলতে চান?\n\nআবেদন নং: ${application.application_no || ''}\nসদস্য: ${memberName}`,
+                                                )
+                                            ) {
+                                                router.delete(`/member/loan-applications/${application.id}`);
+                                            }
+                                        }}
+                                    >
+                                        <Trash2 className="w-4 h-4 mr-1.5" />
+                                        মুছে ফেলুন
+                                    </Button>
+                                    <Button
+                                        className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs font-semibold rounded-xl text-xs sm:text-sm h-9 sm:h-10"
+                                        onClick={() => {
+                                            if (application.guarantor_submit_error) {
+                                                if (fillableFormIds.includes(2)) {
+                                                    router.visit(buildFormUrl(2, { complete: '1' }));
+                                                    return;
+                                                }
+                                                alert(application.guarantor_submit_error);
                                                 return;
                                             }
-                                            alert(application.guarantor_submit_error);
-                                            return;
-                                        }
-                                        if (confirm('ঋণ আবেদনটি শাখা ব্যবস্থাপকের কাছে জমা দিতে চান?')) {
-                                            router.patch(routes.submit, {}, {
-                                                onError: (errs) => {
-                                                    const msg = errs?.error || (typeof errs === 'string' ? errs : Object.values(errs || {})[0]);
-                                                    if (msg) {
-                                                        alert(msg);
-                                                    }
-                                                },
-                                            });
-                                        }
-                                    }}
-                                >
-                                    <Send className="w-4 h-4 mr-1.5" />
-                                    সাবমিট করুন
-                                </Button>
+                                            if (confirm('ঋণ আবেদনটি শাখা ব্যবস্থাপকের কাছে জমা দিতে চান?')) {
+                                                router.patch(routes.submit, {}, {
+                                                    onError: (errs) => {
+                                                        const msg = errs?.error || (typeof errs === 'string' ? errs : Object.values(errs || {})[0]);
+                                                        if (msg) {
+                                                            alert(msg);
+                                                        }
+                                                    },
+                                                });
+                                            }
+                                        }}
+                                    >
+                                        <Send className="w-4 h-4 mr-1.5" />
+                                        সাবমিট করুন
+                                    </Button>
+                                </>
                             )}
                             {application.status === 'ready_for_head_office' && isBranchUser && (
                                 <Button

@@ -1889,6 +1889,19 @@ export default function Index({
                                                     <Edit className="w-4 h-4" />
                                                 </button>
                                             )}
+                                            {app.status === 'draft' && (
+                                                <button
+                                                    onClick={() => {
+                                                        if (confirm(`আপনি কি নিশ্চিত যে আপনি এই ঋণ আবেদনটি মুছে ফেলতে চান?\n\nসদস্য: ${member?.applicant_name_bn || member?.applicant_name_en || ''} (${memberCode})`)) {
+                                                            router.delete(`/member/loan-applications/${app.id}`, keepListFilters);
+                                                        }
+                                                    }}
+                                                    className="p-2 text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition active:scale-95"
+                                                    title="মুছে ফেলুন"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            )}
                                         {app.status === 'ready_for_head_office' && isBranchUser && (
                                             <button
                                                 onClick={() => openSendSingleToHo(app)}
