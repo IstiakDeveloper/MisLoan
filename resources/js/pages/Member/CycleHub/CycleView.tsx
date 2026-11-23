@@ -372,7 +372,7 @@ export default function CycleView({
                             </a>
                         )}
 
-                        {!cycle && canDeleteAdmission && (!hasLoan || loanApplication.status === 'draft' || loanApplication.status === 'rejected') && (
+                        {canDeleteAdmission && (!hasLoan || loanApplication.status === 'draft' || loanApplication.status === 'rejected' || loanApplication.status === 'cancelled') && (
                             <Button
                                 size="sm"
                                 variant="outline"

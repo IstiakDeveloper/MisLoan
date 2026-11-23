@@ -321,7 +321,6 @@ class CycleOverrideController extends Controller
                         $bp = is_array($loan->business_plan) ? $loan->business_plan : [];
                         $bp['category_name'] = $matchingLoanCat->category_name_bn ?: $matchingLoanCat->category_name;
                         $loan->business_plan = $bp;
-                        $loan->save();
                     }
                 }
             }
@@ -373,9 +372,23 @@ class CycleOverrideController extends Controller
                 }
 
                 if (! empty($filteredLoan)) {
-                    $loan->update($filteredLoan);
-                    $loan->refresh();
+                    $loan->fill($filteredLoan);
                 }
+            }
+
+            if ($loan?->isDirty()) {
+                if ($loan->isDirty(['loan_category_id', 'loan_product_id', 'status']) && $loan->memberAdmission) {
+                    $product = LoanProduct::with('loanCategory')->find($loan->loan_product_id);
+                    $category = LoanCategory::find($loan->loan_category_id);
+                    $error = $loan->memberAdmission->abasonLoanChangeError($loan, $product, $category, (string) $loan->status);
+                    if ($error !== null) {
+                        DB::rollBack();
+
+                        return response()->json(['success' => false, 'message' => $error], 422);
+                    }
+                }
+                $loan->save();
+                $loan->refresh();
             }
 
             // 5. Force sync everywhere

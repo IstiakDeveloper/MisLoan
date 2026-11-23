@@ -213,6 +213,7 @@ class CycleRenewalController extends Controller
             $cycle = app(CycleRenewalService::class)->lockEditable($cycle, $request->integer('revision'));
             abort_if($cycle->submitted_snapshot, 422, 'জমা দেওয়া দফা মুছে ফেলা যাবে না।');
             if ($cycle->loan) {
+                app(\App\Services\ApprovalService::class)->deleteTeamBasedApprovalForLoan($cycle->loan);
                 $cycle->loan->approvals()->delete();
                 $cycle->loan->delete();
             }

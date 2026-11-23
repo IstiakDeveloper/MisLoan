@@ -18,6 +18,7 @@ use App\Models\LoanApplicationIssue;
 use App\Models\LoanCategory;
 use App\Models\LoanProduct;
 use App\Models\MemberAdmission;
+use App\Models\MemberLoanCycle;
 use App\Models\Role;
 use App\Models\Samity;
 use App\Models\SavingsProduct;
@@ -796,7 +797,7 @@ class LoanApplicationController extends Controller
         if ($decision['action'] === 'block') {
             return [
                 'ok' => false,
-                'redirect' => $this->redirectAwayFromSecondLoan($user, $decision['loan']),
+                'redirect' => $this->redirectAwayFromSecondLoan($user, $decision['loan'], $decision['message']),
             ];
         }
 
@@ -822,9 +823,9 @@ class LoanApplicationController extends Controller
         return ['ok' => true];
     }
 
-    private function redirectAwayFromSecondLoan($user, LoanApplication $existing): RedirectResponse
+    private function redirectAwayFromSecondLoan($user, LoanApplication $existing, ?string $message = null): RedirectResponse
     {
-        $message = MemberAdmission::alreadyLoanFormMessage($existing);
+        $message ??= MemberAdmission::alreadyLoanFormMessage($existing);
         $isForeignFieldOfficerLoan = $this->isFieldOfficer($user)
             && (int) $existing->submitted_by !== (int) $user->id;
 
@@ -1329,8 +1330,8 @@ class LoanApplicationController extends Controller
         }
 
         $allActiveLoans = $member->activeLoanForms();
-        $regularLoan = $member->existingRegularLoanForm();
-        $code38Loans = $member->active38Loans();
+        $regularLoan = $member->existingRegularLoanForm($allActiveLoans);
+        $code38Loans = $member->active38Loans($allActiveLoans);
 
         $hasActiveRegularLoan = $regularLoan !== null;
         $active38Count = $code38Loans->count();
@@ -1343,7 +1344,10 @@ class LoanApplicationController extends Controller
                 'id' => $loan->id,
                 'application_no' => $loan->application_no,
                 'status' => $loan->status,
-                'is_code_38' => $product ? $product->isCode38() : false,
+                'loan_product_id' => $loan->loan_product_id,
+                'loan_category_id' => $loan->loan_category_id,
+                'is_abason' => $loan->isAbason(),
+                'is_code_38' => ! $loan->isAbason() && $product?->isCode38(),
                 'product_code' => $product->product_code ?? '',
                 'main_product_code' => $product->main_product_code ?? '',
                 'product_name' => $product->product_name ?? '',
@@ -1369,7 +1373,7 @@ class LoanApplicationController extends Controller
             'has_active_loan' => $hasActiveLoan,
             'has_active_regular_loan' => $hasActiveRegularLoan,
             'active_38_loans_count' => $active38Count,
-            'must_use_cycle_hub' => $member->mustUseCycleHubForNextLoan(),
+            'must_use_cycle_hub' => $member->mustUseCycleHubForNextLoan(activeLoans: $allActiveLoans),
             'existing_loan_form' => $latestActive ? [
                 'id' => $latestActive->id,
                 'application_no' => $latestActive->application_no,
@@ -1379,6 +1383,7 @@ class LoanApplicationController extends Controller
             'samity' => $member->samity,
             'requested_loan_amount' => $member->requested_loan_amount,
             'is_legacy' => (bool) ($member->is_legacy || $member->previous_admission_id || (int) $member->loan_dofa > 1),
+            'previous_admission_id' => $member->previous_admission_id,
             'loan_dofa' => $member->loan_dofa,
         ];
     }
@@ -1504,8 +1509,8 @@ class LoanApplicationController extends Controller
             $member->is_legacy = (bool) ($member->is_legacy || $member->previous_admission_id || (int) $member->loan_dofa > 1);
 
             $allActiveLoans = $member->activeLoanForms();
-            $regularLoan = $member->existingRegularLoanForm();
-            $code38Loans = $member->active38Loans();
+            $regularLoan = $member->existingRegularLoanForm($allActiveLoans);
+            $code38Loans = $member->active38Loans($allActiveLoans);
 
             $member->has_active_regular_loan = $regularLoan !== null;
             $member->active_38_loans_count = $code38Loans->count();
@@ -1518,7 +1523,10 @@ class LoanApplicationController extends Controller
                     'id' => $loan->id,
                     'application_no' => $loan->application_no,
                     'status' => $loan->status,
-                    'is_code_38' => $product ? $product->isCode38() : false,
+                    'loan_product_id' => $loan->loan_product_id,
+                    'loan_category_id' => $loan->loan_category_id,
+                    'is_abason' => $loan->isAbason(),
+                    'is_code_38' => ! $loan->isAbason() && $product?->isCode38(),
                     'product_code' => $product->product_code ?? '',
                     'main_product_code' => $product->main_product_code ?? '',
                     'product_name' => $product->product_name ?? '',
@@ -1539,18 +1547,17 @@ class LoanApplicationController extends Controller
             ] : null;
 
             if ($selectedProductId !== null) {
-                $decision = $member->resolveActiveLoanCreate($selectedProductId, $selectedCategoryId);
+                $decision = $member->resolveActiveLoanCreate($selectedProductId, $selectedCategoryId, $allActiveLoans);
                 $member->can_take_requested_product = ($decision['action'] !== 'block');
                 $member->blocked_by_loan = ($decision['action'] === 'block') ? [
                     'id' => $decision['loan']->id,
                     'application_no' => $decision['loan']->application_no,
                 ] : null;
-                $member->must_use_cycle_hub = $member->mustUseCycleHubForNextLoan($selectedProductId);
             } else {
                 $member->can_take_requested_product = true;
                 $member->blocked_by_loan = null;
-                $member->must_use_cycle_hub = $member->mustUseCycleHubForNextLoan();
             }
+            $member->must_use_cycle_hub = $member->mustUseCycleHubForNextLoan(activeLoans: $allActiveLoans);
 
             return $member;
         });
@@ -1626,10 +1633,10 @@ class LoanApplicationController extends Controller
                 $decision = $memberForGuard->resolveActiveLoanCreate($productId ?: null, $categoryId ?: null);
                 if ($decision['action'] === 'block') {
                     return back()->withErrors([
-                        'member_admission_id' => MemberAdmission::alreadyLoanFormMessage($decision['loan']),
+                        'member_admission_id' => $decision['message'],
                     ])->withInput();
                 }
-                if ($memberForGuard->mustUseCycleHubForNextLoan($productId ?: null)) {
+                if ($decision['action'] === 'create' && $memberForGuard->mustUseCycleHubForNextLoan($productId ?: null)) {
                     return back()->withErrors([
                         'member_admission_id' => MemberAdmission::nextLoanViaCycleHubMessage(),
                     ])->withInput();
@@ -1700,24 +1707,27 @@ class LoanApplicationController extends Controller
 
         // Check loan product eligibility
         $loanProduct = LoanProduct::findOrFail($validated['loan_product_id']);
+        if ((int) $loanProduct->loan_category_id !== (int) $validated['loan_category_id']) {
+            return back()->withErrors(['loan_product_id' => 'নির্বাচিত ক্যাটাগরির অধীনে এই ঋণ প্রোডাক্টটি পাওয়া যায়নি।'])->withInput();
+        }
 
         // Validate amount range
         if ($validated['requested_amount'] < $loanProduct->min_amount ||
-            $validated['requested_amount'] > $loanProduct->max_amount) {
+            ($loanProduct->max_amount !== null && $validated['requested_amount'] > $loanProduct->max_amount)) {
             return back()->withErrors([
                 'requested_amount' => "Amount must be between {$loanProduct->min_amount} and {$loanProduct->max_amount}",
             ]);
         }
 
         // Check eligibility if member admission provided
-        if ($validated['member_admission_id']) {
+        if (! empty($validated['member_admission_id'])) {
             $memberAdmission = MemberAdmission::findOrFail($validated['member_admission_id']);
             $this->ensureMemberAccessibleForLoanDraft($memberAdmission, $user);
-            $eligibilityCheck = $loanProduct->checkEligibility($memberAdmission);
+            $eligibilityErrors = $loanProduct->checkEligibility($memberAdmission);
 
-            if (! $eligibilityCheck['eligible']) {
+            if ($eligibilityErrors !== []) {
                 return back()->withErrors([
-                    'eligibility' => 'You are not eligible for this loan product: '.implode(', ', $eligibilityCheck['reasons']),
+                    'eligibility' => 'You are not eligible for this loan product: '.implode(', ', $eligibilityErrors),
                 ]);
             }
         }
@@ -1730,19 +1740,26 @@ class LoanApplicationController extends Controller
             if (! empty($validated['member_admission_id'])) {
                 $memberForGuard = MemberAdmission::findOrFail((int) $validated['member_admission_id']);
                 $this->ensureMemberAccessibleForLoanDraft($memberForGuard, $user);
-                $memberForGuard->lockActiveLoansForWrite();
+                $activeLoans = $memberForGuard->lockActiveLoansForWrite();
                 $decision = $memberForGuard->resolveActiveLoanCreate(
                     (int) $validated['loan_product_id'],
-                    (int) $validated['loan_category_id']
+                    (int) $validated['loan_category_id'],
+                    $activeLoans
                 );
                 if ($decision['action'] === 'block') {
                     DB::rollBack();
 
                     return back()->withErrors([
-                        'member_admission_id' => MemberAdmission::alreadyLoanFormMessage($decision['loan']),
+                        'member_admission_id' => $decision['message'],
                     ])->withInput();
                 }
-                if ($memberForGuard->mustUseCycleHubForNextLoan((int) $validated['loan_product_id'])) {
+                if ($decision['action'] === 'reuse') {
+                    $this->ensureApplicationAccessibleToUser($decision['loan'], $user);
+                    DB::commit();
+
+                    return redirect()->route('member.loan-applications.show', $decision['loan']->id);
+                }
+                if ($memberForGuard->mustUseCycleHubForNextLoan((int) $validated['loan_product_id'], $activeLoans)) {
                     DB::rollBack();
 
                     return back()->withErrors([
@@ -1755,11 +1772,11 @@ class LoanApplicationController extends Controller
             $application = LoanApplication::create([
                 'application_no' => LoanApplication::generateApplicationNo(),
                 'form_type' => $validated['form_type'],
-                'member_admission_id' => $validated['member_admission_id'],
+                'member_admission_id' => $validated['member_admission_id'] ?? null,
                 'loan_product_id' => $validated['loan_product_id'],
                 'loan_category_id' => $validated['loan_category_id'],
                 'branch_id' => $user->branch_id,
-                'samity_id' => $validated['samity_id'],
+                'samity_id' => $validated['samity_id'] ?? null,
                 'requested_amount' => $validated['requested_amount'],
                 'installment_amount' => $installmentAmount,
                 'number_of_installments' => $validated['number_of_installments'],
@@ -1904,6 +1921,7 @@ class LoanApplicationController extends Controller
             return back()->withErrors(['error' => 'This application cannot be submitted']);
         }
 
+        $member = null;
         if ($application->member_admission_id) {
             $member = MemberAdmission::find($application->member_admission_id);
             if (! $member) {
@@ -1948,6 +1966,15 @@ class LoanApplicationController extends Controller
 
         DB::beginTransaction();
         try {
+            if ($member && $application->status === LoanApplication::STATUS_REJECTED) {
+                $error = $member->abasonLoanChangeError($application, $product, $category, LoanApplication::STATUS_SUBMITTED);
+                if ($error !== null) {
+                    DB::rollBack();
+
+                    return back()->withErrors(['error' => $error]);
+                }
+            }
+
             $application->update([
                 'selected_approvers' => null,
                 'status' => LoanApplication::STATUS_SUBMITTED,
@@ -3052,6 +3079,8 @@ class LoanApplicationController extends Controller
     {
         $user = $request->user();
         $this->ensureCanCreateLoanApplication($user);
+        $product = LoanProduct::with('loanCategory')->findOrFail($loanProductId);
+        abort_unless((int) $product->loan_category_id === $loanCategoryId, 422, 'নির্বাচিত ক্যাটাগরির অধীনে এই ঋণ প্রোডাক্টটি পাওয়া যায়নি।');
         if ($legacyKey && $legacySnapshot !== null) {
             if ($this->isFieldOfficer($user)) {
                 abort(403, 'ফিল্ড অফিসার আগের/Legacy সদস্যের জন্য ঋণ আবেদন করতে পারবেন না।');
@@ -3081,12 +3110,12 @@ class LoanApplicationController extends Controller
         }
         $this->ensureMemberAccessibleForLoanDraft($member, $user);
 
-        return DB::transaction(function () use ($member, $user, $loanProductId, $loanCategoryId, $requestedAmount, $memberId) {
-            $member->lockActiveLoansForWrite();
-            $decision = $member->resolveActiveLoanCreate($loanProductId, $loanCategoryId);
+        return DB::transaction(function () use ($member, $user, $product, $loanProductId, $loanCategoryId, $requestedAmount, $memberId) {
+            $activeLoans = $member->lockActiveLoansForWrite();
+            $decision = MemberAdmission::resolveLoanAvailability($activeLoans, $product, $loanCategoryId);
 
             if ($decision['action'] === 'block') {
-                abort(403, MemberAdmission::alreadyLoanFormMessage($decision['loan']));
+                abort(403, $decision['message']);
             }
 
             if ($decision['action'] === 'reuse') {
@@ -3099,7 +3128,7 @@ class LoanApplicationController extends Controller
                 return $draft;
             }
 
-            if ($member->mustUseCycleHubForNextLoan($loanProductId)) {
+            if ($member->mustUseCycleHubForNextLoan($loanProductId, $activeLoans)) {
                 abort(403, MemberAdmission::nextLoanViaCycleHubMessage());
             }
 
@@ -3888,6 +3917,11 @@ class LoanApplicationController extends Controller
             return back()->withErrors(['error' => 'শুধুমাত্র খসড়া (Draft) অবস্থার আবেদন মুছে ফেলা যাবে।']);
         }
 
+        if (Schema::hasTable('member_loan_cycles')) {
+            MemberLoanCycle::where('loan_id', $application->id)->update(['loan_id' => null]);
+            MemberLoanCycle::where('source_loan_id', $application->id)->whereIn('state', ['draft', 'discarded'])->delete();
+        }
+
         app(ApprovalService::class)->deleteTeamBasedApprovalForLoan($application);
         $application->delete();
 
@@ -4126,6 +4160,14 @@ class LoanApplicationController extends Controller
             $wordsTotal,
             $isSuperAdmin
         ) {
+            if ($application->memberAdmission && ((int) $application->loan_product_id !== (int) $newProduct->id
+                || (int) $application->loan_category_id !== (int) $newProduct->loan_category_id)) {
+                $error = $application->memberAdmission->abasonLoanChangeError($application, $newProduct, $newProduct->loanCategory, (string) $application->status);
+                if ($error !== null) {
+                    throw ValidationException::withMessages(['loan_product_id' => $error]);
+                }
+            }
+
             $updateData = [
                 'loan_category_id' => $validated['loan_category_id'],
                 'loan_product_id' => $validated['loan_product_id'],

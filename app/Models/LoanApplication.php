@@ -403,6 +403,11 @@ class LoanApplication extends Model
         return $this->status === self::STATUS_DRAFT;
     }
 
+    public function isAbason(): bool
+    {
+        return $this->loanCategory?->isAbason() || $this->loanProduct?->loanCategory?->isAbason();
+    }
+
     public function canBeEdited(): bool
     {
         return in_array($this->status, [self::STATUS_DRAFT, self::STATUS_REJECTED]);

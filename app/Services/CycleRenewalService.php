@@ -58,14 +58,16 @@ class CycleRenewalService
     }
 
     /** Follow stored links, including legacy clones whose code was normalized. */
-    public function familyAdmissionIds(MemberAdmission $master): array
+    public function familyAdmissionIds(MemberAdmission $master, bool $lockForUpdate = false): array
     {
-        $ids = $master->sisterAdmissionIds();
-        $managed = MemberLoanCycle::where('master_admission_id', $master->id)->where('branch_id', $master->branch_id)->get();
-        $ids = array_values(array_unique([...$ids, (int) $master->id, ...$managed->pluck('admission_id')->all(), ...$managed->pluck('source_admission_id')->all()]));
+        $managed = MemberLoanCycle::where('master_admission_id', $master->id)->where('branch_id', $master->branch_id)
+            ->when($lockForUpdate, fn ($query) => $query->lockForUpdate())->get();
+        $ids = $master->sisterAdmissionQuery()->when($lockForUpdate, fn ($query) => $query->lockForUpdate())->pluck('id')->all();
+        $sourceIds = $managed->pluck('source_admission_id')->filter()->all();
+        $ids = array_values(array_unique([...$ids, (int) $master->id, ...$managed->pluck('admission_id')->all(), ...$sourceIds]));
         do {
             $children = MemberAdmission::where('branch_id', $master->branch_id)->whereIn('previous_admission_id', $ids)
-                ->whereNotIn('id', $ids)->pluck('id')->all();
+                ->whereNotIn('id', $ids)->when($lockForUpdate, fn ($query) => $query->lockForUpdate())->pluck('id')->all();
             $ids = [...$ids, ...$children];
         } while ($children);
 
@@ -90,21 +92,11 @@ class CycleRenewalService
     public function assertLoanAvailable(MemberLoanCycle $cycle, ?LoanProduct $product, int $categoryId): void
     {
         $master = MemberAdmission::findOrFail($cycle->master_admission_id);
-        $activeLoans = LoanApplication::whereIn('member_admission_id', $this->familyAdmissionIds($master))
-            ->whereNotIn('status', MemberAdmission::closedLoanFormStatuses())->with('loanProduct')->orderBy('id')->get();
-        $blocking = $activeLoans->first(function ($loan) use ($cycle, $product, $categoryId) {
-            if ((int) $loan->id === (int) $cycle->loan_id) {
-                return false;
-            }
-            if ($product?->isCode38()) {
-                return $loan->isDraft() && (int) $loan->loan_product_id === (int) $product->id
-                    && (int) $loan->loan_category_id === $categoryId;
-            }
-
-            return ! $loan->loanProduct?->isCode38();
-        });
-        if ($blocking) {
-            throw ValidationException::withMessages(['cycle' => MemberAdmission::alreadyLoanFormMessage($blocking)]);
+        $activeLoans = $master->lockActiveLoansForWrite()->where('id', '!=', $cycle->loan_id);
+        $decision = MemberAdmission::resolveLoanAvailability($activeLoans, $product, $categoryId);
+        if ($decision['action'] !== 'create') {
+            throw ValidationException::withMessages(['cycle' => $decision['message']
+                ?? 'এই সদস্যের একই ঋণ প্রোডাক্টে একটি খসড়া আবেদন আছে।']);
         }
     }
 

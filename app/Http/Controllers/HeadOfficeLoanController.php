@@ -9,6 +9,8 @@ use App\Models\Branch;
 use App\Models\LoanApplication;
 use App\Models\LoanApplicationIssue;
 use App\Models\LoanCategory;
+use App\Models\MemberAdmission;
+use App\Models\MemberLoanCycle;
 use App\Models\RecentDeletion;
 use App\Models\Role;
 use App\Models\User;
@@ -23,6 +25,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 
 class HeadOfficeLoanController extends Controller
@@ -1150,6 +1153,15 @@ class HeadOfficeLoanController extends Controller
 
         try {
             DB::transaction(function () use ($loanApplication) {
+                if (in_array($loanApplication->status, MemberAdmission::closedLoanFormStatuses(), true) && $loanApplication->memberAdmission) {
+                    $error = $loanApplication->memberAdmission->abasonLoanChangeError(
+                        $loanApplication, $loanApplication->loanProduct, $loanApplication->loanCategory, LoanApplication::STATUS_SUBMITTED
+                    );
+                    if ($error !== null) {
+                        throw new \RuntimeException($error);
+                    }
+                }
+
                 $updateData = [
                     'status' => LoanApplication::STATUS_SUBMITTED,
                     'reviewed_by' => null,
@@ -1278,6 +1290,7 @@ class HeadOfficeLoanController extends Controller
 
         $this->ensureCanAccessBranch($loanApplication->branch_id);
         RecentDeletion::recordLoanDeletion($loanApplication, $request->user(), $request);
+        $this->cleanupCyclesForLoan($loanApplication);
         app(ApprovalService::class)->deleteTeamBasedApprovalForLoan($loanApplication);
         $loanApplication->forceDelete();
 
@@ -1305,11 +1318,64 @@ class HeadOfficeLoanController extends Controller
 
         foreach ($loans as $loan) {
             RecentDeletion::recordLoanDeletion($loan, $request->user(), $request);
+            $this->cleanupCyclesForLoan($loan);
             app(ApprovalService::class)->deleteTeamBasedApprovalForLoan($loan);
             $loan->forceDelete();
         }
 
         return back()->with('success', $count.' টি ঋণ আবেদন মুছে ফেলা হয়েছে।');
+    }
+
+    /**
+     * Clean up cycle references so foreign key constraints are not violated when deleting a loan.
+     */
+    private function cleanupCyclesForLoan(LoanApplication $loan): void
+    {
+        if (! Schema::hasTable('member_loan_cycles')) {
+            return;
+        }
+
+        // 1. Where this loan is the active loan of a cycle
+        $cyclesAsLoan = MemberLoanCycle::where('loan_id', $loan->id)->get();
+        foreach ($cyclesAsLoan as $cycle) {
+            if (in_array($cycle->state, ['draft', 'discarded'], true)) {
+                $clonedAdmission = MemberAdmission::find($cycle->admission_id);
+                $cycle->delete();
+                if ($clonedAdmission && $clonedAdmission->status === 'draft') {
+                    $clonedAdmission->familyMembers()->delete();
+                    $clonedAdmission->otherAssets()->delete();
+                    $clonedAdmission->approvals()->delete();
+                    $clonedAdmission->delete();
+                }
+            } else {
+                $cycle->update(['loan_id' => null]);
+            }
+        }
+
+        // 2. Where this loan is the source loan of a subsequent cycle
+        $cyclesAsSource = MemberLoanCycle::where('source_loan_id', $loan->id)->get();
+        foreach ($cyclesAsSource as $cycle) {
+            if (in_array($cycle->state, ['draft', 'discarded'], true)) {
+                if ($cycle->loan_id && $cycle->loan_id !== $loan->id) {
+                    $childLoan = LoanApplication::find($cycle->loan_id);
+                    if ($childLoan && $childLoan->status === LoanApplication::STATUS_DRAFT) {
+                        app(ApprovalService::class)->deleteTeamBasedApprovalForLoan($childLoan);
+                        $childLoan->approvals()->delete();
+                        $childLoan->forceDelete();
+                    }
+                }
+                $clonedAdmission = MemberAdmission::find($cycle->admission_id);
+                $cycle->delete();
+                if ($clonedAdmission && $clonedAdmission->status === 'draft') {
+                    $clonedAdmission->familyMembers()->delete();
+                    $clonedAdmission->otherAssets()->delete();
+                    $clonedAdmission->approvals()->delete();
+                    $clonedAdmission->delete();
+                }
+            } else {
+                $cycle->update(['source_loan_id' => null]);
+            }
+        }
     }
 
     /**

@@ -11,10 +11,10 @@ return new class extends Migration
         Schema::create('member_loan_cycles', function (Blueprint $table) {
             $table->id();
             $table->foreignId('master_admission_id')->constrained('member_admissions')->restrictOnDelete();
-            $table->foreignId('source_admission_id')->constrained('member_admissions')->restrictOnDelete();
-            $table->foreignId('source_loan_id')->constrained('loan_applications')->restrictOnDelete();
+            $table->foreignId('source_admission_id')->nullable()->constrained('member_admissions')->nullOnDelete();
+            $table->foreignId('source_loan_id')->nullable()->constrained('loan_applications')->nullOnDelete();
             $table->foreignId('admission_id')->unique()->constrained('member_admissions')->restrictOnDelete();
-            $table->foreignId('loan_id')->nullable()->unique()->constrained('loan_applications')->restrictOnDelete();
+            $table->foreignId('loan_id')->nullable()->unique()->constrained('loan_applications')->nullOnDelete();
             $table->foreignId('branch_id')->constrained('branches')->restrictOnDelete();
             $table->foreignId('created_by')->constrained('users')->restrictOnDelete();
             $table->unsignedInteger('number');

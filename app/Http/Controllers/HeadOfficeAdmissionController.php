@@ -7,6 +7,7 @@ use App\Models\Area;
 use App\Models\Branch;
 use App\Models\MemberAdmission;
 use App\Models\MemberAdmissionIssue;
+use App\Models\MemberLoanCycle;
 use App\Models\RecentDeletion;
 use App\Models\Role;
 use App\Models\User;
@@ -22,6 +23,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -1359,8 +1361,18 @@ class HeadOfficeAdmissionController extends Controller
     {
         DB::transaction(function () use ($admission) {
             $admission->loanApplications()->withTrashed()->each(function ($loan) {
+                if (Schema::hasTable('member_loan_cycles')) {
+                    MemberLoanCycle::where('loan_id', $loan->id)->update(['loan_id' => null]);
+                    MemberLoanCycle::where('source_loan_id', $loan->id)->update(['source_loan_id' => null]);
+                }
                 $loan->forceDelete();
             });
+            if (Schema::hasTable('member_loan_cycles')) {
+                MemberLoanCycle::where('admission_id', $admission->id)
+                    ->orWhere('source_admission_id', $admission->id)
+                    ->orWhere('master_admission_id', $admission->id)
+                    ->delete();
+            }
             $admission->approvals()->delete();
             $admission->issues()->delete();
             $admission->familyMembers()->delete();

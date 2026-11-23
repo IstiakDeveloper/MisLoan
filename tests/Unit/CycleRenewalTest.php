@@ -432,6 +432,113 @@ it('allows a supplementary product alongside an active regular loan but blocks a
     expect(fn () => app(CycleRenewalService::class)->selectLoan($cycle, $product->id, $category->id, 10000, $cycle->revision))->toThrow(ValidationException::class);
 });
 
+it('allows one Abason and one other loan in either order through ordinary loan creation', function (bool $abasonFirst, bool $smart) {
+    extract(renewalContext());
+    $abason = LoanCategory::create(['category_name' => 'Abason Loan', 'category_code' => 'ABS', 'is_active' => true]);
+    $housing = $product->replicate()->fill(['loan_category_id' => $abason->id, 'product_name' => 'Housing', 'product_code' => '39.01']);
+    $housing->save();
+    if ($smart) {
+        $product->update(['main_product_code' => '38']);
+    }
+
+    $firstProduct = $abasonFirst ? $housing : $product;
+    $secondProduct = $abasonFirst ? $product : $housing;
+    $first = $source->replicate()->fill([
+        'application_no' => 'LN-ACTIVE', 'loan_product_id' => $firstProduct->id,
+        'loan_category_id' => $firstProduct->loan_category_id, 'status' => 'disbursed',
+    ]);
+    $first->save();
+
+    $this->actingAs($user);
+    $formUrl = fn (LoanProduct $selected) => route('member.loan-applications.form-selection', [
+        'member_id' => $member->id, 'loan_category_id' => $selected->loan_category_id,
+        'loan_product_id' => $selected->id, 'requested_amount' => 10000,
+    ]);
+    if ($abasonFirst) {
+        $this->get($formUrl($housing))->assertRedirect(route('member.loan-applications.show', $first->id));
+        expect($member->activeLoanForms()->count())->toBe(1);
+    }
+
+    $this->get($formUrl($secondProduct))->assertRedirect();
+    $second = $member->activeLoanForms()->last();
+    expect($member->activeLoanForms()->count())->toBe(2)
+        ->and((int) $second->loan_product_id)->toBe($secondProduct->id);
+    $this->get($formUrl($secondProduct))->assertRedirect(route('member.loan-applications.show', $second->id));
+
+    // A different SMART product would ordinarily be permitted, so it checks the Abason cap.
+    $thirdProduct = $product->replicate()->fill(['product_code' => '37.01', 'main_product_code' => '37']);
+    $thirdProduct->save();
+    $this->get($formUrl($thirdProduct))->assertSessionHas('error', fn ($message) => str_contains($message, 'সর্বোচ্চ ২টি'));
+    expect($member->activeLoanForms()->count())->toBe(2);
+
+    $first->update(['status' => 'cancelled']);
+    $this->get($formUrl($thirdProduct))->assertRedirect();
+    expect((int) $member->activeLoanForms()->last()->loan_product_id)->toBe($thirdProduct->id);
+
+    if ($abasonFirst) {
+        $this->get($formUrl($housing))->assertSessionHas('error', fn ($message) => str_contains($message, 'সর্বোচ্চ ২টি'));
+        expect($member->activeLoanForms()->count())->toBe(2);
+    }
+})->with([[true, false], [false, false], [true, true], [false, true]]);
+
+it('counts Abason loans across linked admissions when selecting or changing a Cycle Hub product', function () {
+    extract(renewalContext());
+    $abason = LoanCategory::create(['category_name' => 'Abason Loan', 'category_code' => 'ABS', 'is_active' => true]);
+    $housing = $product->replicate()->fill(['loan_category_id' => $abason->id, 'product_name' => 'Housing', 'product_code' => '39.01']);
+    $housing->save();
+    $first = $source->replicate()->fill([
+        'application_no' => 'LN-HOUSING', 'loan_product_id' => $housing->id,
+        'loan_category_id' => $abason->id, 'status' => 'disbursed',
+    ]);
+    $first->save();
+
+    $service = app(CycleRenewalService::class);
+    [$cycle] = $service->start($member, $user);
+    expect(fn () => $service->selectLoan($cycle, $housing->id, $abason->id, 10000, $cycle->revision))
+        ->toThrow(ValidationException::class, 'একসঙ্গে একটি আবাসন');
+
+    $cycle = $service->selectLoan($cycle, $product->id, $category->id, 10000, $cycle->revision);
+    expect((int) $cycle->loan->loan_product_id)->toBe($product->id);
+    expect(fn () => $service->selectLoan($cycle, $housing->id, $abason->id, 10000, $cycle->revision))
+        ->toThrow(ValidationException::class, 'একসঙ্গে একটি আবাসন');
+    expect((int) $cycle->loan->fresh()->loan_product_id)->toBe($product->id)
+        ->and($member->activeLoanForms()->count())->toBe(2);
+});
+
+it('enforces the same Abason rule in member search, the direct create route and product edits', function () {
+    extract(renewalContext());
+    $member->update(['date_of_birth' => '1990-01-01']);
+    $first = $source->replicate()->fill(['application_no' => 'LN-REGULAR', 'status' => 'disbursed']);
+    $first->save();
+    $abason = LoanCategory::create(['category_name' => 'Abason Loan', 'category_code' => 'ABS', 'is_active' => true]);
+    $housing = $product->replicate()->fill([
+        'loan_category_id' => $abason->id, 'product_name' => 'Housing', 'product_code' => '39.01',
+        'gender_restriction' => 'both', 'min_age' => 18, 'max_age' => 65,
+    ]);
+    $housing->save();
+
+    $this->actingAs($user)->getJson(route('member.loan-applications.search-members', [
+        'query' => $member->application_no, 'loan_product_id' => $housing->id, 'loan_category_id' => $abason->id,
+    ]))->assertOk()->assertJsonPath('0.can_take_requested_product', true)->assertJsonPath('0.active_loans.0.is_abason', false);
+
+    $payload = [
+        'member_admission_id' => $member->id, 'samity_id' => $member->samity_id, 'form_type' => 1,
+        'loan_product_id' => $housing->id, 'loan_category_id' => $abason->id, 'requested_amount' => 10000,
+        'number_of_installments' => 46, 'proposed_start_date' => now()->addDays(2)->toDateString(),
+        'purpose_of_loan' => 'Housing repair', 'repayment_frequency' => 'weekly', 'loan_term_months' => 12,
+    ];
+    $this->post(route('member.loan-applications.store'), $payload)->assertSessionHasNoErrors()->assertRedirect();
+    $draft = $member->activeLoanForms()->last();
+    expect($draft->isAbason())->toBeTrue();
+    $this->post(route('member.loan-applications.store'), $payload)->assertRedirect(route('member.loan-applications.show', $draft->id));
+
+    $this->patch(route('member.loan-applications.update-loan-product', $draft->id), [
+        'loan_product_id' => $product->id, 'loan_category_id' => $category->id,
+    ])->assertSessionHasErrors('loan_product_id');
+
+    expect($draft->fresh()->isAbason())->toBeTrue()->and($member->activeLoanForms()->count())->toBe(2);
+});
+
 it('marks missing documents without pointing the new cycle to a missing original', function () {
     extract(renewalContext());
     $member->update(['customer_nid_photo_path' => 'admissions/missing-nid.pdf']);
@@ -532,4 +639,33 @@ it('preserves saved current-cycle signatures when admission is continued without
     $this->actingAs($user)->post('/member/cycle-hub/renewals/'.$cycle->id.'/admission', ['revision' => $cycle->revision, 'continue' => true])->assertSessionHasNoErrors()->assertRedirect();
     expect($cycle->loan->fresh()->loan_agreement_data['applicant_signature_image'])->toBe('data:image/png;base64,CURRENT')
         ->and(LoanFormVisibility::buildFormSavedMap($cycle->loan->fresh())[1])->toBeTrue();
+});
+
+it('deletes a draft cycle and its cloned admission from cycle hub', function () {
+    extract(renewalContext());
+    [$cycle] = app(CycleRenewalService::class)->start($member, $user);
+    $cycle = app(CycleRenewalService::class)->selectLoan($cycle, $product->id, $category->id, 10000, $cycle->revision);
+    $cloneId = $cycle->admission_id;
+    $loanId = $cycle->loan_id;
+
+    $response = $this->actingAs($user)->deleteJson('/member/cycle-hub/admissions/'.$cloneId.'/draft');
+    $response->assertOk()->assertJson(['success' => true]);
+
+    expect(MemberLoanCycle::find($cycle->id))->toBeNull()
+        ->and(MemberAdmission::find($cloneId))->toBeNull()
+        ->and(LoanApplication::find($loanId))->toBeNull();
+});
+
+it('safely deletes a source loan that has linked member loan cycles without constraint errors', function () {
+    extract(renewalContext());
+    [$cycle] = app(CycleRenewalService::class)->start($member, $user);
+    $cycleId = $cycle->id;
+
+    // Simulate deleting the source loan (e.g. from Head Office or draft cleanup)
+    expect(MemberLoanCycle::where('source_loan_id', $source->id)->exists())->toBeTrue();
+
+    // Calling delete/forceDelete on the loan should not throw a foreign key error
+    $source->forceDelete();
+
+    expect(LoanApplication::find($source->id))->toBeNull();
 });

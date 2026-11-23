@@ -2270,20 +2270,28 @@ class MemberAdmissionController extends Controller
         $loanCategoryId = (int) $request->input('loan_category_id');
         $requestedAmount = (float) ($request->input('requested_amount') ?: ($request->input('requested_loan_amount') ?: ($memberAdmission->requested_loan_amount ?: 0)));
 
-        return DB::transaction(function () use ($memberAdmission, $loanProductId, $loanCategoryId, $requestedAmount) {
-            $memberAdmission->lockActiveLoansForWrite();
-            $decision = $memberAdmission->resolveActiveLoanCreate($loanProductId ?: null, $loanCategoryId ?: null);
+        if ($loanProductId <= 0 || $loanCategoryId <= 0) {
+            $defaultProduct = LoanProduct::where('is_active', true)->orderBy('display_order')->first();
+            if ($defaultProduct) {
+                $loanProductId = $defaultProduct->id;
+                $loanCategoryId = $defaultProduct->loan_category_id;
+            }
+        }
+
+        return DB::transaction(function () use ($request, $memberAdmission, $loanProductId, $loanCategoryId, $requestedAmount) {
+            $activeLoans = $memberAdmission->lockActiveLoansForWrite();
+            $decision = $memberAdmission->resolveActiveLoanCreate($loanProductId ?: null, $loanCategoryId ?: null, $activeLoans);
             if ($decision['action'] === 'block') {
                 return redirect()
                     ->route('member.loan-applications.show', $decision['loan']->id)
-                    ->with('error', MemberAdmission::alreadyLoanFormMessage($decision['loan']));
+                    ->with('error', $decision['message']);
             }
             if ($decision['action'] === 'reuse') {
                 return redirect()
                     ->route('member.loan-applications.show', $decision['loan']->id);
             }
 
-            if ($memberAdmission->mustUseCycleHubForNextLoan($loanProductId ?: null) && ! $request->boolean('cycle_renewal') && ! $memberAdmission->previous_admission_id && ((int) ($memberAdmission->loan_dofa ?? 0) <= 1)) {
+            if ($memberAdmission->mustUseCycleHubForNextLoan($loanProductId ?: null, $activeLoans) && ! $request->boolean('cycle_renewal') && ! $memberAdmission->previous_admission_id && ((int) ($memberAdmission->loan_dofa ?? 0) <= 1)) {
                 return redirect()
                     ->route('member.cycle-hub.index')
                     ->with('error', MemberAdmission::nextLoanViaCycleHubMessage());
@@ -2304,23 +2312,11 @@ class MemberAdmissionController extends Controller
         int $loanCategoryId,
         float $requestedAmount
     ): RedirectResponse {
-        if ($loanProductId <= 0 || $loanCategoryId <= 0) {
-            $defaultProduct = LoanProduct::where('is_active', true)->orderBy('display_order')->first()
-                ?? LoanProduct::where('is_active', true)->first();
-            if ($defaultProduct) {
-                $loanProductId = $defaultProduct->id;
-                $loanCategoryId = $defaultProduct->loan_category_id;
-                if ($requestedAmount <= 0) {
-                    $requestedAmount = (float) ($defaultProduct->min_amount ?? 50000);
-                }
-            }
-        }
-
         if ($loanProductId > 0 && $loanCategoryId > 0) {
             $loanProduct = LoanProduct::with('loanCategory')->find($loanProductId);
             $loanCategory = LoanCategory::find($loanCategoryId);
 
-            if ($loanProduct && $loanCategory) {
+            if ($loanProduct && $loanCategory && (int) $loanProduct->loan_category_id === $loanCategoryId) {
                 $user = auth()->user();
                 $draft = new LoanApplication;
                 $installmentType = strtolower((string) ($loanProduct->installment_type ?? 'monthly'));

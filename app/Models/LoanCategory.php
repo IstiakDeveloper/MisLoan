@@ -33,4 +33,9 @@ class LoanCategory extends Model
     {
         return $this->hasMany(LoanProduct::class)->where('is_active', true)->orderBy('display_order');
     }
+
+    public function isAbason(): bool
+    {
+        return strtoupper(trim((string) $this->category_code)) === 'ABS';
+    }
 }

@@ -905,7 +905,7 @@ export default function Index({
                                                             </Button>
                                                         </a>
                                                     )}
-                                                    {!cycle.cycle_id && cycle.can_delete_admission && (!latestLoan || latestLoan.status === 'draft' || latestLoan.status === 'rejected') && (
+                                                    {cycle.can_delete_admission && (!latestLoan || latestLoan.status === 'draft' || latestLoan.status === 'rejected' || latestLoan.status === 'cancelled') && (
                                                         <Button
                                                             size="sm"
                                                             variant="outline"
@@ -1067,7 +1067,7 @@ export default function Index({
                                                                     </a>
                                                                 )}
 
-                                                                {!cycle.cycle_id && cycle.can_delete_admission && (!latestLoan || latestLoan.status === 'draft' || latestLoan.status === 'rejected') && (
+                                                                {cycle.can_delete_admission && (!latestLoan || latestLoan.status === 'draft' || latestLoan.status === 'rejected' || latestLoan.status === 'cancelled') && (
                                                                     <Button
                                                                         size="sm"
                                                                         variant="outline"

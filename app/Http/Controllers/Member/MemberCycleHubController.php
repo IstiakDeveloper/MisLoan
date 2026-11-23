@@ -12,6 +12,7 @@ use App\Models\MemberCategory;
 use App\Models\MemberLoanCycle;
 use App\Models\Role;
 use App\Models\Samity;
+use App\Services\ApprovalService;
 use App\Services\CycleRenewalService;
 use App\Services\MemberCodeService;
 use App\Support\LoanFormVisibility;
@@ -21,6 +22,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -694,9 +696,6 @@ class MemberCycleHubController extends Controller
     public function deleteDraftLoan(Request $request, LoanApplication $loan): JsonResponse
     {
         $user = $request->user();
-        if (Schema::hasTable('member_loan_cycles') && MemberLoanCycle::where('loan_id', $loan->id)->exists()) {
-            return response()->json(['message' => 'এই দফার ফাইল খুলে খসড়া বাতিল করুন।'], 422);
-        }
 
         $branchIds = $this->getAccessibleBranchIds($user);
 
@@ -712,6 +711,10 @@ class MemberCycleHubController extends Controller
         $admission = MemberAdmission::find($admissionId);
 
         DB::transaction(function () use ($loan) {
+            if (Schema::hasTable('member_loan_cycles')) {
+                MemberLoanCycle::where('loan_id', $loan->id)->update(['loan_id' => null]);
+            }
+            app(ApprovalService::class)->deleteTeamBasedApprovalForLoan($loan);
             $loan->approvals()->delete();
             $loan->delete();
         });
@@ -732,9 +735,6 @@ class MemberCycleHubController extends Controller
     public function deleteDraftAdmission(Request $request, MemberAdmission $memberAdmission): JsonResponse
     {
         $user = $request->user();
-        if (Schema::hasTable('member_loan_cycles') && MemberLoanCycle::where('admission_id', $memberAdmission->id)->exists()) {
-            return response()->json(['message' => 'এই দফার ফাইল খুলে খসড়া বাতিল করুন।'], 422);
-        }
 
         $branchIds = $this->getAccessibleBranchIds($user);
 
@@ -764,9 +764,30 @@ class MemberCycleHubController extends Controller
         $branchId = $memberAdmission->branch_id;
 
         DB::transaction(function () use ($memberAdmission) {
+            // Delete associated MemberLoanCycle if exists
+            if (Schema::hasTable('member_loan_cycles')) {
+                $cycle = MemberLoanCycle::where('admission_id', $memberAdmission->id)->first();
+                if ($cycle) {
+                    if (! empty($cycle->document_manifest)) {
+                        foreach ($cycle->document_manifest as $file) {
+                            if (! empty($file['path']) && str_starts_with($file['path'], 'cycles/')) {
+                                Storage::disk('public')->delete($file['path']);
+                            }
+                        }
+                    }
+                    $cycle->delete();
+                }
+
+                MemberLoanCycle::where('open_member_id', $memberAdmission->id)->update(['open_member_id' => null]);
+                if ($memberAdmission->previous_admission_id) {
+                    MemberLoanCycle::where('open_member_id', $memberAdmission->previous_admission_id)->update(['open_member_id' => null]);
+                }
+            }
+
             // Delete any draft loans attached to this admission
             foreach ($memberAdmission->loanApplications as $loan) {
-                if ($loan->status === LoanApplication::STATUS_DRAFT) {
+                if (in_array($loan->status, [LoanApplication::STATUS_DRAFT, LoanApplication::STATUS_REJECTED, LoanApplication::STATUS_CANCELLED], true)) {
+                    app(ApprovalService::class)->deleteTeamBasedApprovalForLoan($loan);
                     $loan->approvals()->delete();
                     $loan->delete();
                 }
@@ -794,7 +815,7 @@ class MemberCycleHubController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'খসড়া ভর্তি আবেদনটি সফলভাবে মুছে ফেলা হয়েছে।',
+            'message' => 'খসড়া ভর্তি ও সাইকেল সফলভাবে মুছে ফেলা হয়েছে।',
             'memberData' => $updatedData,
             'redirect_url' => $fallbackAdmission ? route('member.cycle-hub.index', ['member_id' => $fallbackAdmission->id]) : route('member.cycle-hub.index'),
         ]);

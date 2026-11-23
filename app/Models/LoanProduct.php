@@ -81,7 +81,7 @@ class LoanProduct extends Model
         $errors = [];
 
         // Check gender
-        if ($this->gender_restriction !== 'all' && $memberAdmission->gender !== $this->gender_restriction) {
+        if (in_array($this->gender_restriction, ['male', 'female'], true) && $memberAdmission->gender !== $this->gender_restriction) {
             $errors[] = 'Gender restriction not met';
         }
 

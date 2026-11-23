@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\CycleRenewalService;
 use App\Services\MemberCodeService;
 use App\Support\AdmissionFormVisibility;
 use Illuminate\Database\Eloquent\Builder;
@@ -376,74 +377,104 @@ class MemberAdmission extends Model
     /**
      * Lock this person (sister admissions + their open loans) before insert/reuse.
      */
-    public function lockActiveLoansForWrite(): void
+    public function lockActiveLoansForWrite(): Collection
     {
-        $ids = $this->sisterAdmissionIds();
-        if ($ids === []) {
-            $ids = [(int) $this->id];
+        if (Schema::hasTable('member_loan_cycles')) {
+            $cycles = app(CycleRenewalService::class);
+            $master = $cycles->masterFor($this);
+            static::query()->whereKey($master->id)->lockForUpdate()->firstOrFail();
+            $ids = $cycles->familyAdmissionIds($master, lockForUpdate: true);
+        } else {
+            $ids = $this->sisterAdmissionQuery()->orderBy('id')->lockForUpdate()->pluck('id')->all();
         }
 
         static::query()->whereKey($ids)->orderBy('id')->lockForUpdate()->get();
 
-        LoanApplication::query()
-            ->whereIn('member_admission_id', $ids)
-            ->whereNotIn('status', self::closedLoanFormStatuses())
-            ->orderBy('id')
-            ->lockForUpdate()
-            ->get();
+        return $this->activeLoanFormsQuery($ids)->with(['loanProduct.loanCategory', 'loanCategory'])
+            ->orderBy('id')->lockForUpdate()->get();
     }
 
     /**
-     * Resolve whether a loan form can be created, reused, or blocked for this member.
-     *
-     * Rules:
-     * - Regular (Non-38) loans: at most 1 active regular loan per member.
-     * - Code 38 loans: multiple active 38 loans are allowed concurrently.
-     *   Active regular loans DO NOT block 38 loans, and 38 loans DO NOT block regular loans.
-     *   If an unsubmitted draft for the exact same product & category already exists, reuse it.
-     *   Otherwise allow create.
-     *
-     * @return array{action: 'create'}|array{action: 'reuse', loan: LoanApplication}|array{action: 'block', loan: LoanApplication}
+     * @return list<int>
      */
-    public function resolveActiveLoanCreate(?int $loanProductId = null, ?int $loanCategoryId = null): array
+    private function loanAvailabilityAdmissionIds(): array
     {
-        $isCode38 = $loanProductId !== null && LoanProduct::isCode38ProductId($loanProductId);
+        if (! Schema::hasTable('member_loan_cycles')) {
+            return $this->sisterAdmissionIds();
+        }
 
-        if ($isCode38) {
-            // Code 38 products can have multiple loans concurrently.
-            // Check if there is an unsubmitted draft for the exact same 38 product & category to reuse.
-            $sameProductDraft = $this->activeLoanFormsQuery()
-                ->where('status', LoanApplication::STATUS_DRAFT)
-                ->where('loan_product_id', $loanProductId)
-                ->when($loanCategoryId !== null, fn ($q) => $q->where('loan_category_id', $loanCategoryId))
-                ->latest('id')
-                ->first();
+        $cycles = app(CycleRenewalService::class);
 
-            if ($sameProductDraft) {
-                return ['action' => 'reuse', 'loan' => $sameProductDraft];
+        return $cycles->familyAdmissionIds($cycles->masterFor($this));
+    }
+
+    public function resolveActiveLoanCreate(?int $loanProductId = null, ?int $loanCategoryId = null, ?Collection $activeLoans = null): array
+    {
+        $product = $loanProductId ? LoanProduct::with('loanCategory')->find($loanProductId) : null;
+
+        return self::resolveLoanAvailability($activeLoans ?? $this->activeLoanForms(), $product, $loanCategoryId);
+    }
+
+    /**
+     * @return array{action: 'create'}|array{action: 'reuse', loan: LoanApplication}|array{action: 'block', loan: LoanApplication, message: string}
+     */
+    public static function resolveLoanAvailability(Collection $activeLoans, ?LoanProduct $product, ?int $categoryId, ?LoanCategory $category = null, bool $reuseDraft = true): array
+    {
+        $abason = $category?->isAbason() || $product?->loanCategory?->isAbason();
+        $smart = ! $abason && $product?->isCode38();
+        $existingAbason = $activeLoans->first(fn (LoanApplication $loan) => $loan->isAbason());
+        $existingRegular = $activeLoans->first(fn (LoanApplication $loan) => ! $loan->isAbason() && ! $loan->loanProduct?->isCode38());
+
+        if ($reuseDraft && $product) {
+            $drafts = $abason || $smart ? $activeLoans : $activeLoans->where('id', $existingRegular?->id);
+            $draft = $drafts->last(fn (LoanApplication $loan) => $loan->isDraft()
+                && (int) $loan->loan_product_id === (int) $product->id
+                && ($categoryId !== null ? (int) $loan->loan_category_id === $categoryId : $smart));
+            if ($draft) {
+                return ['action' => 'reuse', 'loan' => $draft];
             }
-
-            return ['action' => 'create'];
         }
 
-        // Regular (non-38) loan product (or unspecified product):
-        // Only 1 active regular loan is permitted. Code 38 loans do not block regular loans.
-        $activeRegular = $this->existingRegularLoanForm();
-        if ($activeRegular === null) {
-            return ['action' => 'create'];
+        if (($abason || $existingAbason) && $activeLoans->count() >= 2) {
+            return ['action' => 'block', 'loan' => $existingAbason ?? $activeLoans->last(),
+                'message' => 'এই সদস্যের ইতিমধ্যে অন্তত ২টি খোলা ঋণ আবেদন আছে। আবাসনসহ সর্বোচ্চ ২টি আবেদন রাখা যাবে।'];
         }
 
-        $sameProductDraft = $activeRegular->isDraft()
-            && $loanProductId !== null
-            && $loanCategoryId !== null
-            && (int) $activeRegular->loan_product_id === $loanProductId
-            && (int) $activeRegular->loan_category_id === $loanCategoryId;
-
-        if ($sameProductDraft) {
-            return ['action' => 'reuse', 'loan' => $activeRegular];
+        if ($abason && $existingAbason) {
+            return ['action' => 'block', 'loan' => $existingAbason,
+                'message' => 'এই সদস্যের একটি আবাসন ঋণ আবেদন খোলা আছে। একসঙ্গে একটি আবাসন ঋণ আবেদন রাখা যাবে।'];
         }
 
-        return ['action' => 'block', 'loan' => $activeRegular];
+        if (! $abason && ! $smart && $existingRegular) {
+            return ['action' => 'block', 'loan' => $existingRegular, 'message' => self::alreadyLoanFormMessage($existingRegular)];
+        }
+
+        return ['action' => 'create'];
+    }
+
+    /** Check changes that alter how an existing application counts toward the Abason limit. */
+    public function abasonLoanChangeError(LoanApplication $loan, ?LoanProduct $product, ?LoanCategory $category, string $status): ?string
+    {
+        if (in_array($status, self::closedLoanFormStatuses(), true)) {
+            return null;
+        }
+
+        $activeLoans = $this->lockActiveLoansForWrite();
+        $current = $activeLoans->find($loan->id);
+        $wasAbason = $current?->isAbason() ?? false;
+        $isAbason = $category?->isAbason() || $product?->loanCategory?->isAbason();
+        if ($current && $wasAbason === $isAbason) {
+            return null;
+        }
+
+        $others = $activeLoans->where('id', '!=', $loan->id);
+        if (! $wasAbason && ! $isAbason && ! $others->contains(fn (LoanApplication $other) => $other->isAbason())) {
+            return null;
+        }
+
+        $decision = self::resolveLoanAvailability($others, $product, $category?->id, $category, reuseDraft: false);
+
+        return $decision['message'] ?? null;
     }
 
     /**
@@ -465,16 +496,16 @@ class MemberAdmission extends Model
         return LoanApplication::query()->whereIn('member_admission_id', $this->sisterAdmissionIds());
     }
 
-    public function activeLoanFormsQuery(): Builder
+    public function activeLoanFormsQuery(?array $admissionIds = null): Builder
     {
-        return $this->sisterLoanQuery()
+        return LoanApplication::query()->whereIn('member_admission_id', $admissionIds ?? $this->loanAvailabilityAdmissionIds())
             ->whereNotIn('status', self::closedLoanFormStatuses());
     }
 
     public function activeLoanForms(): Collection
     {
         return $this->activeLoanFormsQuery()
-            ->with(['loanProduct:id,product_name,product_name_bn,product_code,main_product_code,duration_months', 'loanCategory:id,category_name,category_name_bn'])
+            ->with(['loanProduct.loanCategory', 'loanCategory'])
             ->orderBy('id')
             ->get();
     }
@@ -486,16 +517,10 @@ class MemberAdmission extends Model
             ->first();
     }
 
-    public function existingRegularLoanForm(): ?LoanApplication
+    public function existingRegularLoanForm(?Collection $activeLoans = null): ?LoanApplication
     {
-        $loans = $this->activeLoanForms();
-        foreach ($loans as $loan) {
-            if (! $loan->loanProduct?->isCode38()) {
-                return $loan;
-            }
-        }
-
-        return null;
+        return ($activeLoans ?? $this->activeLoanForms())
+            ->first(fn (LoanApplication $loan) => ! $loan->isAbason() && ! $loan->loanProduct?->isCode38());
     }
 
     public function hasExistingLoanForm(): bool
@@ -508,10 +533,10 @@ class MemberAdmission extends Model
         return $this->existingRegularLoanForm() !== null;
     }
 
-    public function active38Loans(): Collection
+    public function active38Loans(?Collection $activeLoans = null): Collection
     {
-        return $this->activeLoanForms()->filter(function ($loan) {
-            return (bool) $loan->loanProduct?->isCode38();
+        return ($activeLoans ?? $this->activeLoanForms())->filter(function ($loan) {
+            return ! $loan->isAbason() && $loan->loanProduct?->isCode38();
         })->values();
     }
 
@@ -521,28 +546,34 @@ class MemberAdmission extends Model
     }
 
     /**
-     * After repayment the next loan must start from Cycle Hub, not ঋণ আবেদন create.
-     * Note: Code 38 supplementary products do not require Cycle Hub.
+     * Cycle Hub starts renewals after repayment. SMART products and concurrent
+     * Abason applications can start through loan application creation.
      */
-    public function mustUseCycleHubForNextLoan(?int $loanProductId = null): bool
+    public function mustUseCycleHubForNextLoan(?int $loanProductId = null, ?Collection $activeLoans = null): bool
     {
-        if ($loanProductId !== null && LoanProduct::isCode38ProductId($loanProductId)) {
+        if ($this->previous_admission_id) {
             return false;
         }
 
-        return ! $this->hasExistingRegularLoanForm()
-            && $this->hasRepaidLoanHistory()
-            && ! $this->previous_admission_id;
+        $product = $loanProductId ? LoanProduct::with('loanCategory')->find($loanProductId) : null;
+        $activeLoans ??= $this->activeLoanForms();
+        $abason = $product?->loanCategory?->isAbason();
+        if ((! $abason && $product?->isCode38()) || ($abason && $activeLoans->isNotEmpty())) {
+            return false;
+        }
+
+        return ! $activeLoans->contains(fn (LoanApplication $loan) => $loan->isAbason() || ! $loan->loanProduct?->isCode38())
+            && $this->hasRepaidLoanHistory();
     }
 
     public static function alreadyLoanFormMessage(?LoanApplication $loan = null): string
     {
         $no = $loan?->application_no;
         if ($no) {
-            return "অন্য কোডের ঋণ দিতে পারবেন না, ১টি নিয়মিত ঋণ আছেই (আবেদন নং: {$no})! Already Loan Form আছে। শুধুমাত্র স্মার্ট / ৩৮ কোডের ঋণ প্রোডাক্ট প্রযোজ্য।";
+            return "অন্য কোডের ঋণ দিতে পারবেন না, ১টি নিয়মিত ঋণ আছেই (আবেদন নং: {$no})! Already Loan Form আছে।";
         }
 
-        return 'অন্য কোডের ঋণ দিতে পারবেন না, ১টি নিয়মিত ঋণ আছেই! Already Loan Form আছে। শুধুমাত্র স্মার্ট / ৩৮ কোডের ঋণ প্রোডাক্ট প্রযোজ্য।';
+        return 'অন্য কোডের ঋণ দিতে পারবেন না, ১টি নিয়মিত ঋণ আছেই! Already Loan Form আছে।';
     }
 
     public static function nextLoanViaCycleHubMessage(): string
