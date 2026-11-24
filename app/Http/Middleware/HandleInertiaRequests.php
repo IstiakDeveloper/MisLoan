@@ -82,6 +82,7 @@ class HandleInertiaRequests extends Middleware
                 'has_all_access' => (bool) $user->has_all_access,
                 'is_read_only' => $user->isReadOnlyAdmin(),
                 'is_active' => (bool) $user->is_active,
+                'is_blocked' => (bool) $user->is_blocked,
                 'account_type' => $user->account_type ?? 'staff',
                 'needs_portfolio_handover' => $user->needsPortfolioHandover(),
                 'role' => null,

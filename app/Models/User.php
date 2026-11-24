@@ -32,6 +32,10 @@ class User extends Authenticatable
         'signature',
         'pin',
         'is_active',
+        'is_blocked',
+        'blocked_reason',
+        'blocked_fine_id',
+        'blocked_at',
         'email_verified_at',
     ];
 
@@ -50,7 +54,19 @@ class User extends Authenticatable
             'two_factor_confirmed_at' => 'datetime',
             'has_all_access' => 'boolean',
             'is_active' => 'boolean',
+            'is_blocked' => 'boolean',
+            'blocked_at' => 'datetime',
         ];
+    }
+
+    public function fines(): HasMany
+    {
+        return $this->hasMany(UserFine::class, 'user_id');
+    }
+
+    public function blockedFine(): BelongsTo
+    {
+        return $this->belongsTo(UserFine::class, 'blocked_fine_id');
     }
 
     /**

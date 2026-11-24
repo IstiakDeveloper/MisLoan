@@ -2,11 +2,13 @@
 
 use App\Http\Controllers\AppRegistrationController;
 use App\Http\Controllers\ApprovalController;
+use App\Http\Controllers\BlockedAccountController;
 use App\Http\Controllers\ClusterHandoverController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\HeadOffice\ApproverLoanApprovalReportController;
 use App\Http\Controllers\HeadOffice\BranchLoanPendingReportController;
 use App\Http\Controllers\HeadOffice\CsoDutyRosterController;
+use App\Http\Controllers\HeadOffice\FineManagementController;
 use App\Http\Controllers\HeadOffice\GuarantorInformantReportController;
 use App\Http\Controllers\HeadOffice\HoSendCutoffController;
 use App\Http\Controllers\HeadOffice\LoanWorkflowConfigController;
@@ -38,6 +40,7 @@ use App\Http\Controllers\SavingsProductController;
 use App\Http\Controllers\TeamBasedApprovalController;
 use App\Http\Controllers\TeamBasedApprovalPrintController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\UserFineController;
 use App\Http\Controllers\UserSessionController;
 use App\Http\Middleware\PreserveCycleLoanContext;
 use Illuminate\Support\Facades\Artisan;
@@ -83,6 +86,17 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('{notification}', [NotificationController::class, 'show'])->name('show');
         Route::patch('{notification}/read', [NotificationController::class, 'markAsRead'])->name('read');
         Route::post('mark-all-read', [NotificationController::class, 'markAllRead'])->name('mark-all-read');
+    });
+
+    // Blocked Account Notice Screen
+    Route::get('/account/blocked', [BlockedAccountController::class, 'show'])->name('account.blocked');
+
+    // User Fines & Self-Correction Routes
+    Route::prefix('fines')->name('fines.')->middleware('auth')->group(function () {
+        Route::get('/', [UserFineController::class, 'index'])->name('index');
+        Route::get('/create', [UserFineController::class, 'create'])->name('create');
+        Route::post('/', [UserFineController::class, 'store'])->name('store');
+        Route::get('/{fine}', [UserFineController::class, 'show'])->name('show');
     });
 
     // Organization Management Routes - Only for SuperAdmin/Head Office
@@ -508,6 +522,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('reports/approver-loan-approvals', [ApproverLoanApprovalReportController::class, 'index'])->name('reports.approver-loan-approvals');
         Route::get('reports/approver-loan-approvals/print', [ApproverLoanApprovalReportController::class, 'print'])->name('reports.approver-loan-approvals.print');
         Route::get('reports/approver-loan-approvals/export', [ApproverLoanApprovalReportController::class, 'exportExcel'])->name('reports.approver-loan-approvals.export');
+
+        // Fine & Penalty Management
+        Route::prefix('fines')->name('fines.')->group(function () {
+            Route::get('/', [FineManagementController::class, 'index'])->name('index');
+            Route::post('block-user', [FineManagementController::class, 'blockUserWithFine'])->name('block-user');
+            Route::post('users/{user}/unblock', [FineManagementController::class, 'unblockUser'])->name('unblock-user');
+            Route::patch('{fine}/status', [FineManagementController::class, 'updateStatus'])->name('update-status');
+        });
     });
 
     // Friendly Top-Level Routes for Reports

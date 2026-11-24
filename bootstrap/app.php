@@ -9,6 +9,7 @@ use App\Http\Middleware\CheckTeamBasedApprovalReportAccess;
 use App\Http\Middleware\EnsureCanViewMemberAdmission;
 use App\Http\Middleware\EnsurePortfolioHandoverComplete;
 use App\Http\Middleware\EnsureProfileComplete;
+use App\Http\Middleware\EnsureUserNotBlocked;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\NormalizeInertiaAmounts;
@@ -39,6 +40,7 @@ return Application::configure(basePath: dirname(__DIR__))
             AddLinkHeadersForPreloadedAssets::class,
             CheckMaintenanceMode::class,
             EnsurePortfolioHandoverComplete::class,
+            EnsureUserNotBlocked::class,
         ]);
 
         $middleware->alias([

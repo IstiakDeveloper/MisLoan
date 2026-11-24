@@ -43,6 +43,8 @@ import {
     FileSpreadsheet,
     Activity,
     Smartphone,
+    ShieldAlert,
+    Receipt,
 } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { usePwaInstallPrompt } from '@/hooks/usePwaInstallPrompt';
@@ -119,6 +121,8 @@ function isGmailAddress(email?: string | null): boolean {
 
 function getPageTitle(currentPath: string): string {
     if (currentPath === '/dashboard') return 'Dashboard';
+    if (currentPath.includes('/head-office/fines')) return 'Fine & Penalty Management';
+    if (currentPath.includes('/fines')) return 'Mistake Correction & Fine';
     if (currentPath.includes('/cycle-hub')) return 'Cycle Hub (সাইকেল হাব)';
     if (currentPath.includes('/cso-duty-roster')) return 'CSO Duty Roster';
     if (currentPath.includes('/send-cutoff')) return 'Send Deadline';
@@ -280,14 +284,15 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         { name: 'Loan Applications', href: '/member/loan-applications', icon: Banknote },
         { name: 'Verification', href: '/verifications', icon: SearchCheck, badge: badgeCounts.pendingVerifications || 0 },
         { name: 'Savings Applications', href: '/member/savings-applications', icon: PiggyBank },
+        { name: 'Corrections & Fines', href: '/fines', icon: Receipt },
         { name: 'Team Based Approval', href: '/team-based-approvals', icon: FileCheck },
         { name: 'Pending Approvals', href: '/approvals', icon: ClipboardCheck, badge: badgeCounts.pendingApprovals || 0 },
         { name: 'Cluster Handover', href: '/cluster-handover', icon: Users, badge: badgeCounts.pendingClusterHandovers || 0 },
     ];
 
-    // Field officer: admissions plus loan applications for their approved members + verifications + cycle hub + savings applications
+    // Field officer: admissions plus loan applications for their approved members + verifications + cycle hub + savings applications + fines
     const branchMenuItems = isFieldOfficer
-        ? branchMenuItemsFull.filter((m) => m.name === 'Dashboard' || m.name === 'Cycle Hub' || m.name === 'Member Admissions' || m.name === 'Loan Applications' || m.name === 'Verification' || m.name === 'Savings Applications')
+        ? branchMenuItemsFull.filter((m) => m.name === 'Dashboard' || m.name === 'Cycle Hub' || m.name === 'Member Admissions' || m.name === 'Loan Applications' || m.name === 'Verification' || m.name === 'Savings Applications' || m.name === 'Corrections & Fines')
         : roleName === 'branch_user'
         ? branchMenuItemsFull.filter((m) => m.name !== 'Pending Approvals')
         : branchMenuItemsFull;
@@ -315,6 +320,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         { name: 'Loan Applications', href: '/member/loan-applications', icon: Banknote, badge: badgeCounts.pendingLoanApplications || 0 },
         { name: 'Verification', href: '/verifications', icon: SearchCheck, badge: badgeCounts.pendingVerifications || 0 },
         { name: 'Savings Applications', href: '/member/savings-applications', icon: PiggyBank },
+        { name: 'Corrections & Fines', href: '/fines', icon: Receipt },
     ];
 
     const headOfficeMainItems = [
@@ -325,6 +331,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         { name: 'Verification', href: '/verifications', icon: SearchCheck, badge: badgeCounts.pendingVerifications || 0 },
         { name: 'Team Based Approvals', href: '/head-office/team-based-approvals', icon: FileCheck },
         { name: 'Savings Applications', href: '/head-office/savings-applications', icon: PiggyBank },
+        { name: 'Fines & Penalties', href: '/head-office/fines', icon: ShieldAlert },
     ];
 
     const headOfficeReportItems = [
@@ -380,7 +387,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     const menuGroups = useMemo(() => {
         if (isBranchRole) {
             const dashboardItem = branchMenuItems.find(m => m.href === '/dashboard');
-            const operationsItems = branchMenuItems.filter(m => ['/member-admissions', '/member/loan-applications', '/member/cycle-hub', '/verifications', '/member/savings-applications'].includes(m.href));
+            const operationsItems = branchMenuItems.filter(m => ['/member-admissions', '/member/loan-applications', '/member/cycle-hub', '/verifications', '/member/savings-applications', '/fines'].includes(m.href));
             const approvalsItems = branchMenuItems.filter(m => ['/team-based-approvals', '/approvals'].includes(m.href));
             const clusterItem = branchMenuItems.find(m => m.href === '/cluster-handover');
 
@@ -413,7 +420,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             );
             const approvalsItems = [
                 ...approverMenuItems.filter(m => m.href !== '/dashboard'),
-                ...headOfficeMainItems.filter(m => m.href === '/head-office/team-based-approvals'),
+                ...headOfficeMainItems.filter(m => ['/head-office/team-based-approvals', '/head-office/fines'].includes(m.href)),
             ];
 
             const groups = [];
@@ -437,7 +444,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         // Head office / default roles
         const dashboardItem = headOfficeMainItems.find(m => m.href === '/dashboard');
         const operationsItems = headOfficeMainItems.filter(m => ['/member/cycle-hub', '/head-office/admission-members', '/head-office/loan-applications', '/verifications', '/head-office/savings-applications'].includes(m.href));
-        const approvalsItems = headOfficeMainItems.filter(m => ['/head-office/team-based-approvals'].includes(m.href));
+        const approvalsItems = headOfficeMainItems.filter(m => ['/head-office/team-based-approvals', '/head-office/fines'].includes(m.href));
 
         const groups = [];
         if (dashboardItem) groups.push({ title: 'Overview', items: [dashboardItem] });
