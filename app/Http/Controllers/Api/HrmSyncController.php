@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Services\HrmOrganizationSyncService;
 use App\Services\HrmUserSyncService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -11,6 +12,39 @@ use Throwable;
 
 class HrmSyncController extends Controller
 {
+    public function syncOrganization(Request $request, HrmOrganizationSyncService $hrmOrgSyncService): JsonResponse
+    {
+        $token = (string) config('services.hrm.token');
+        if ($token === '' || $request->header('Authorization') !== 'Bearer '.$token) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Unauthorized access',
+            ], 401);
+        }
+
+        try {
+            $payload = $request->all();
+            if (isset($payload['zones']) && is_array($payload['zones'])) {
+                $stats = $hrmOrgSyncService->applyOrganizationPayload($payload);
+            } else {
+                $stats = $hrmOrgSyncService->sync();
+            }
+        } catch (Throwable $e) {
+            Log::error('HRM organization webhook failed', [
+                'message' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'status' => false,
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+
+        return response()->json([
+            'status' => true,
+            'stats' => $stats,
+        ]);
+    }
     public function syncFieldOfficer(Request $request, HrmUserSyncService $hrmUserSyncService): JsonResponse
     {
         $token = (string) config('services.hrm.token');

@@ -22,3 +22,8 @@ Schedule::command('notifications:prune --days=15')
     ->dailyAt('03:00')
     ->withoutOverlapping()
     ->name('notifications-prune');
+
+Schedule::command('hrm:sync-organization')
+    ->dailyAt('04:00')
+    ->withoutOverlapping()
+    ->name('hrm-sync-organization');

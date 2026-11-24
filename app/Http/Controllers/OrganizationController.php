@@ -41,13 +41,15 @@ class OrganizationController extends Controller
         }
 
         $message = sprintf(
-            'Organization synced from HRM. Zones: %d created, %d updated. Areas: %d created, %d updated. Branches: %d created, %d updated.',
+            'Organization synced from HRM. Zones: %d created, %d updated. Areas: %d created, %d updated. Branches: %d created, %d updated. Seat Users: %d created, %d updated.',
             $stats['zones']['created'],
             $stats['zones']['updated'],
             $stats['areas']['created'],
             $stats['areas']['updated'],
             $stats['branches']['created'],
             $stats['branches']['updated'],
+            $stats['users']['created'] ?? 0,
+            $stats['users']['updated'] ?? 0,
         );
 
         return redirect()->route('organizations.index')

@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Models\Area;
 use App\Models\Branch;
+use App\Models\Role;
+use App\Models\User;
 use App\Models\Zone;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\DB;
@@ -17,7 +19,8 @@ class HrmOrganizationSyncService
      * @return array{
      *     zones: array{created: int, updated: int},
      *     areas: array{created: int, updated: int},
-     *     branches: array{created: int, updated: int}
+     *     branches: array{created: int, updated: int},
+     *     users: array{created: int, updated: int}
      * }
      */
     public function sync(): array
@@ -60,30 +63,37 @@ class HrmOrganizationSyncService
     }
 
     /**
+     * Apply organization hierarchy payload from HRM and sync seat-based users (ZM, RM, BM, and Branch accounts).
+     *
      * @param  array<string, mixed>  $payload
      * @return array{
      *     zones: array{created: int, updated: int},
      *     areas: array{created: int, updated: int},
-     *     branches: array{created: int, updated: int}
+     *     branches: array{created: int, updated: int},
+     *     users: array{created: int, updated: int}
      * }
      */
-    private function applyOrganizationPayload(array $payload): array
+    public function applyOrganizationPayload(array $payload): array
     {
         $stats = [
             'zones' => ['created' => 0, 'updated' => 0],
             'areas' => ['created' => 0, 'updated' => 0],
             'branches' => ['created' => 0, 'updated' => 0],
+            'users' => ['created' => 0, 'updated' => 0],
         ];
 
         DB::transaction(function () use ($payload, &$stats) {
             foreach ($payload['zones'] as $zoneData) {
                 $zone = $this->upsertZone($zoneData, $stats);
+                $this->ensureZoneSeatUser($zone, $zoneData, $stats);
 
                 foreach ($zoneData['areas'] ?? [] as $areaData) {
                     $area = $this->upsertArea($zone, $areaData, $stats);
+                    $this->ensureAreaSeatUser($area, $zone, $areaData, $stats);
 
                     foreach ($areaData['branches'] ?? [] as $branchData) {
-                        $this->upsertBranch($area, $branchData, $stats);
+                        $branch = $this->upsertBranch($area, $branchData, $stats);
+                        $this->ensureBranchManagerSeatUser($branch, $area, $branchData, $stats);
                     }
                 }
             }
@@ -105,7 +115,8 @@ class HrmOrganizationSyncService
                 ], $stats);
 
                 foreach ($orphanBranches as $branchData) {
-                    $this->upsertBranch($area, $branchData, $stats);
+                    $branch = $this->upsertBranch($area, $branchData, $stats);
+                    $this->ensureBranchManagerSeatUser($branch, $area, $branchData, $stats);
                 }
             }
         });
@@ -185,7 +196,7 @@ class HrmOrganizationSyncService
 
     /**
      * @param  array<string, mixed>  $zoneData
-     * @param  array{zones: array{created: int, updated: int}, areas: array{created: int, updated: int}, branches: array{created: int, updated: int}}  $stats
+     * @param  array{zones: array{created: int, updated: int}, areas: array{created: int, updated: int}, branches: array{created: int, updated: int}, users: array{created: int, updated: int}}  $stats
      */
     private function upsertZone(array $zoneData, array &$stats): Zone
     {
@@ -218,7 +229,7 @@ class HrmOrganizationSyncService
 
     /**
      * @param  array<string, mixed>  $areaData
-     * @param  array{zones: array{created: int, updated: int}, areas: array{created: int, updated: int}, branches: array{created: int, updated: int}}  $stats
+     * @param  array{zones: array{created: int, updated: int}, areas: array{created: int, updated: int}, branches: array{created: int, updated: int}, users: array{created: int, updated: int}}  $stats
      */
     private function upsertArea(Zone $zone, array $areaData, array &$stats): Area
     {
@@ -252,7 +263,7 @@ class HrmOrganizationSyncService
 
     /**
      * @param  array<string, mixed>  $branchData
-     * @param  array{zones: array{created: int, updated: int}, areas: array{created: int, updated: int}, branches: array{created: int, updated: int}}  $stats
+     * @param  array{zones: array{created: int, updated: int}, areas: array{created: int, updated: int}, branches: array{created: int, updated: int}, users: array{created: int, updated: int}}  $stats
      */
     private function upsertBranch(Area $area, array $branchData, array &$stats): Branch
     {
@@ -287,6 +298,242 @@ class HrmOrganizationSyncService
         app(BranchAccountService::class)->ensureForBranch($branch->fresh(['area']));
 
         return $branch;
+    }
+
+    /**
+     * Ensure seat-based Zonal Manager user exists (e.g. zmraninagar, zmbadalgachi, zmshishahat)
+     * and is linked to the correct zone_id and holds the current manager PIN/name/signature.
+     *
+     * @param  array<string, mixed>  $zoneData
+     * @param  array{zones: array{created: int, updated: int}, areas: array{created: int, updated: int}, branches: array{created: int, updated: int}, users: array{created: int, updated: int}}  $stats
+     */
+    private function ensureZoneSeatUser(Zone $zone, array $zoneData, array &$stats): ?User
+    {
+        if ($zone->code === '00' || strtolower($zone->name) === 'head office') {
+            return null;
+        }
+
+        $zmRole = Role::query()->where('name', Role::ZONE_MANAGER)->first();
+        if (! $zmRole) {
+            return null;
+        }
+
+        $slug = $zoneData['slug'] ?? $this->makeSlug($zone->name);
+        $targetUsername = 'zm'.$slug;
+
+        $user = User::withTrashed()
+            ->where('role_id', $zmRole->id)
+            ->where('zone_id', $zone->id)
+            ->first();
+
+        if (! $user) {
+            $user = User::withTrashed()->where('username', $targetUsername)->first();
+        }
+
+        $isNew = false;
+        if (! $user) {
+            $user = new User;
+            $user->password = Hash::make('12345678');
+            $user->email = "{$targetUsername}@misloan.local";
+            $isNew = true;
+        } elseif ($user->trashed()) {
+            $user->restore();
+        }
+
+        $manager = $zoneData['manager'] ?? null;
+        $pin = trim((string) ($manager['pin'] ?? ''));
+        $name = trim((string) ($manager['name'] ?? ''));
+        $signature = $manager['signature'] ?? null;
+
+        $user->username = $targetUsername;
+        $user->role_id = $zmRole->id;
+        $user->account_type = 'staff';
+        $user->zone_id = $zone->id;
+        $user->area_id = null;
+        $user->branch_id = null;
+        $user->is_active = (bool) $zone->is_active;
+
+        if ($pin !== '') {
+            $user->pin = $pin;
+        }
+        if ($name !== '') {
+            $user->name = "Zonal Manager {$zone->name} ({$name})";
+        } elseif (! filled($user->name)) {
+            $user->name = "Zonal Manager {$zone->name}";
+        }
+        if (filled($signature)) {
+            $user->signature = $signature;
+        }
+
+        $user->save();
+
+        if ($isNew) {
+            $stats['users']['created']++;
+        } else {
+            $stats['users']['updated']++;
+        }
+
+        return $user;
+    }
+
+    /**
+     * Ensure seat-based Area/Regional Manager user exists (e.g. rmhapania, rmatrai, rmbetgari)
+     * and is linked to the correct area_id and zone_id, holding current manager PIN/name/signature.
+     *
+     * @param  array<string, mixed>  $areaData
+     * @param  array{zones: array{created: int, updated: int}, areas: array{created: int, updated: int}, branches: array{created: int, updated: int}, users: array{created: int, updated: int}}  $stats
+     */
+    private function ensureAreaSeatUser(Area $area, Zone $zone, array $areaData, array &$stats): ?User
+    {
+        if ($area->code === '000' || str_contains(strtolower($area->name), 'head office')) {
+            return null;
+        }
+
+        $amRole = Role::query()->where('name', Role::AREA_MANAGER)->first();
+        if (! $amRole) {
+            return null;
+        }
+
+        $slug = $areaData['slug'] ?? $this->makeSlug($area->name);
+        $targetUsername = 'rm'.$slug;
+
+        $user = User::withTrashed()
+            ->where('role_id', $amRole->id)
+            ->where('area_id', $area->id)
+            ->first();
+
+        if (! $user) {
+            $user = User::withTrashed()->where('username', $targetUsername)->first();
+        }
+
+        $isNew = false;
+        if (! $user) {
+            $user = new User;
+            $user->password = Hash::make('12345678');
+            $user->email = "{$targetUsername}@misloan.local";
+            $isNew = true;
+        } elseif ($user->trashed()) {
+            $user->restore();
+        }
+
+        $manager = $areaData['manager'] ?? null;
+        $pin = trim((string) ($manager['pin'] ?? ''));
+        $name = trim((string) ($manager['name'] ?? ''));
+        $signature = $manager['signature'] ?? null;
+
+        $user->username = $targetUsername;
+        $user->role_id = $amRole->id;
+        $user->account_type = 'staff';
+        $user->area_id = $area->id;
+        $user->zone_id = $zone->id; // Enforces correct zone relationship
+        $user->branch_id = null;
+        $user->is_active = (bool) $area->is_active;
+
+        if ($pin !== '') {
+            $user->pin = $pin;
+        }
+        if ($name !== '') {
+            $user->name = "Regional Manager {$area->name} ({$name})";
+        } elseif (! filled($user->name)) {
+            $user->name = "Regional Manager {$area->name}";
+        }
+        if (filled($signature)) {
+            $user->signature = $signature;
+        }
+
+        $user->save();
+
+        if ($isNew) {
+            $stats['users']['created']++;
+        } else {
+            $stats['users']['updated']++;
+        }
+
+        return $user;
+    }
+
+    /**
+     * Ensure seat-based Branch Manager user exists (e.g. bmatrai, bmbhabanipur)
+     * and is linked to the correct branch_id, area_id, and zone_id.
+     *
+     * @param  array<string, mixed>  $branchData
+     * @param  array{zones: array{created: int, updated: int}, areas: array{created: int, updated: int}, branches: array{created: int, updated: int}, users: array{created: int, updated: int}}  $stats
+     */
+    private function ensureBranchManagerSeatUser(Branch $branch, Area $area, array $branchData, array &$stats): ?User
+    {
+        if ($branch->is_head_office || $branch->code === '1000' || str_contains(strtolower($branch->name), 'head office')) {
+            return null;
+        }
+
+        $bmRole = Role::query()->where('name', Role::BRANCH_MANAGER)->first();
+        if (! $bmRole) {
+            return null;
+        }
+
+        $slug = $branchData['slug'] ?? $this->makeSlug($branch->name);
+        $targetUsername = 'bm'.$slug;
+
+        $user = User::withTrashed()
+            ->where('role_id', $bmRole->id)
+            ->where('branch_id', $branch->id)
+            ->first();
+
+        if (! $user) {
+            $user = User::withTrashed()->where('username', $targetUsername)->first();
+        }
+
+        $isNew = false;
+        if (! $user) {
+            $user = new User;
+            $user->password = Hash::make('12345678');
+            $user->email = "{$targetUsername}@misloan.local";
+            $isNew = true;
+        } elseif ($user->trashed()) {
+            $user->restore();
+        }
+
+        $manager = $branchData['manager'] ?? null;
+        $pin = trim((string) ($manager['pin'] ?? ''));
+        $name = trim((string) ($manager['name'] ?? ''));
+        $signature = $manager['signature'] ?? null;
+
+        $user->username = $targetUsername;
+        $user->role_id = $bmRole->id;
+        $user->account_type = 'staff';
+        $user->branch_id = $branch->id;
+        $user->area_id = $area->id;
+        $user->zone_id = $area->zone_id;
+        $user->is_active = (bool) $branch->is_active;
+
+        if ($pin !== '') {
+            $user->pin = $pin;
+        }
+        if ($name !== '') {
+            $user->name = "{$branch->name} Branch Manager ({$name})";
+        } elseif (! filled($user->name)) {
+            $user->name = "{$branch->name} Branch Manager";
+        }
+        if (filled($signature)) {
+            $user->signature = $signature;
+        }
+
+        $user->save();
+        $user->branches()->sync([$branch->id]);
+
+        if ($isNew) {
+            $stats['users']['created']++;
+        } else {
+            $stats['users']['updated']++;
+        }
+
+        return $user;
+    }
+
+    private function makeSlug(string $name): string
+    {
+        $cleaned = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $name));
+
+        return $cleaned !== '' ? $cleaned : 'unknown';
     }
 
     /**

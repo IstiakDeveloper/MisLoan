@@ -14,5 +14,6 @@ Route::prefix('public')->group(function () {
 Route::get('organization-structure', [OrganizationController::class, 'organizationStructure']);
 
 // HRM → MisLoan auto sync (Bearer HRM_API_TOKEN)
+Route::post('hrm/sync/organization', [HrmSyncController::class, 'syncOrganization']);
 Route::post('hrm/sync/field-officer', [HrmSyncController::class, 'syncFieldOfficer']);
 Route::post('hrm/sync/transfer', [HrmSyncController::class, 'syncTransfer']);
