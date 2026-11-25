@@ -11,6 +11,7 @@ import {
     ExternalLink,
     Eye,
     Filter,
+    Gift,
     Image as ImageIcon,
     Lock,
     Plus,
@@ -59,13 +60,16 @@ interface FineRecord {
     transaction_id: string | null;
     screenshot_path: string | null;
     screenshot_url: string | null;
-    status: 'pending_payment' | 'pending_review' | 'approved' | 'rejected' | 'resolved';
+    status: 'pending_payment' | 'pending_review' | 'approved' | 'rejected' | 'resolved' | 'waived';
     is_user_blocked: boolean;
     admin_note: string | null;
+    waive_reason?: string | null;
+    waived_at?: string | null;
     created_at: string;
     user?: FineUser | null;
     creator?: { id: number; name: string } | null;
     resolver?: { id: number; name: string } | null;
+    waiver?: { id: number; name: string } | null;
 }
 
 interface Props {
@@ -86,6 +90,8 @@ interface Props {
         pending_review: number;
         total_blocked_users: number;
         total_amount_collected: number;
+        total_waived_count?: number;
+        total_waived_amount?: number;
     };
     users: FineUser[];
     bkash: {
@@ -120,6 +126,17 @@ export default function HeadOfficeFinesIndex({
     const [statusAction, setStatusAction] = useState<'approved' | 'rejected' | 'resolved'>('approved');
     const [statusAdminNote, setStatusAdminNote] = useState('');
 
+    // Waive Modal State
+    const [selectedFineForWaive, setSelectedFineForWaive] = useState<FineRecord | null>(null);
+    const [waiveReason, setWaiveReason] = useState('');
+    const [isWaiving, setIsWaiving] = useState(false);
+
+    // Unblock Modal State
+    const [selectedUserForUnblock, setSelectedUserForUnblock] = useState<FineUser | null>(null);
+    const [unblockAction, setUnblockAction] = useState<'resolve' | 'waive'>('resolve');
+    const [unblockNote, setUnblockNote] = useState('');
+    const [isUnblocking, setIsUnblocking] = useState(false);
+
     // Screenshot Modal
     const [previewScreenshotUrl, setPreviewScreenshotUrl] = useState<string | null>(null);
 
@@ -153,12 +170,53 @@ export default function HeadOfficeFinesIndex({
         });
     };
 
-    const handleUnblockUser = (user: FineUser) => {
-        if (confirm(`আপনি কি নিশ্চিত যে ইউজার '${user.name}' কে আনব্লক করতে চান?`)) {
-            router.post(`/head-office/fines/users/${user.id}/unblock`, {}, {
+    const handleWaiveSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!selectedFineForWaive) return;
+
+        setIsWaiving(true);
+        router.post(
+            `/head-office/fines/${selectedFineForWaive.id}/waive`,
+            {
+                waive_reason: waiveReason,
+            },
+            {
                 preserveScroll: true,
-            });
-        }
+                onSuccess: () => {
+                    setSelectedFineForWaive(null);
+                    setWaiveReason('');
+                    setIsWaiving(false);
+                },
+                onError: () => {
+                    setIsWaiving(false);
+                },
+            }
+        );
+    };
+
+    const handleUnblockSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!selectedUserForUnblock) return;
+
+        setIsUnblocking(true);
+        router.post(
+            `/head-office/fines/users/${selectedUserForUnblock.id}/unblock`,
+            {
+                action: unblockAction,
+                admin_note: unblockNote,
+            },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setSelectedUserForUnblock(null);
+                    setUnblockNote('');
+                    setIsUnblocking(false);
+                },
+                onError: () => {
+                    setIsUnblocking(false);
+                },
+            }
+        );
     };
 
     const handleUpdateStatusSubmit = (e: React.FormEvent) => {
@@ -232,6 +290,13 @@ export default function HeadOfficeFinesIndex({
                         বাতিল
                     </span>
                 );
+            case 'waived':
+                return (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                        <Gift className="w-3.5 h-3.5" />
+                        মওকুফকৃত (Waived)
+                    </span>
+                );
             default:
                 return null;
         }
@@ -265,7 +330,7 @@ export default function HeadOfficeFinesIndex({
                 </div>
 
                 {/* Metrics Cards */}
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 lg:grid-cols-5 gap-3.5">
                     <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm flex items-center gap-3.5">
                         <div className="w-11 h-11 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center font-bold">
                             <Receipt className="w-5 h-5" />
@@ -281,7 +346,7 @@ export default function HeadOfficeFinesIndex({
                             <Clock className="w-5 h-5" />
                         </div>
                         <div>
-                            <span className="text-xs font-semibold text-slate-400 block uppercase">পর্যালোচনায় অপেক্ষমাণ</span>
+                            <span className="text-xs font-semibold text-slate-400 block uppercase">অপেক্ষমাণ</span>
                             <span className="text-xl font-bold text-blue-600">{stats.pending_review}</span>
                         </div>
                     </div>
@@ -291,7 +356,7 @@ export default function HeadOfficeFinesIndex({
                             <Lock className="w-5 h-5" />
                         </div>
                         <div>
-                            <span className="text-xs font-semibold text-slate-400 block uppercase">বর্তমানে ব্লকড ইউজার</span>
+                            <span className="text-xs font-semibold text-slate-400 block uppercase">ব্লকড ইউজার</span>
                             <span className="text-xl font-bold text-rose-600">{stats.total_blocked_users}</span>
                         </div>
                     </div>
@@ -301,10 +366,22 @@ export default function HeadOfficeFinesIndex({
                             <CreditCard className="w-5 h-5" />
                         </div>
                         <div>
-                            <span className="text-xs font-semibold text-slate-400 block uppercase">মোট সংগৃহীত জরিমানা</span>
+                            <span className="text-xs font-semibold text-slate-400 block uppercase">সংগৃহীত জরিমানা</span>
                             <span className="text-xl font-bold text-emerald-600">
                                 ৳ {Number(stats.total_amount_collected).toLocaleString('en-US', { minimumFractionDigits: 0 })}
                             </span>
+                        </div>
+                    </div>
+
+                    <div className="bg-white rounded-2xl border border-purple-200/80 p-4 shadow-sm flex items-center gap-3.5">
+                        <div className="w-11 h-11 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
+                            <Gift className="w-5 h-5" />
+                        </div>
+                        <div>
+                            <span className="text-xs font-semibold text-purple-600 block uppercase">মওকুফকৃত (Waived)</span>
+                            <div className="text-xl font-bold text-purple-700">
+                                ৳ {Number(stats.total_waived_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 0 })}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -356,6 +433,7 @@ export default function HeadOfficeFinesIndex({
                                 <option value="pending_payment">পেমেন্ট অপেক্ষমাণ</option>
                                 <option value="approved">অনুমোদিত</option>
                                 <option value="resolved">মীমাংসিত / সম্পন্ন</option>
+                                <option value="waived">মওকুফকৃত (Waived)</option>
                                 <option value="rejected">বাতিলকৃত</option>
                             </select>
                         </div>
@@ -487,12 +565,32 @@ export default function HeadOfficeFinesIndex({
                                                 {fine.user?.is_blocked && (
                                                     <button
                                                         type="button"
-                                                        onClick={() => fine.user && handleUnblockUser(fine.user)}
+                                                        onClick={() => {
+                                                            setSelectedUserForUnblock(fine.user!);
+                                                            setUnblockAction('resolve');
+                                                            setUnblockNote('');
+                                                        }}
                                                         className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors border border-emerald-200"
                                                         title="ইউজারকে আনব্লক করুন"
                                                     >
                                                         <Unlock className="w-3.5 h-3.5" />
                                                         আনব্লক
+                                                    </button>
+                                                )}
+
+                                                {/* Waive Button for any active/unwaived fine */}
+                                                {fine.status !== 'waived' && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setSelectedFineForWaive(fine);
+                                                            setWaiveReason('');
+                                                        }}
+                                                        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-lg transition-colors border border-purple-200"
+                                                        title="জরিমানা মওকুফ (Waive) করুন"
+                                                    >
+                                                        <Gift className="w-3.5 h-3.5" />
+                                                        মওকুফ
                                                     </button>
                                                 )}
 
@@ -774,6 +872,216 @@ export default function HeadOfficeFinesIndex({
                                         className="px-5 py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md transition-all"
                                     >
                                         সংরক্ষণ করুন
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                )}
+
+                {/* MODAL: Waive Fine */}
+                {selectedFineForWaive && (
+                    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+                        <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden">
+                            <div className="bg-purple-50 border-b border-purple-100 p-5 flex items-center justify-between">
+                                <div className="flex items-center gap-2.5">
+                                    <div className="w-9 h-9 rounded-xl bg-purple-600 text-white flex items-center justify-center">
+                                        <Gift className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-base font-bold text-purple-950">
+                                            জরিমানা মওকুফ (Waive Fine)
+                                        </h3>
+                                        <p className="text-xs text-purple-700">
+                                            ট্র্যাকিং কোড: {selectedFineForWaive.tracking_id}
+                                        </p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => setSelectedFineForWaive(null)}
+                                    className="p-1 rounded-lg text-purple-400 hover:text-purple-700 hover:bg-purple-100 transition-colors"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+
+                            <form onSubmit={handleWaiveSubmit} className="p-6 space-y-4">
+                                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1.5">
+                                    <div className="flex justify-between">
+                                        <span className="text-slate-500 font-medium">ইউজার:</span>
+                                        <span className="font-bold text-slate-800">
+                                            {selectedFineForWaive.user?.name} (@{selectedFineForWaive.user?.username})
+                                        </span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-slate-500 font-medium">জরিমানার পরিমাণ:</span>
+                                        <span className="font-bold text-purple-700 text-sm">
+                                            ৳ {Number(selectedFineForWaive.fine_amount).toLocaleString('en-US')}
+                                        </span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-slate-500 font-medium">বর্তমান স্ট্যাটাস:</span>
+                                        <span className="font-medium text-slate-700">
+                                            {selectedFineForWaive.status}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div className="p-3 bg-amber-50 rounded-xl border border-amber-200/80 text-xs text-amber-900 leading-relaxed">
+                                    💡 <strong>নোট:</strong> মওকুফ (Waive) করলে এই জরিমানার টাকা মোট আদায়কৃত হিসেবে যোগ হবে না এবং ইউজার যদি এই কারণে ব্লকড থাকে তবে স্বয়ংক্রিয়ভাবে আনব্লক হয়ে যাবে।
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <label className="block text-xs font-bold uppercase text-slate-700">
+                                        মওকুফের কারণ / হেড অফিস নির্দেশিকা
+                                    </label>
+                                    <textarea
+                                        rows={3}
+                                        value={waiveReason}
+                                        onChange={(e) => setWaiveReason(e.target.value)}
+                                        placeholder="মওকুফ করার কারণ বিস্তারিত লিখুন (যেমন: প্রথম বারের মতো ক্ষমাসুন্দর দৃষ্টিতে হেড অফিসের সিদ্ধান্তে মওকুফ)..."
+                                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500"
+                                    />
+                                </div>
+
+                                <div className="flex items-center justify-end gap-3 pt-3">
+                                    <button
+                                        type="button"
+                                        onClick={() => setSelectedFineForWaive(null)}
+                                        className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl"
+                                    >
+                                        বাতিল
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        disabled={isWaiving}
+                                        className="px-5 py-2.5 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-xl shadow-md transition-all"
+                                    >
+                                        {isWaiving ? 'মওকুফ করা হচ্ছে...' : 'জরিমানা মওকুফ নিশ্চিত করুন'}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                )}
+
+                {/* MODAL: Unblock User (with Waive option) */}
+                {selectedUserForUnblock && (
+                    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+                        <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden">
+                            <div className="bg-emerald-50 border-b border-emerald-100 p-5 flex items-center justify-between">
+                                <div className="flex items-center gap-2.5">
+                                    <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center">
+                                        <Unlock className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-base font-bold text-emerald-950">
+                                            ইউজার আনব্লক করুন
+                                        </h3>
+                                        <p className="text-xs text-emerald-700">
+                                            {selectedUserForUnblock.name} (@{selectedUserForUnblock.username})
+                                        </p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => setSelectedUserForUnblock(null)}
+                                    className="p-1 rounded-lg text-emerald-400 hover:text-emerald-700 hover:bg-emerald-100 transition-colors"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+
+                            <form onSubmit={handleUnblockSubmit} className="p-6 space-y-4">
+                                <div>
+                                    <label className="block text-xs font-bold uppercase text-slate-700 mb-2">
+                                        আনব্লক করার পদ্ধতি নির্বাচন করুন
+                                    </label>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setUnblockAction('resolve')}
+                                            className={`p-3 rounded-xl text-left border transition-all ${
+                                                unblockAction === 'resolve'
+                                                    ? 'bg-emerald-50 border-emerald-500 ring-2 ring-emerald-500/20'
+                                                    : 'bg-white border-slate-200 hover:bg-slate-50'
+                                            }`}
+                                        >
+                                            <span className="block text-xs font-bold text-emerald-900">
+                                                পেমেন্ট সাপেক্ষে
+                                            </span>
+                                            <span className="block text-[11px] text-slate-500 mt-0.5">
+                                                জরিমানা পরিশোধ হয়েছে
+                                            </span>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => setUnblockAction('waive')}
+                                            className={`p-3 rounded-xl text-left border transition-all ${
+                                                unblockAction === 'waive'
+                                                    ? 'bg-purple-50 border-purple-500 ring-2 ring-purple-500/20'
+                                                    : 'bg-white border-slate-200 hover:bg-slate-50'
+                                            }`}
+                                        >
+                                            <span className="block text-xs font-bold text-purple-900">
+                                                জরিমানা ছাড়া (Waive)
+                                            </span>
+                                            <span className="block text-[11px] text-slate-500 mt-0.5">
+                                                জরিমানা মওকুফ করে ছাড়া
+                                            </span>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {unblockAction === 'waive' ? (
+                                    <div className="p-3 bg-purple-50 rounded-xl border border-purple-200 text-xs text-purple-900 leading-relaxed">
+                                        🎁 <strong>মওকুফ সুবিধা:</strong> ইউজারের উপর ধার্যকৃত জরিমানা সম্পূর্ণ বাতিল/মওকুফ হবে এবং মোট সংগৃহীত জরিমানার হিসাবে এই টাকা উঠবে না।
+                                    </div>
+                                ) : (
+                                    <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-xs text-emerald-900 leading-relaxed">
+                                        ✅ <strong>নিয়মিত আনব্লক:</strong> ইউজার জরিমানা পরিশোধ করেছে হিসেবে রেকর্ডটি নিষ্পন্ন (Resolved) হবে।
+                                    </div>
+                                )}
+
+                                <div className="space-y-1.5">
+                                    <label className="block text-xs font-bold uppercase text-slate-700">
+                                        মন্তব্য / আনব্লক করার নোট
+                                    </label>
+                                    <textarea
+                                        rows={3}
+                                        value={unblockNote}
+                                        onChange={(e) => setUnblockNote(e.target.value)}
+                                        placeholder={
+                                            unblockAction === 'waive'
+                                                ? 'জরিমানা মওকুফপূর্বক ছেড়ে দেওয়ার কারণ লিখুন...'
+                                                : 'পেমেন্ট ভেরিফাই করে আনব্লক করার বিবরণ লিখুন...'
+                                        }
+                                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                                    />
+                                </div>
+
+                                <div className="flex items-center justify-end gap-3 pt-3">
+                                    <button
+                                        type="button"
+                                        onClick={() => setSelectedUserForUnblock(null)}
+                                        className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl"
+                                    >
+                                        বাতিল
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        disabled={isUnblocking}
+                                        className={`px-5 py-2.5 text-xs font-bold text-white rounded-xl shadow-md transition-all ${
+                                            unblockAction === 'waive'
+                                                ? 'bg-purple-600 hover:bg-purple-700'
+                                                : 'bg-emerald-600 hover:bg-emerald-700'
+                                        }`}
+                                    >
+                                        {isUnblocking
+                                            ? 'প্রসেসিং হচ্ছে...'
+                                            : unblockAction === 'waive'
+                                            ? 'মওকুফ করে আনব্লক করুন'
+                                            : 'আনব্লক নিশ্চিত করুন'}
                                     </button>
                                 </div>
                             </form>

@@ -528,6 +528,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::get('/', [FineManagementController::class, 'index'])->name('index');
             Route::post('block-user', [FineManagementController::class, 'blockUserWithFine'])->name('block-user');
             Route::post('users/{user}/unblock', [FineManagementController::class, 'unblockUser'])->name('unblock-user');
+            Route::post('{fine}/waive', [FineManagementController::class, 'waiveFine'])->name('waive');
             Route::patch('{fine}/status', [FineManagementController::class, 'updateStatus'])->name('update-status');
         });
     });

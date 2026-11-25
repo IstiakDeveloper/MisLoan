@@ -19,7 +19,7 @@ class FineManagementController extends Controller
     public function index(Request $request): Response
     {
         $query = UserFine::query()
-            ->with(['user.branch', 'creator:id,name', 'resolver:id,name'])
+            ->with(['user.branch', 'creator:id,name', 'resolver:id,name', 'waiver:id,name'])
             ->latest();
 
         // Filter by type
@@ -55,6 +55,8 @@ class FineManagementController extends Controller
             'pending_review' => UserFine::where('status', UserFine::STATUS_PENDING_REVIEW)->count(),
             'total_blocked_users' => User::where('is_blocked', true)->count(),
             'total_amount_collected' => (float) UserFine::whereIn('status', [UserFine::STATUS_APPROVED, UserFine::STATUS_RESOLVED])->sum('fine_amount'),
+            'total_waived_count' => UserFine::where('status', UserFine::STATUS_WAIVED)->count(),
+            'total_waived_amount' => (float) UserFine::where('status', UserFine::STATUS_WAIVED)->sum('fine_amount'),
         ];
 
         // Active users list for the block-and-fine modal
@@ -127,11 +129,15 @@ class FineManagementController extends Controller
     }
 
     /**
-     * Unblock a blocked user.
+     * Unblock a blocked user (with optional fine waiver).
      */
     public function unblockUser(Request $request, User $user): RedirectResponse
     {
-        DB::transaction(function () use ($user, $request) {
+        $isWaive = $request->input('action') === 'waive' || $request->boolean('waive');
+        $defaultNote = $isWaive ? 'জরিমানা মওকুফ (Waived) করে ইউজারকে আনব্লক করা হয়েছে।' : 'হেড অফিস কর্তৃক ইউজারকে আনব্লক করা হয়েছে।';
+        $note = $request->input('admin_note') ?: $defaultNote;
+
+        DB::transaction(function () use ($user, $request, $isWaive, $note) {
             $blockedFineId = $user->blocked_fine_id;
 
             $user->update([
@@ -142,17 +148,66 @@ class FineManagementController extends Controller
             ]);
 
             if ($blockedFineId) {
-                UserFine::where('id', $blockedFineId)->update([
-                    'status' => UserFine::STATUS_RESOLVED,
+                $updateData = [
+                    'status' => $isWaive ? UserFine::STATUS_WAIVED : UserFine::STATUS_RESOLVED,
                     'is_user_blocked' => false,
-                    'resolved_by_id' => $request->user()->id,
-                    'resolved_at' => now(),
-                    'admin_note' => $request->input('admin_note', 'হেড অফিস কর্তৃক ইউজারকে আনব্লক করা হয়েছে।'),
+                    'admin_note' => $note,
+                ];
+
+                if ($isWaive) {
+                    $updateData['waived_by_id'] = $request->user()->id;
+                    $updateData['waived_at'] = now();
+                    $updateData['waive_reason'] = $note;
+                } else {
+                    $updateData['resolved_by_id'] = $request->user()->id;
+                    $updateData['resolved_at'] = now();
+                }
+
+                UserFine::where('id', $blockedFineId)->update($updateData);
+            }
+        });
+
+        $msg = $isWaive
+            ? "ইউজার '{$user->name}' কে জরিমানা মওকুফ (Waived) করে সফলভাবে আনব্লক করা হয়েছে।"
+            : "ইউজার '{$user->name}' কে সফলভাবে আনব্লক করা হয়েছে।";
+
+        return back()->with('success', $msg);
+    }
+
+    /**
+     * Waive a fine for a user (removes it from total collected balance and unblocks user if blocked).
+     */
+    public function waiveFine(Request $request, UserFine $fine): RedirectResponse
+    {
+        $validated = $request->validate([
+            'waive_reason' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $reason = $validated['waive_reason'] ?: 'হেড অফিস কর্তৃক জরিমানা মওকুফ (Waived) করা হয়েছে।';
+
+        DB::transaction(function () use ($fine, $request, $reason) {
+            $fine->update([
+                'status' => UserFine::STATUS_WAIVED,
+                'waived_by_id' => $request->user()->id,
+                'waived_at' => now(),
+                'waive_reason' => $reason,
+                'admin_note' => $reason,
+                'is_user_blocked' => false,
+            ]);
+
+            // If target user is still blocked due to this fine, unblock them
+            $user = $fine->user;
+            if ($user && $user->blocked_fine_id === $fine->id) {
+                $user->update([
+                    'is_blocked' => false,
+                    'blocked_reason' => null,
+                    'blocked_fine_id' => null,
+                    'blocked_at' => null,
                 ]);
             }
         });
 
-        return back()->with('success', "ইউজার '{$user->name}' কে সফলভাবে আনব্লক করা হয়েছে।");
+        return back()->with('success', "জরিমানাটি (ট্র্যাকিং: {$fine->tracking_id}) সফলভাবে মওকুফ (Waived) করা হয়েছে এবং মোট হিসাব থেকে বাদ দেওয়া হয়েছে।");
     }
 
     /**

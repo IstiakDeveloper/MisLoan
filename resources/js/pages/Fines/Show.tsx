@@ -8,6 +8,7 @@ import {
     CreditCard,
     ExternalLink,
     FileText,
+    Gift,
     Image as ImageIcon,
     Receipt,
     ShieldAlert,
@@ -29,9 +30,11 @@ interface FineDetail {
     transaction_id: string | null;
     screenshot_path: string | null;
     screenshot_url: string | null;
-    status: 'pending_payment' | 'pending_review' | 'approved' | 'rejected' | 'resolved';
+    status: 'pending_payment' | 'pending_review' | 'approved' | 'rejected' | 'resolved' | 'waived';
     is_user_blocked: boolean;
     admin_note: string | null;
+    waive_reason?: string | null;
+    waived_at?: string | null;
     created_at: string;
     user?: {
         id: number;
@@ -50,6 +53,10 @@ interface FineDetail {
         name: string;
     } | null;
     resolver?: {
+        id: number;
+        name: string;
+    } | null;
+    waiver?: {
         id: number;
         name: string;
     } | null;
@@ -96,6 +103,13 @@ export default function Show({ fine, bkash, isHeadOffice }: Props) {
                     <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-teal-50 text-teal-700 border border-teal-200">
                         <CheckCircle2 className="w-3.5 h-3.5" />
                         মীমাংসিত / সম্পন্ন
+                    </span>
+                );
+            case 'waived':
+                return (
+                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                        <Gift className="w-3.5 h-3.5" />
+                        মওকুফকৃত (Waived)
                     </span>
                 );
             case 'rejected':
@@ -188,6 +202,31 @@ export default function Show({ fine, bkash, isHeadOffice }: Props) {
                                 )}
                             </div>
                         </div>
+
+                        {/* Fine Waived Card if Waived */}
+                        {fine.status === 'waived' && (
+                            <div className="bg-purple-50/70 rounded-2xl border border-purple-200/80 shadow-sm p-6 space-y-3">
+                                <h3 className="text-sm font-bold text-purple-950 flex items-center gap-2">
+                                    <Gift className="w-5 h-5 text-purple-600" />
+                                    জরিমানা মওকুফ সংক্রান্ত নোটিশ (Fine Waived)
+                                </h3>
+                                <p className="text-sm text-purple-900 leading-relaxed bg-white/80 p-4 rounded-xl border border-purple-100 whitespace-pre-wrap">
+                                    {fine.waive_reason || 'হেড অফিস কর্তৃক এই জরিমানা মওকুফ (Waived) করা হয়েছে।'}
+                                </p>
+                                <div className="flex flex-wrap items-center justify-between text-xs text-purple-700 pt-1">
+                                    {fine.waiver && (
+                                        <span>
+                                            মওকুফকারী: <strong>{fine.waiver.name}</strong>
+                                        </span>
+                                    )}
+                                    {fine.waived_at && (
+                                        <span>
+                                            তারিখ: {new Date(fine.waived_at).toLocaleString('bn-BD', { dateStyle: 'long', timeStyle: 'short' })}
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+                        )}
 
                         {/* Admin / Resolution Note */}
                         {fine.admin_note && (

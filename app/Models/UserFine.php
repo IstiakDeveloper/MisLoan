@@ -19,6 +19,7 @@ class UserFine extends Model
     public const STATUS_APPROVED = 'approved';
     public const STATUS_REJECTED = 'rejected';
     public const STATUS_RESOLVED = 'resolved';
+    public const STATUS_WAIVED = 'waived';
 
     protected $fillable = [
         'tracking_id',
@@ -38,12 +39,16 @@ class UserFine extends Model
         'admin_note',
         'resolved_by_id',
         'resolved_at',
+        'waived_by_id',
+        'waived_at',
+        'waive_reason',
     ];
 
     protected $casts = [
         'fine_amount' => 'decimal:2',
         'is_user_blocked' => 'boolean',
         'resolved_at' => 'datetime',
+        'waived_at' => 'datetime',
     ];
 
     protected $appends = [
@@ -63,6 +68,11 @@ class UserFine extends Model
     public function resolver(): BelongsTo
     {
         return $this->belongsTo(User::class, 'resolved_by_id');
+    }
+
+    public function waiver(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'waived_by_id');
     }
 
     public function getScreenshotUrlAttribute(): ?string

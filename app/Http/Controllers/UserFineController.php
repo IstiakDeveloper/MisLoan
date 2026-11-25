@@ -119,7 +119,7 @@ class UserFineController extends Controller
             abort(403, 'এই তথ্যে আপনার কোনো প্রবেশাধিকার নেই।');
         }
 
-        $fine->loadMissing(['user.branch', 'creator', 'resolver']);
+        $fine->loadMissing(['user.branch', 'creator', 'resolver', 'waiver:id,name']);
 
         return Inertia::render('Fines/Show', [
             'fine' => $fine,

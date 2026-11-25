@@ -7,6 +7,7 @@ import {
     CreditCard,
     ExternalLink,
     FileText,
+    Gift,
     Plus,
     Receipt,
     ShieldAlert,
@@ -26,11 +27,17 @@ interface FineItem {
     transaction_id: string | null;
     screenshot_path: string | null;
     screenshot_url: string | null;
-    status: 'pending_payment' | 'pending_review' | 'approved' | 'rejected' | 'resolved';
+    status: 'pending_payment' | 'pending_review' | 'approved' | 'rejected' | 'resolved' | 'waived';
     is_user_blocked: boolean;
     admin_note: string | null;
+    waive_reason?: string | null;
+    waived_at?: string | null;
     created_at: string;
     resolver?: {
+        id: number;
+        name: string;
+    } | null;
+    waiver?: {
         id: number;
         name: string;
     } | null;
@@ -86,6 +93,13 @@ export default function Index({ fines, stats }: Props) {
                     <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-teal-50 text-teal-700 border border-teal-200">
                         <CheckCircle2 className="w-3.5 h-3.5" />
                         মীমাংসিত / সম্পন্ন
+                    </span>
+                );
+            case 'waived':
+                return (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200">
+                        <Gift className="w-3.5 h-3.5" />
+                        মওকুফকৃত (Waived)
                     </span>
                 );
             case 'rejected':
