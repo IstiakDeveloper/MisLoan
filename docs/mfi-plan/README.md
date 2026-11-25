@@ -8,10 +8,9 @@
 
 | ধাপ | ফাইল | বিষয়বস্তু | স্ট্যাটাস |
 | :--- | :--- | :--- | :--- |
-| **ধাপ ১** | [01-day-open-close-and-monthly-process.md](./01-day-open-close-and-monthly-process.md) | Day Initial, Start/Complete Work Process (Day Open/Close), LLP Voucher, Monthly Process (HO vs Branch) | ✅ সম্পন্ন |
-| **ধাপ ২** | [02-loan-schedule-and-collection.md](./02-loan-schedule-and-collection.md) | Loan Schedule, Daily Collection Sheet (DCS), Savings Ledger ও Passbook | ⚪ অপেক্ষমাণ |
-| **ধাপ ৩** | [03-accounting-and-regulatory-reports.md](./03-accounting-and-regulatory-reports.md) | Chart of Accounts (AIS), Auto-Voucher, LLP, এবং MRA / PKSF (POMIS) রিপোর্ট | ⚪ অপেক্ষমাণ |
-| **পূর্ণাঙ্গ অ্যাকাউন্টিং ব্লুপ্রিন্ট** | [04-accounting-and-ledger-master-plan.md](./04-accounting-and-ledger-master-plan.md) | `feat/mfi-accounting-security-foundation` থেকে যাচাইকৃত COA, Voucher, Cash Desk, Loan/Savings Sub-ledger ও Reports ইন্টিগ্রেশন প্ল্যান | 🔵 চূড়ান্ত প্রস্তুত |
+| **ধাপ ১** | [01-day-open-close-and-monthly-process.md](./01-day-open-close-and-monthly-process.md) | Day Initial, Start/Complete Work Process (Day Open/Close), LLP Voucher, Monthly Process, FY Rollback | ✅ সম্পন্ন |
+| **ধাপ ২A** | [04-accounting-and-ledger-master-plan.md](./04-accounting-and-ledger-master-plan.md) | Chart of Accounts (COA), GL Posting Defaults, Voucher Engine (Maker-Checker), Journal Register | ✅ সম্পন্ন |
+| **ধাপ ২B–৩** | [04-accounting-and-ledger-master-plan.md](./04-accounting-and-ledger-master-plan.md) | Cash Desk & Bank Recon, Loan Schedule & DCS, Savings Ledger, Financial & MRA/PKSF Reports | 🟡 চলমান (পরবর্তী ধাপ ২B) |
 
 ---
 
@@ -26,9 +25,13 @@
 - [x] **Operational Controls:** CSO Duty Roster, HO Send Cutoff, Fine Management, Portfolio/Cluster Handover
 
 ### নতুন করে তৈরি করতে হবে (Core MFI Modules)
-- [x] **ধাপ ১:** Financial Year, Holiday Calendar, Manage Day Initial, Day Open/Close (`Start/Complete Work Process`), `Monthly Process`, `LLP Voucher Process`
-- [ ] **ধাপ ২:** Loan Repayment Schedule Engine, Daily Collection Sheet (DCS), Principal/Interest Split, Overdue/PAR, Savings Transaction Ledger & Profit Calculation
-- [ ] **ধাপ ৩:** Double-Entry Accounting (COA, Cashbook, Bankbook, Vouchers, Trial Balance, Balance Sheet), MIS-to-AIS Auto-Posting, MRA & PKSF (POMIS 1, 2, 3) Reports
+- [x] **ধাপ ১:** Financial Year (with SuperAdmin Rollback), Holiday Calendar, Manage Day Initial, Day Open/Close (`Start/Complete Work Process`), `Monthly Process`, `LLP Voucher Process`
+- [x] **ধাপ ২A:** Chart of Accounts (`ledger_accounts`), `gl_posting_defaults`, `JournalService`, `VoucherService` (Maker-Checker) ও UI
+- [ ] **ধাপ ২B:** Cash Desk (`cashier_sessions`, `bank_statement_lines`) ও Day Close ক্যাশ রিকনসিলিয়েশন গার্ড
+- [ ] **ধাপ ২C:** Loan Repayment Schedule Engine, Daily Collection Sheet (DCS), Principal/Interest Split, Overdue/PAR, প্রকৃত LLP অটো-ভাউচার
+- [ ] **ধাপ ২D:** Savings Transaction Ledger (`savings_accounts`, `savings_transactions`, `savings_holds`) ও Auto Profit Calculation
+- [ ] **ধাপ ৩:** Financial Statements (Trial Balance, Income Statement, Balance Sheet, Cashbook/Bankbook), MRA & PKSF (POMIS 1, 2, 3) Reports, `CheckFinancialLedgers`
+- [ ] **ধাপ ৪:** Private Document Storage (NID/Photo/Signature), Opening Balance Migration ও Pilot Branch Rollout
 
 ---
 
