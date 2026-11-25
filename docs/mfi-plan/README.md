@@ -1,0 +1,39 @@
+# MisLoan → Complete Microfinance Solution (Master Plan)
+
+এই ডিরেক্টরিতে **MisLoan** প্রজেক্টকে ধাপে ধাপে **gBanker / Microfin360**-এর মতো একটি পূর্ণাঙ্গ মাইক্রোফাইন্যান্স সলিউশনে রূপান্তর করার বিস্তারিত পরিকল্পনা ও কাজের চেকলিস্ট সাজানো হয়েছে।
+
+---
+
+## ডিরেক্টরি সূচিপত্র (Plan Files)
+
+| ধাপ | ফাইল | বিষয়বস্তু | স্ট্যাটাস |
+| :--- | :--- | :--- | :--- |
+| **ধাপ ১** | [01-day-open-close-and-monthly-process.md](./01-day-open-close-and-monthly-process.md) | Day Initial, Start/Complete Work Process (Day Open/Close), LLP Voucher, Monthly Process (HO vs Branch) | ✅ সম্পন্ন |
+| **ধাপ ২** | [02-loan-schedule-and-collection.md](./02-loan-schedule-and-collection.md) | Loan Schedule, Daily Collection Sheet (DCS), Savings Ledger ও Passbook | ⚪ অপেক্ষমাণ |
+| **ধাপ ৩** | [03-accounting-and-regulatory-reports.md](./03-accounting-and-regulatory-reports.md) | Chart of Accounts (AIS), Auto-Voucher, LLP, এবং MRA / PKSF (POMIS) রিপোর্ট | ⚪ অপেক্ষমাণ |
+
+---
+
+## বর্তমান প্রজেক্টের স্ট্যাটাস (কী হয়েছে vs কী করতে হবে)
+
+### ইতিমধ্যে সম্পন্ন হয়েছে (Existing in MisLoan)
+- [x] **Organization Hierarchy:** Zone, Area, Branch, Samity ম্যানেজমেন্ট ও HRM Sync
+- [x] **User & Role Management:** Multi-role, Branch scoping, PIN/Signature, 2FA, Session control
+- [x] **Member Admission:** মেম্বার ভর্তি, ফ্যামিলি/অ্যাসেট তথ্য, NID, Cycle tracking (`member_loan_cycles`)
+- [x] **Product Configuration:** Loan Category/Product এবং Savings Category/Product
+- [x] **Origination & Approval Workflow:** Loan & Savings Application, Team-Based Approval, Verification, Issue Processing, Head Office Approval, Disbursement status tracking
+- [x] **Operational Controls:** CSO Duty Roster, HO Send Cutoff, Fine Management, Portfolio/Cluster Handover
+
+### নতুন করে তৈরি করতে হবে (Core MFI Modules)
+- [x] **ধাপ ১:** Financial Year, Holiday Calendar, Manage Day Initial, Day Open/Close (`Start/Complete Work Process`), `Monthly Process`, `LLP Voucher Process`
+- [ ] **ধাপ ২:** Loan Repayment Schedule Engine, Daily Collection Sheet (DCS), Principal/Interest Split, Overdue/PAR, Savings Transaction Ledger & Profit Calculation
+- [ ] **ধাপ ৩:** Double-Entry Accounting (COA, Cashbook, Bankbook, Vouchers, Trial Balance, Balance Sheet), MIS-to-AIS Auto-Posting, MRA & PKSF (POMIS 1, 2, 3) Reports
+
+---
+
+## কাজের নিয়ম (Tracking Convention)
+প্রতিটি ফাইলে টাস্কগুলো চেকবক্স আকারে দেওয়া আছে:
+- `- [ ]` = এখনো বাকি (Pending)
+- `- [x]` = কাজ শেষ (Completed)
+
+প্রতিটি ধাপ শেষ হলে সংশ্লিষ্ট `.md` ফাইলে `[x]` আপডেট করে পরবর্তী ধাপে যাওয়া উচিত।

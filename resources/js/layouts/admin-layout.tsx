@@ -75,6 +75,11 @@ interface PageProps extends Record<string, unknown> {
     flash: Flash;
     siteMaintenance?: boolean;
     unreadSubmissionsCount?: number;
+    activeBusinessDay?: {
+        has_open_day: boolean;
+        business_date: string | null;
+        status: string;
+    } | null;
     badgeCounts?: {
         pendingLoanApplications?: number;
         pendingAdmissions?: number;
@@ -89,7 +94,7 @@ interface AdminLayoutProps {
     children: ReactNode;
 }
 
-const SETUP_PATHS = ['/loan-categories', '/loan-products', '/savings-categories', '/savings-products', '/organizations', '/samities', '/member-categories', '/users', '/user-sessions', '/roles', '/head-office/cso-duty-roster', '/head-office/send-cutoff', '/head-office/loan-workflow-settings', '/head-office/recent-deletions'];
+const SETUP_PATHS = ['/loan-categories', '/loan-products', '/savings-categories', '/savings-products', '/organizations', '/samities', '/member-categories', '/users', '/user-sessions', '/roles', '/head-office/cso-duty-roster', '/head-office/send-cutoff', '/head-office/loan-workflow-settings', '/head-office/recent-deletions', '/head-office/accounting-periods'];
 const REPORT_PATHS = [
     '/head-office/team-based-approvals/report',
     '/head-office/reports/guarantor-informants',
@@ -126,6 +131,8 @@ function getPageTitle(currentPath: string): string {
     if (currentPath.includes('/cycle-hub')) return 'Cycle Hub (সাইকেল হাব)';
     if (currentPath.includes('/cso-duty-roster')) return 'CSO Duty Roster';
     if (currentPath.includes('/send-cutoff')) return 'Send Deadline';
+    if (currentPath.includes('/accounting-periods')) return 'Accounting Periods & Day Initial';
+    if (currentPath.includes('/branch/process')) return 'Work Process (Day Open / Close)';
     if (currentPath.includes('/loan-workflow-settings')) return 'Loan Workflow & Rules (ঋণ অনুমোদন ও ফরম)';
     if (currentPath.includes('/cluster-handover')) return 'Cluster Handover';
     if (currentPath.includes('/recent-deletions')) return 'Recent Deletions (মুছে ফেলা ডাটা)';
@@ -156,7 +163,7 @@ function getPageTitle(currentPath: string): string {
 
 export default function AdminLayout({ children }: AdminLayoutProps) {
     const page = usePage<PageProps>();
-    const { auth, flash, siteMaintenance = false, badgeCounts = {} } = page.props;
+    const { auth, flash, siteMaintenance = false, activeBusinessDay = null, badgeCounts = {} } = page.props;
     const userAvatarSrc = auth.user?.avatar || (auth.user?.profile_photo ? `/storage/${auth.user.profile_photo}` : null);
     const hasMailIssue = !isGmailAddress(auth.user?.email);
     const path = (() => {
@@ -279,6 +286,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
     const branchMenuItemsFull = [
         { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+        { name: 'Work Process', href: '/branch/process', icon: CalendarDays },
         { name: 'Cycle Hub', href: '/member/cycle-hub', icon: RotateCw },
         { name: 'Member Admissions', href: '/member-admissions', icon: UserPlus },
         { name: 'Loan Applications', href: '/member/loan-applications', icon: Banknote },
@@ -294,8 +302,8 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     const branchMenuItems = isFieldOfficer
         ? branchMenuItemsFull.filter((m) => m.name === 'Dashboard' || m.name === 'Cycle Hub' || m.name === 'Member Admissions' || m.name === 'Loan Applications' || m.name === 'Verification' || m.name === 'Savings Applications' || m.name === 'Corrections & Fines')
         : roleName === 'branch_user'
-        ? branchMenuItemsFull.filter((m) => m.name !== 'Pending Approvals')
-        : branchMenuItemsFull;
+            ? branchMenuItemsFull.filter((m) => m.name !== 'Pending Approvals')
+            : branchMenuItemsFull;
 
     const approverMenuItems = [
         { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -346,6 +354,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         { name: 'Recent Deletions (7 Days)', href: '/head-office/recent-deletions', icon: Trash2 },
         { name: 'CSO Duty Roster', href: '/head-office/cso-duty-roster', icon: CalendarDays },
         { name: 'Send Deadline', href: '/head-office/send-cutoff', icon: Clock },
+        { name: 'Accounting Periods', href: '/head-office/accounting-periods', icon: CalendarDays },
         { name: 'Loan Workflow & Rules', href: '/head-office/loan-workflow-settings', icon: SlidersHorizontal },
         { name: 'Loan Categories', href: '/loan-categories', icon: ListTree },
         { name: 'Loan Products', href: '/loan-products', icon: Coins },
@@ -511,20 +520,19 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 <div
                     className={`print:hidden fixed top-4 right-4 z-50 flex items-center gap-3 px-4 py-3 rounded-2xl border border-slate-200/80 backdrop-blur-md transition-all duration-300 animate-in fade-in slide-in-from-top-4 ${getFlashColor(flashMessage.type)}`}
                 >
-                    <div className={`p-2 rounded-xl flex items-center justify-center shrink-0 shadow-xs ${
-                        flashMessage.type === 'success' ? 'bg-emerald-100 text-emerald-700' :
+                    <div className={`p-2 rounded-xl flex items-center justify-center shrink-0 shadow-xs ${flashMessage.type === 'success' ? 'bg-emerald-100 text-emerald-700' :
                         flashMessage.type === 'error' ? 'bg-rose-100 text-rose-700' :
-                        flashMessage.type === 'warning' ? 'bg-amber-100 text-amber-700' :
-                        'bg-brand-soft text-brand-dark'
-                    }`}>
+                            flashMessage.type === 'warning' ? 'bg-amber-100 text-amber-700' :
+                                'bg-brand-soft text-brand-dark'
+                        }`}>
                         {getFlashIcon(flashMessage.type)}
                     </div>
                     <div className="flex-1 min-w-0 pr-2">
                         <p className="text-[12px] font-extrabold text-slate-800 leading-tight">
                             {flashMessage.type === 'success' ? 'সফল' :
-                             flashMessage.type === 'error' ? 'সমস্যা' :
-                             flashMessage.type === 'warning' ? 'সতর্কতা' :
-                             'নোটিফিকেশন'}
+                                flashMessage.type === 'error' ? 'সমস্যা' :
+                                    flashMessage.type === 'warning' ? 'সতর্কতা' :
+                                        'নোটিফিকেশন'}
                         </p>
                         <p className="text-[11px] text-slate-600 mt-0.5 font-medium leading-normal">{flashMessage.message}</p>
                     </div>
@@ -542,8 +550,8 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             <aside
                 className={`fixed left-0 top-0 h-full bg-white text-slate-700 border-r border-slate-200/80 z-45 print:hidden transition-all duration-300 ease-in-out flex flex-col shadow-xs
                     ${sidebarOpen ? 'w-60' : 'w-16'}
-                    ${isMobile 
-                        ? `${sidebarOpen ? 'translate-x-0 shadow-2xl z-50' : '-translate-x-full'} w-64` 
+                    ${isMobile
+                        ? `${sidebarOpen ? 'translate-x-0 shadow-2xl z-50' : '-translate-x-full'} w-64`
                         : 'translate-x-0'
                     }`}
             >
@@ -602,22 +610,19 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                             <Link
                                                 href={item.href}
                                                 onClick={() => isMobile && setSidebarOpen(false)}
-                                                className={`group relative flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl text-[12.5px] font-medium transition-all duration-200 ${
-                                                    isActive
-                                                        ? 'bg-gradient-to-r from-brand to-brand-dark text-white shadow-sm shadow-brand/20 font-bold'
-                                                        : 'text-slate-600 hover:text-brand hover:bg-brand-softer hover:translate-x-0.5'
-                                                }`}
+                                                className={`group relative flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl text-[12.5px] font-medium transition-all duration-200 ${isActive
+                                                    ? 'bg-gradient-to-r from-brand to-brand-dark text-white shadow-sm shadow-brand/20 font-bold'
+                                                    : 'text-slate-600 hover:text-brand hover:bg-brand-softer hover:translate-x-0.5'
+                                                    }`}
                                             >
                                                 <div className="flex items-center gap-2.5 min-w-0">
-                                                    <item.icon className={`w-4 h-4 shrink-0 stroke-[1.75] transition-transform duration-200 ${
-                                                        isActive ? 'text-white' : 'text-slate-400 group-hover:text-brand group-hover:scale-105'
-                                                    }`} />
+                                                    <item.icon className={`w-4 h-4 shrink-0 stroke-[1.75] transition-transform duration-200 ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-brand group-hover:scale-105'
+                                                        }`} />
                                                     {sidebarOpen && <span className="truncate">{item.name}</span>}
                                                 </div>
                                                 {sidebarOpen && badge !== undefined && badge > 0 && (
-                                                    <span className={`shrink-0 text-[9.5px] font-bold px-1.5 py-0.5 rounded-full ${
-                                                        isActive ? 'bg-white/25 text-white backdrop-blur-xs' : 'bg-rose-50 text-rose-600 border border-rose-200'
-                                                    }`}>
+                                                    <span className={`shrink-0 text-[9.5px] font-bold px-1.5 py-0.5 rounded-full ${isActive ? 'bg-white/25 text-white backdrop-blur-xs' : 'bg-rose-50 text-rose-600 border border-rose-200'
+                                                        }`}>
                                                         {badge}
                                                     </span>
                                                 )}
@@ -647,11 +652,10 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                 <button
                                     type="button"
                                     onClick={() => setReportExpanded(!reportExpanded)}
-                                    className={`group flex w-full items-center justify-between gap-2 px-2.5 py-2 rounded-xl text-[12.5px] font-medium transition-all duration-200 ${
-                                        REPORT_PATHS.some(p => path.startsWith(p))
-                                            ? 'bg-brand-softer text-brand-dark font-bold border border-brand/25'
-                                            : 'text-slate-600 hover:text-brand hover:bg-brand-softer'
-                                    }`}
+                                    className={`group flex w-full items-center justify-between gap-2 px-2.5 py-2 rounded-xl text-[12.5px] font-medium transition-all duration-200 ${REPORT_PATHS.some(p => path.startsWith(p))
+                                        ? 'bg-brand-softer text-brand-dark font-bold border border-brand/25'
+                                        : 'text-slate-600 hover:text-brand hover:bg-brand-softer'
+                                        }`}
                                 >
                                     <div className="flex items-center gap-2.5 min-w-0">
                                         <BarChart3 className="w-4 h-4 shrink-0 stroke-[1.75] text-slate-400 group-hover:text-brand" />
@@ -670,11 +674,10 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                                     <Link
                                                         href={item.href}
                                                         onClick={() => isMobile && setSidebarOpen(false)}
-                                                        className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg text-[11.5px] font-medium transition-all ${
-                                                            isActive
-                                                                ? 'bg-brand-soft text-brand-dark font-bold'
-                                                                : 'text-slate-500 hover:text-brand hover:bg-brand-softer'
-                                                        }`}
+                                                        className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg text-[11.5px] font-medium transition-all ${isActive
+                                                            ? 'bg-brand-soft text-brand-dark font-bold'
+                                                            : 'text-slate-500 hover:text-brand hover:bg-brand-softer'
+                                                            }`}
                                                     >
                                                         <item.icon className="w-3.5 h-3.5 shrink-0 stroke-[1.75] text-slate-400 group-hover:text-brand" />
                                                         <span className="truncate">{item.name}</span>
@@ -700,11 +703,10 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                 <button
                                     type="button"
                                     onClick={() => setSetupExpanded(!setupExpanded)}
-                                    className={`group flex w-full items-center justify-between gap-2 px-2.5 py-2 rounded-xl text-[12.5px] font-medium transition-all duration-200 ${
-                                        SETUP_PATHS.some(p => path.startsWith(p))
-                                            ? 'bg-brand-softer text-brand-dark font-bold border border-brand/25'
-                                            : 'text-slate-600 hover:text-brand hover:bg-brand-softer'
-                                    }`}
+                                    className={`group flex w-full items-center justify-between gap-2 px-2.5 py-2 rounded-xl text-[12.5px] font-medium transition-all duration-200 ${SETUP_PATHS.some(p => path.startsWith(p))
+                                        ? 'bg-brand-softer text-brand-dark font-bold border border-brand/25'
+                                        : 'text-slate-600 hover:text-brand hover:bg-brand-softer'
+                                        }`}
                                 >
                                     <div className="flex items-center gap-2.5 min-w-0">
                                         <Settings className="w-4 h-4 shrink-0 stroke-[1.75] text-slate-400 group-hover:text-brand" />
@@ -723,11 +725,10 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                                     <Link
                                                         href={item.href}
                                                         onClick={() => isMobile && setSidebarOpen(false)}
-                                                        className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg text-[11.5px] font-medium transition-all ${
-                                                            isActive
-                                                                ? 'bg-brand-soft text-brand-dark font-bold'
-                                                                : 'text-slate-500 hover:text-brand hover:bg-brand-softer'
-                                                        }`}
+                                                        className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg text-[11.5px] font-medium transition-all ${isActive
+                                                            ? 'bg-brand-soft text-brand-dark font-bold'
+                                                            : 'text-slate-500 hover:text-brand hover:bg-brand-softer'
+                                                            }`}
                                                     >
                                                         <item.icon className="w-3.5 h-3.5 shrink-0 stroke-[1.75] text-slate-400 group-hover:text-brand" />
                                                         <span className="truncate">{item.name}</span>
@@ -749,11 +750,10 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                             type="button"
                             onClick={handleMaintenanceToggle}
                             title={siteMaintenance ? 'মেইনটেন্যান্স বন্ধ করুন' : 'মেইনটেন্যান্স চালু করুন'}
-                            className={`flex w-full items-center justify-between rounded-xl p-2 text-left transition-all duration-200 ${
-                                siteMaintenance
-                                    ? 'bg-amber-50 border border-amber-200 text-amber-900'
-                                    : 'bg-slate-50 border border-slate-200/60 text-slate-600 hover:bg-slate-100'
-                            }`}
+                            className={`flex w-full items-center justify-between rounded-xl p-2 text-left transition-all duration-200 ${siteMaintenance
+                                ? 'bg-amber-50 border border-amber-200 text-amber-900'
+                                : 'bg-slate-50 border border-slate-200/60 text-slate-600 hover:bg-slate-100'
+                                }`}
                         >
                             <div className="flex items-center gap-2 min-w-0">
                                 <Wrench className={`w-3.5 h-3.5 shrink-0 ${siteMaintenance ? 'text-amber-600' : 'text-slate-400'}`} />
@@ -765,15 +765,13 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                             </div>
                             {sidebarOpen && (
                                 <span
-                                    className={`flex h-3.5 w-6 shrink-0 items-center rounded-full transition-colors duration-200 p-0.5 ${
-                                        siteMaintenance ? 'bg-amber-500' : 'bg-slate-300'
-                                    }`}
+                                    className={`flex h-3.5 w-6 shrink-0 items-center rounded-full transition-colors duration-200 p-0.5 ${siteMaintenance ? 'bg-amber-500' : 'bg-slate-300'
+                                        }`}
                                     aria-hidden
                                 >
                                     <span
-                                        className={`block h-2.5 w-2.5 rounded-full bg-white shadow-xs transition-transform duration-200 ${
-                                            siteMaintenance ? 'translate-x-2.5' : 'translate-x-0'
-                                        }`}
+                                        className={`block h-2.5 w-2.5 rounded-full bg-white shadow-xs transition-transform duration-200 ${siteMaintenance ? 'translate-x-2.5' : 'translate-x-0'
+                                            }`}
                                     />
                                 </span>
                             )}
@@ -823,9 +821,8 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
             {/* Main Content Area */}
             <div
-                className={`transition-all duration-300 ease-in-out min-h-screen flex flex-col bg-[#f8fafc] print:ml-0 ${
-                    isMobile ? 'ml-0' : sidebarOpen ? 'md:ml-60' : 'md:ml-16'
-                }`}
+                className={`transition-all duration-300 ease-in-out min-h-screen flex flex-col bg-[#f8fafc] print:ml-0 ${isMobile ? 'ml-0' : sidebarOpen ? 'md:ml-60' : 'md:ml-16'
+                    }`}
             >
                 {/* Modern Crisp Light Topbar */}
                 <header className="print:hidden sticky top-0 z-35 bg-white/90 backdrop-blur-md border-b border-slate-200/80 shadow-xs">
@@ -862,6 +859,23 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
                         {/* Header Right Actions */}
                         <div className="flex items-center gap-1.5 sm:gap-2">
+                            {isBranchRole && (
+                                <Link
+                                    href="/branch/process"
+                                    className={`hidden sm:inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-[11px] font-bold transition-colors ${activeBusinessDay?.has_open_day
+                                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                                        : 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'
+                                        }`}
+                                    title="Branch Work Process (Day Open / Close)"
+                                >
+                                    <CalendarDays className="w-3.5 h-3.5 shrink-0" />
+                                    <span>
+                                        {activeBusinessDay?.has_open_day
+                                            ? `Open: ${activeBusinessDay.business_date}`
+                                            : 'Day Closed'}
+                                    </span>
+                                </Link>
+                            )}
                             {/* Mousumi Apps portal link (Icon on mobile, full label on tablet/desktop) */}
                             <a
                                 href="https://app.mousumibd.org"
@@ -890,11 +904,10 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                             {showPendingApprovalsNav && (
                                 <Link
                                     href="/approvals"
-                                    className={`relative flex items-center gap-1.5 px-2.5 py-1 rounded-xl transition-all text-xs font-bold ${
-                                        path === '/approvals'
-                                            ? 'bg-gradient-to-r from-brand to-brand-dark text-white shadow-sm shadow-brand/20'
-                                            : 'bg-brand-softer text-brand-dark hover:bg-brand hover:text-white border border-brand/30'
-                                    }`}
+                                    className={`relative flex items-center gap-1.5 px-2.5 py-1 rounded-xl transition-all text-xs font-bold ${path === '/approvals'
+                                        ? 'bg-gradient-to-r from-brand to-brand-dark text-white shadow-sm shadow-brand/20'
+                                        : 'bg-brand-softer text-brand-dark hover:bg-brand hover:text-white border border-brand/30'
+                                        }`}
                                     title="Pending Approvals"
                                 >
                                     <ClipboardCheck className="w-3.5 h-3.5 stroke-[1.75]" />
@@ -1178,9 +1191,8 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                 <Link
                                     key={item.name}
                                     href={item.href}
-                                    className={`flex flex-col items-center justify-center w-full h-full space-y-0.5 relative py-1 transition-all ${
-                                        isActive ? 'text-brand font-bold' : 'text-slate-500 hover:text-slate-800'
-                                    }`}
+                                    className={`flex flex-col items-center justify-center w-full h-full space-y-0.5 relative py-1 transition-all ${isActive ? 'text-brand font-bold' : 'text-slate-500 hover:text-slate-800'
+                                        }`}
                                 >
                                     <div className="relative">
                                         <Icon className={`w-4.5 h-4.5 ${isActive ? 'stroke-[2.2] text-brand' : 'stroke-[1.6]'}`} />

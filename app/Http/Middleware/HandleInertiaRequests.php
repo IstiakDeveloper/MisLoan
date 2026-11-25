@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Models\Notification;
 use App\Models\Role;
+use App\Services\AccountingPeriodService;
 use App\Services\CsoAllocationService;
 use App\Services\HoSendCutoffService;
 use App\Services\LoanWorkflowConfigService;
@@ -244,6 +245,9 @@ class HandleInertiaRequests extends Middleware
                 : null,
             'loanWorkflowConfig' => $request->user()
                 ? app(LoanWorkflowConfigService::class)->toSharedArray()
+                : null,
+            'activeBusinessDay' => ($request->user() && $request->user()->branch_id)
+                ? app(AccountingPeriodService::class)->getBranchDayState((int) $request->user()->branch_id)
                 : null,
         ]);
     }

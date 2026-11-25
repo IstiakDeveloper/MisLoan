@@ -3,8 +3,10 @@
 use App\Http\Controllers\AppRegistrationController;
 use App\Http\Controllers\ApprovalController;
 use App\Http\Controllers\BlockedAccountController;
+use App\Http\Controllers\Branch\WorkProcessController;
 use App\Http\Controllers\ClusterHandoverController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\HeadOffice\AccountingPeriodController;
 use App\Http\Controllers\HeadOffice\ApproverLoanApprovalReportController;
 use App\Http\Controllers\HeadOffice\BranchLoanPendingReportController;
 use App\Http\Controllers\HeadOffice\CsoDutyRosterController;
@@ -66,6 +68,15 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('cluster-handover', [ClusterHandoverController::class, 'index'])->name('cluster-handover.index');
     Route::post('cluster-handover', [ClusterHandoverController::class, 'store'])->name('cluster-handover.store');
     Route::post('cluster-handover/reassign', [ClusterHandoverController::class, 'reassign'])->name('cluster-handover.reassign');
+
+    // Branch Work Process (Day Open/Close, LLP, Monthly Process)
+    Route::prefix('branch/process')->name('branch.process.')->middleware('branch.user')->group(function () {
+        Route::get('/', [WorkProcessController::class, 'index'])->name('index');
+        Route::post('start-work', [WorkProcessController::class, 'startWork'])->name('start-work');
+        Route::post('complete-work', [WorkProcessController::class, 'completeWork'])->name('complete-work');
+        Route::post('llp', [WorkProcessController::class, 'runLlpProcess'])->name('llp');
+        Route::post('monthly', [WorkProcessController::class, 'runMonthlyProcess'])->name('monthly');
+    });
 
     Route::post('admin/maintenance/toggle', [MaintenanceController::class, 'toggle'])->name('admin.maintenance.toggle');
 
@@ -511,6 +522,17 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('loan-workflow-settings', [LoanWorkflowConfigController::class, 'index'])->name('loan-workflow-settings');
         Route::put('loan-workflow-settings', [LoanWorkflowConfigController::class, 'update'])->name('loan-workflow-settings.update');
         Route::post('loan-workflow-settings/reset', [LoanWorkflowConfigController::class, 'reset'])->name('loan-workflow-settings.reset');
+
+        // Accounting Period Controls (Financial Year, Holidays, Manage Day Initial, Monitor, Reopen)
+        Route::prefix('accounting-periods')->name('accounting-periods.')->group(function () {
+            Route::get('/', [AccountingPeriodController::class, 'index'])->name('index');
+            Route::post('financial-years', [AccountingPeriodController::class, 'openFinancialYear'])->name('fy.open');
+            Route::post('financial-years/{financialYear}/close', [AccountingPeriodController::class, 'closeFinancialYear'])->name('fy.close');
+            Route::post('holidays', [AccountingPeriodController::class, 'storeHoliday'])->name('holidays.store');
+            Route::delete('holidays/{holiday}', [AccountingPeriodController::class, 'destroyHoliday'])->name('holidays.destroy');
+            Route::post('day-initial', [AccountingPeriodController::class, 'setBranchDayInitial'])->name('day-initial');
+            Route::post('reopen', [AccountingPeriodController::class, 'reopenPeriod'])->name('reopen');
+        });
 
         // 3 Lakh+ Loan Guarantor & Informant Report
         Route::get('reports/guarantor-informants', [GuarantorInformantReportController::class, 'index'])->name('reports.guarantor-informants');
