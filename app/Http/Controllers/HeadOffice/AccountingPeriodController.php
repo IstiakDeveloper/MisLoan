@@ -55,6 +55,7 @@ class AccountingPeriodController extends Controller
                 'area_id' => $areaId,
             ],
             'canManage' => $this->canManage($user),
+            'isSuperAdmin' => $this->isSuperAdmin($user),
         ]);
     }
 
@@ -82,6 +83,19 @@ class AccountingPeriodController extends Controller
         $this->service->closeFinancialYear($financialYear->id, $data['reference'] ?? null, (int) $request->user()->id);
 
         return back()->with('success', "অর্থবছর {$financialYear->name} বন্ধ করা হয়েছে।");
+    }
+
+    public function reopenFinancialYear(Request $request, FinancialYear $financialYear): RedirectResponse
+    {
+        abort_unless($this->isSuperAdmin($request->user()), 403, 'শুধুমাত্র Super Admin বন্ধ অর্থবছর পুনরায় খুলতে পারবেন।');
+
+        $data = $request->validate([
+            'reason' => 'required|string|min:5|max:500',
+        ]);
+
+        $this->service->reopenFinancialYear($financialYear->id, $data['reason'], (int) $request->user()->id);
+
+        return back()->with('success', "অর্থবছর {$financialYear->name} সফলভাবে পুনরায় খোলা (Rollback) হয়েছে।");
     }
 
     public function storeHoliday(Request $request): RedirectResponse
@@ -162,5 +176,10 @@ class AccountingPeriodController extends Controller
         $role = $user?->role?->name;
 
         return (bool) ($user?->has_all_access || in_array($role, [Role::SUPER_ADMIN, Role::HEAD_OFFICE], true));
+    }
+
+    private function isSuperAdmin($user): bool
+    {
+        return (bool) ($user?->has_all_access || $user?->isSuperAdmin());
     }
 }

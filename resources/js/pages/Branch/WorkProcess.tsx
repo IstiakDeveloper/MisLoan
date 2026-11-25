@@ -10,7 +10,9 @@ import {
     ShieldCheck,
 } from 'lucide-react';
 import { useState } from 'react';
+import { ComboSelect } from '@/components/ComboSelect';
 import AdminLayout from '@/layouts/admin-layout';
+import { formatDate } from '@/utils/dateUtils';
 
 interface BranchInfo {
     id: number;
@@ -143,7 +145,7 @@ export default function WorkProcess({
                         <div className="flex items-center gap-2">
                             <CalendarClock className="h-5 w-5 text-brand" />
                             <h1 className="text-lg font-bold text-slate-900">
-                                Branch Work Process (gBanker Process Flow)
+                                Branch Work Process
                             </h1>
                         </div>
                         <p className="mt-1 text-xs text-slate-500">
@@ -151,29 +153,32 @@ export default function WorkProcess({
                                 ? `শাখা: ${branch.name} (${branch.code})`
                                 : 'কোনো শাখা নির্ধারিত নেই'}
                             {dayState?.financial_year && ` • অর্থবছর: ${dayState.financial_year}`}
-                            {dayState?.initial_date && ` • Initial Date: ${dayState.initial_date}`}
+                            {dayState?.initial_date && ` • Initial Date: ${formatDate(dayState.initial_date)}`}
                         </p>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-3">
                         {canSelectBranch && branches.length > 0 && (
-                            <select
-                                value={branch?.id ?? ''}
-                                onChange={(e) => handleBranchChange(e.target.value)}
-                                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-800"
-                            >
-                                {branches.map((b) => (
-                                    <option key={b.id} value={b.id}>
-                                        {b.name} ({b.code})
-                                    </option>
-                                ))}
-                            </select>
+                            <div className="w-60">
+                                <ComboSelect
+                                    size="sm"
+                                    clearable={false}
+                                    value={branch?.id ?? null}
+                                    onChange={(val) => val && handleBranchChange(String(val))}
+                                    items={branches.map((b) => ({
+                                        value: b.id,
+                                        label: `${b.name} (${b.code})`,
+                                        keywords: `${b.name} ${b.code}`,
+                                    }))}
+                                    placeholder="শাখা নির্বাচন করুন"
+                                />
+                            </div>
                         )}
 
                         {dayState?.has_open_day ? (
                             <div className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-2 text-xs font-bold text-emerald-800">
                                 <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                                <span>কর্মদিবস খোলা: {dayState.business_date}</span>
+                                <span>কর্মদিবস খোলা: {formatDate(dayState.business_date)}</span>
                             </div>
                         ) : (
                             <div className="inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2 text-xs font-bold text-amber-800">
@@ -323,7 +328,7 @@ export default function WorkProcess({
                                             className="inline-flex items-center gap-2 rounded-xl bg-rose-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-rose-700 disabled:opacity-50"
                                         >
                                             <Lock className="h-3.5 w-3.5" />
-                                            Complete Work Process ({dayState.business_date} Close করুন)
+                                            Complete Work Process ({formatDate(dayState.business_date)} Close করুন)
                                         </button>
                                     </form>
                                 </>
@@ -445,7 +450,7 @@ export default function WorkProcess({
                                     ) : (
                                         recentDays.map((d) => (
                                             <tr key={d.id} className="border-b border-slate-50">
-                                                <td className="py-2 font-semibold text-slate-800">{d.period_date}</td>
+                                                <td className="py-2 font-semibold text-slate-800">{formatDate(d.period_date)}</td>
                                                 <td className="py-2">
                                                     <span
                                                         className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
@@ -492,7 +497,7 @@ export default function WorkProcess({
                                         ) : (
                                             monthProcesses.map((m) => (
                                                 <tr key={m.id} className="border-b border-slate-50">
-                                                    <td className="py-2 font-semibold text-slate-800">{m.month_date}</td>
+                                                    <td className="py-2 font-semibold text-slate-800">{formatDate(m.month_date)}</td>
                                                     <td className="py-2">
                                                         <span
                                                             className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
@@ -531,7 +536,7 @@ export default function WorkProcess({
                                             key={h.id}
                                             className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-800"
                                         >
-                                            {h.holiday_date} — {h.title}
+                                            {formatDate(h.holiday_date)} — {h.title}
                                         </span>
                                     ))}
                                 </div>

@@ -11,6 +11,7 @@
 | **ধাপ ১** | [01-day-open-close-and-monthly-process.md](./01-day-open-close-and-monthly-process.md) | Day Initial, Start/Complete Work Process (Day Open/Close), LLP Voucher, Monthly Process (HO vs Branch) | ✅ সম্পন্ন |
 | **ধাপ ২** | [02-loan-schedule-and-collection.md](./02-loan-schedule-and-collection.md) | Loan Schedule, Daily Collection Sheet (DCS), Savings Ledger ও Passbook | ⚪ অপেক্ষমাণ |
 | **ধাপ ৩** | [03-accounting-and-regulatory-reports.md](./03-accounting-and-regulatory-reports.md) | Chart of Accounts (AIS), Auto-Voucher, LLP, এবং MRA / PKSF (POMIS) রিপোর্ট | ⚪ অপেক্ষমাণ |
+| **পূর্ণাঙ্গ অ্যাকাউন্টিং ব্লুপ্রিন্ট** | [04-accounting-and-ledger-master-plan.md](./04-accounting-and-ledger-master-plan.md) | `feat/mfi-accounting-security-foundation` থেকে যাচাইকৃত COA, Voucher, Cash Desk, Loan/Savings Sub-ledger ও Reports ইন্টিগ্রেশন প্ল্যান | 🔵 চূড়ান্ত প্রস্তুত |
 
 ---
 

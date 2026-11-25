@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, ReactNode, useMemo } from 'react';
+import { useState, useEffect, useRef, ReactNode, useMemo, type ComponentType } from 'react';
 import { Link, usePage, router } from '@inertiajs/react';
 import {
     LayoutDashboard,
@@ -49,6 +49,7 @@ import {
 import { useIsMobile } from '@/hooks/use-mobile';
 import { usePwaInstallPrompt } from '@/hooks/usePwaInstallPrompt';
 import NotificationBell from '@/components/NotificationBell';
+import { formatDate } from '@/utils/dateUtils';
 
 interface User {
     id: number;
@@ -94,6 +95,26 @@ interface AdminLayoutProps {
     children: ReactNode;
 }
 
+interface SidebarNavItem {
+    name: string;
+    href?: string;
+    icon: ComponentType<{ className?: string }>;
+    badge?: number;
+    children?: SidebarNavItem[];
+}
+
+type SidebarSubItem = SidebarNavItem;
+
+interface SidebarSection {
+    title: string;
+    items: SidebarNavItem[];
+}
+
+function hasActiveDescendant(item: SidebarNavItem, currentPath: string): boolean {
+    if (item.href && isNavItemActive(currentPath, item.href)) return true;
+    return Boolean(item.children?.some((child) => hasActiveDescendant(child, currentPath)));
+}
+
 const SETUP_PATHS = ['/loan-categories', '/loan-products', '/savings-categories', '/savings-products', '/organizations', '/samities', '/member-categories', '/users', '/user-sessions', '/roles', '/head-office/cso-duty-roster', '/head-office/send-cutoff', '/head-office/loan-workflow-settings', '/head-office/recent-deletions', '/head-office/accounting-periods'];
 const REPORT_PATHS = [
     '/head-office/team-based-approvals/report',
@@ -132,6 +153,8 @@ function getPageTitle(currentPath: string): string {
     if (currentPath.includes('/cso-duty-roster')) return 'CSO Duty Roster';
     if (currentPath.includes('/send-cutoff')) return 'Send Deadline';
     if (currentPath.includes('/accounting-periods')) return 'Accounting Periods & Day Initial';
+    if (currentPath.includes('/posting-defaults')) return 'GL Posting Defaults';
+    if (currentPath.includes('/accounting')) return 'Accounting & Vouchers';
     if (currentPath.includes('/branch/process')) return 'Work Process (Day Open / Close)';
     if (currentPath.includes('/loan-workflow-settings')) return 'Loan Workflow & Rules (ঋণ অনুমোদন ও ফরম)';
     if (currentPath.includes('/cluster-handover')) return 'Cluster Handover';
@@ -179,10 +202,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     const [userDropdownOpen, setUserDropdownOpen] = useState(false);
     const userDropdownRef = useRef<HTMLDivElement>(null);
     const [flashMessage, setFlashMessage] = useState<{ type: string; message: string } | null>(null);
-    const setupOpenDefault = useMemo(() => SETUP_PATHS.some(p => path.startsWith(p)), [path]);
-    const reportOpenDefault = useMemo(() => REPORT_PATHS.some(p => path.startsWith(p)), [path]);
-    const [setupExpanded, setSetupExpanded] = useState(setupOpenDefault);
-    const [reportExpanded, setReportExpanded] = useState(reportOpenDefault);
+    const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
 
     // Close user dropdown on outside click
     useEffect(() => {
@@ -212,14 +232,6 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         const timer = setTimeout(() => setFlashMessage(null), 5000);
         return () => clearTimeout(timer);
     }, [flashMessage]);
-
-    useEffect(() => {
-        setSetupExpanded(prev => (SETUP_PATHS.some(p => path.startsWith(p)) ? true : prev));
-    }, [path]);
-
-    useEffect(() => {
-        setReportExpanded(prev => (REPORT_PATHS.some(p => path.startsWith(p)) ? true : prev));
-    }, [path]);
 
     // Handle closing sidebar on mobile when resizing or route changes
     useEffect(() => {
@@ -342,7 +354,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         { name: 'Fines & Penalties', href: '/head-office/fines', icon: ShieldAlert },
     ];
 
-    const headOfficeReportItems = [
+    const headOfficeReportItems: SidebarSubItem[] = [
         { name: 'App Registrations (অ্যাপ রেজিস্ট্রেশন)', href: APP_REGISTRATION_REPORT_HREF, icon: Smartphone },
         ...(canViewTeamBasedReport ? [{ name: 'Team Based Report', href: TEAM_BASED_REPORT_HREF, icon: PieChart }] : []),
         ...(canViewGuarantorReport ? [{ name: 'Guarantor & Informant Report', href: GUARANTOR_INFORMANT_REPORT_HREF, icon: Users }] : []),
@@ -350,22 +362,37 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         ...(canViewBranchPendingReport ? [{ name: 'Branch-wise Loan Pending', href: BRANCH_LOAN_PENDING_REPORT_HREF, icon: Clock }] : []),
     ];
 
-    const headOfficeSetupItems = [
-        { name: 'Recent Deletions (7 Days)', href: '/head-office/recent-deletions', icon: Trash2 },
-        { name: 'CSO Duty Roster', href: '/head-office/cso-duty-roster', icon: CalendarDays },
-        { name: 'Send Deadline', href: '/head-office/send-cutoff', icon: Clock },
-        { name: 'Accounting Periods', href: '/head-office/accounting-periods', icon: CalendarDays },
+    const periodAndWorkProcessSubItems: SidebarNavItem[] = [
+        { name: 'Accounting Periods & Day Initial', href: '/head-office/accounting-periods', icon: CalendarDays },
+        { name: 'Branch Work Process', href: '/branch/process', icon: CalendarDays },
+        { name: 'Send Deadline (Cutoff)', href: '/head-office/send-cutoff', icon: Clock },
+    ];
+
+    const accountingCoreSubItems: SidebarNavItem[] = [
+        { name: 'Accounting & Vouchers', href: '/accounting', icon: Receipt },
+        { name: 'GL Posting Defaults', href: '/head-office/posting-defaults', icon: SlidersHorizontal },
+    ];
+
+    const productsAndRulesSubItems: SidebarSubItem[] = [
         { name: 'Loan Workflow & Rules', href: '/head-office/loan-workflow-settings', icon: SlidersHorizontal },
         { name: 'Loan Categories', href: '/loan-categories', icon: ListTree },
         { name: 'Loan Products', href: '/loan-products', icon: Coins },
         { name: 'Savings Categories', href: '/savings-categories', icon: ListTree },
         { name: 'Savings Products', href: '/savings-products', icon: Wallet },
+    ];
+
+    const organizationAndFieldSubItems: SidebarSubItem[] = [
         { name: 'Organizations', href: '/organizations', icon: Landmark },
         { name: 'Samities', href: '/samities', icon: Building2 },
         { name: 'Member Categories', href: '/member-categories', icon: Users },
+        { name: 'CSO Duty Roster', href: '/head-office/cso-duty-roster', icon: CalendarDays },
+    ];
+
+    const usersAndSecuritySubItems: SidebarSubItem[] = [
         { name: 'Users', href: '/users', icon: CircleUser },
+        { name: 'Roles & Permissions', href: '/roles', icon: Shield },
         { name: 'Active Sessions', href: '/user-sessions', icon: Activity },
-        { name: 'Roles', href: '/roles', icon: Shield },
+        { name: 'Recent Deletions (7 Days)', href: '/head-office/recent-deletions', icon: Trash2 },
     ];
 
     const handleLogout = () => {
@@ -392,74 +419,166 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         }
     };
 
-    // Grouping layout menus for ultra-sleek spacing
-    const menuGroups = useMemo(() => {
+    // Grouping related menus into clean collapsible Menu -> Sub-Menu sections
+    const menuGroups = useMemo<SidebarSection[]>(() => {
         if (isBranchRole) {
-            const dashboardItem = branchMenuItems.find(m => m.href === '/dashboard');
-            const operationsItems = branchMenuItems.filter(m => ['/member-admissions', '/member/loan-applications', '/member/cycle-hub', '/verifications', '/member/savings-applications', '/fines'].includes(m.href));
-            const approvalsItems = branchMenuItems.filter(m => ['/team-based-approvals', '/approvals'].includes(m.href));
+            const processItems = branchMenuItems.filter(m => m.href === '/branch/process');
+            const memberLoanItems = branchMenuItems.filter(m =>
+                ['/member/cycle-hub', '/member-admissions', '/member/loan-applications', '/member/savings-applications'].includes(m.href)
+            );
+            const verificationApprovalItems = branchMenuItems.filter(m =>
+                ['/verifications', '/team-based-approvals', '/approvals', '/fines'].includes(m.href)
+            );
             const clusterItem = branchMenuItems.find(m => m.href === '/cluster-handover');
 
-            const groups = [];
-            if (dashboardItem) groups.push({ title: 'Overview', items: [dashboardItem] });
-            if (operationsItems.length > 0) groups.push({ title: 'Operations', items: operationsItems });
-            if (approvalsItems.length > 0) groups.push({ title: 'Approvals', items: approvalsItems });
-            if (clusterItem) groups.push({ title: 'Handover', items: [clusterItem] });
-            return groups;
-        }
-
-        // CSO: Monitoring & verification operations on assigned daily areas
-        if (isCsoRole) {
-            const dashboardItem = headOfficeMainItems.find(m => m.href === '/dashboard');
-            const operationsItems = headOfficeMainItems.filter(m =>
-                ['/member/cycle-hub', '/head-office/admission-members', '/head-office/loan-applications', '/verifications', '/head-office/savings-applications'].includes(m.href)
-            );
-
-            const groups = [];
-            if (dashboardItem) groups.push({ title: 'Overview', items: [dashboardItem] });
-            if (operationsItems.length > 0) groups.push({ title: 'Monitoring & Verification', items: operationsItems });
-            return groups;
-        }
-
-        // ED: keep approver queues + full Head Office navigation
-        if (isEdRole) {
-            const dashboardItem = headOfficeMainItems.find(m => m.href === '/dashboard');
-            const operationsItems = headOfficeMainItems.filter(m =>
-                ['/member/cycle-hub', '/head-office/admission-members', '/head-office/loan-applications', '/verifications', '/head-office/savings-applications'].includes(m.href)
-            );
-            const approvalsItems = [
-                ...approverMenuItems.filter(m => m.href !== '/dashboard'),
-                ...headOfficeMainItems.filter(m => ['/head-office/team-based-approvals', '/head-office/fines'].includes(m.href)),
+            const sections: SidebarSection[] = [
+                {
+                    title: 'Overview',
+                    items: [{ name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard }],
+                },
             ];
 
-            const groups = [];
-            if (dashboardItem) groups.push({ title: 'Overview', items: [dashboardItem] });
-            if (operationsItems.length > 0) groups.push({ title: 'Operations', items: operationsItems });
-            if (approvalsItems.length > 0) groups.push({ title: 'Approvals', items: approvalsItems });
-            return groups;
+            if (processItems.length > 0) {
+                sections.push({
+                    title: 'Process & Accounting',
+                    items: [
+                        {
+                            name: 'Day & Month Process',
+                            icon: CalendarDays,
+                            children: processItems,
+                        },
+                        ...(roleName !== 'field_officer'
+                            ? [{
+                                name: 'Accounting',
+                                icon: Receipt,
+                                children: [
+                                    { name: 'Vouchers & Journals', href: '/accounting', icon: Receipt },
+                                ],
+                            }]
+                            : []),
+                    ],
+                });
+            }
+
+            const operationsMenu: SidebarNavItem[] = [];
+            if (memberLoanItems.length > 0) {
+                operationsMenu.push({
+                    name: 'Member & Loan',
+                    icon: Banknote,
+                    children: memberLoanItems,
+                });
+            }
+            if (verificationApprovalItems.length > 0) {
+                operationsMenu.push({
+                    name: 'Approvals & Fines',
+                    icon: ClipboardCheck,
+                    badge: verificationApprovalItems.reduce((sum, i) => sum + (i.badge || 0), 0),
+                    children: verificationApprovalItems,
+                });
+            }
+            if (clusterItem) {
+                operationsMenu.push(clusterItem);
+            }
+            if (operationsMenu.length > 0) {
+                sections.push({ title: 'Operations', items: operationsMenu });
+            }
+
+            return sections;
+        }
+
+        if (isCsoRole) {
+            const monitoringItems = headOfficeMainItems.filter(m =>
+                ['/member/cycle-hub', '/head-office/admission-members', '/head-office/loan-applications', '/verifications', '/head-office/savings-applications'].includes(m.href)
+            );
+
+            return [
+                { title: 'Overview', items: [{ name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard }] },
+                {
+                    title: 'Monitoring',
+                    items: [
+                        {
+                            name: 'Field & Verification',
+                            icon: SearchCheck,
+                            badge: monitoringItems.reduce((sum, i) => sum + (i.badge || 0), 0),
+                            children: monitoringItems,
+                        },
+                    ],
+                },
+            ];
         }
 
         if (isTeamApproverRole) {
-            const dashboardItem = approverMenuItems.find(m => m.href === '/dashboard');
             const approvalsItems = approverMenuItems.filter(m => m.href !== '/dashboard');
 
-            const groups = [];
-            if (dashboardItem) groups.push({ title: 'Overview', items: [dashboardItem] });
-            if (approverOperationsItems.length > 0) groups.push({ title: 'Operations', items: approverOperationsItems });
-            if (approvalsItems.length > 0) groups.push({ title: 'Approvals', items: approvalsItems });
-            return groups;
+            return [
+                { title: 'Overview', items: [{ name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard }] },
+                {
+                    title: 'Approvals',
+                    items: [
+                        {
+                            name: 'Approval Queues',
+                            icon: ClipboardCheck,
+                            badge: approvalsItems.reduce((sum, i) => sum + (i.badge || 0), 0),
+                            children: approvalsItems,
+                        },
+                    ],
+                },
+                {
+                    title: 'Operations',
+                    items: [
+                        {
+                            name: 'Member & Loan',
+                            icon: Banknote,
+                            badge: approverOperationsItems.reduce((sum, i) => sum + (i.badge || 0), 0),
+                            children: approverOperationsItems,
+                        },
+                    ],
+                },
+            ];
         }
 
-        // Head office / default roles
-        const dashboardItem = headOfficeMainItems.find(m => m.href === '/dashboard');
-        const operationsItems = headOfficeMainItems.filter(m => ['/member/cycle-hub', '/head-office/admission-members', '/head-office/loan-applications', '/verifications', '/head-office/savings-applications'].includes(m.href));
-        const approvalsItems = headOfficeMainItems.filter(m => ['/head-office/team-based-approvals', '/head-office/fines'].includes(m.href));
+        // Head Office / SuperAdmin / ED
+        const memberLoanItems = headOfficeMainItems.filter(m =>
+            ['/member/cycle-hub', '/head-office/admission-members', '/head-office/loan-applications', '/head-office/savings-applications'].includes(m.href)
+        );
+        const approvalAndFinesItems = [
+            ...(isEdRole ? approverMenuItems.filter(m => m.href !== '/dashboard') : []),
+            ...headOfficeMainItems.filter(m => ['/verifications', '/head-office/team-based-approvals', '/head-office/fines'].includes(m.href)),
+        ];
 
-        const groups = [];
-        if (dashboardItem) groups.push({ title: 'Overview', items: [dashboardItem] });
-        if (operationsItems.length > 0) groups.push({ title: 'Operations', items: operationsItems });
-        if (approvalsItems.length > 0) groups.push({ title: 'Approvals', items: approvalsItems });
-        return groups;
+        const sections: SidebarSection[] = [
+            {
+                title: 'Overview',
+                items: [{ name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard }],
+            },
+            {
+                title: 'Core Operations',
+                items: [
+                    {
+                        name: 'Process & Accounting',
+                        icon: CalendarDays,
+                        children: [
+                            ...periodAndWorkProcessSubItems,
+                            ...accountingCoreSubItems,
+                        ],
+                    },
+                    {
+                        name: 'Member & Loan',
+                        icon: Banknote,
+                        badge: memberLoanItems.reduce((sum, i) => sum + (i.badge || 0), 0),
+                        children: memberLoanItems,
+                    },
+                    {
+                        name: 'Verification & Approvals',
+                        icon: ClipboardCheck,
+                        badge: approvalAndFinesItems.reduce((sum, i) => sum + (i.badge || 0), 0),
+                        children: approvalAndFinesItems,
+                    },
+                ],
+            },
+        ];
+
+        return sections;
     }, [isBranchRole, isCsoRole, isEdRole, isTeamApproverRole, branchMenuItems, approverMenuItems, approverOperationsItems, headOfficeMainItems]);
 
     // Compute items for mobile bottom nav (Pending Approvals prioritized for roles that approve)
@@ -593,154 +712,129 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
                 {/* Navigation Menu */}
                 <nav className="flex-1 overflow-y-auto overflow-x-hidden py-2 px-2.5 space-y-3.5">
-                    {/* Render Grouped Menu Items */}
-                    {menuGroups.map((group) => (
-                        <div key={group.title} className="space-y-1">
-                            {sidebarOpen && (
-                                <span className="px-2.5 text-[9.5px] font-bold text-slate-400 uppercase tracking-wider block select-none mb-1">
-                                    {group.title}
-                                </span>
-                            )}
-                            <ul className="space-y-0.5">
-                                {group.items.map((item) => {
-                                    const isActive = isNavItemActive(path, item.href);
-                                    const badge = item.badge;
-                                    return (
-                                        <li key={item.name}>
-                                            <Link
-                                                href={item.href}
-                                                onClick={() => isMobile && setSidebarOpen(false)}
-                                                className={`group relative flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl text-[12.5px] font-medium transition-all duration-200 ${isActive
-                                                    ? 'bg-gradient-to-r from-brand to-brand-dark text-white shadow-sm shadow-brand/20 font-bold'
-                                                    : 'text-slate-600 hover:text-brand hover:bg-brand-softer hover:translate-x-0.5'
-                                                    }`}
-                                            >
-                                                <div className="flex items-center gap-2.5 min-w-0">
-                                                    <item.icon className={`w-4 h-4 shrink-0 stroke-[1.75] transition-transform duration-200 ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-brand group-hover:scale-105'
-                                                        }`} />
-                                                    {sidebarOpen && <span className="truncate">{item.name}</span>}
+                    {([
+                        ...menuGroups,
+                        ...(showReportSection
+                            ? [{
+                                title: 'Reports',
+                                items: [{ name: 'Reports', icon: BarChart3, children: headOfficeReportItems }],
+                            }]
+                            : []),
+                        ...(showConfigurationSection
+                            ? [{
+                                title: 'Configuration',
+                                items: [
+                                    { name: 'Products & Rules', icon: Coins, children: productsAndRulesSubItems },
+                                    { name: 'Organization & Field', icon: Landmark, children: organizationAndFieldSubItems },
+                                    { name: 'Users & Security', icon: Shield, children: usersAndSecuritySubItems },
+                                ],
+                            }]
+                            : []),
+                    ] as SidebarSection[]).map((group) => {
+                        const renderNavItem = (item: SidebarNavItem, depth = 0) => {
+                            const menuKey = `${group.title}:${depth}:${item.name}`;
+                            if (item.children && item.children.length > 0) {
+                                const hasActiveChild = hasActiveDescendant(item, path);
+                                const isOpen = openMenus[menuKey] ?? hasActiveChild;
+                                const badge = item.badge;
+
+                                return (
+                                    <li key={menuKey} className="space-y-0.5">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                if (!sidebarOpen) {
+                                                    setSidebarOpen(true);
+                                                    setOpenMenus((prev) => ({ ...prev, [menuKey]: true }));
+                                                    return;
+                                                }
+                                                setOpenMenus((prev) => ({ ...prev, [menuKey]: !isOpen }));
+                                            }}
+                                            className={`group relative flex w-full items-center justify-between gap-2 rounded-xl transition-all duration-200 ${
+                                                depth === 0 ? 'px-2.5 py-2 text-[12.5px]' : 'px-2 py-1.5 text-[11.5px]'
+                                            } font-medium ${hasActiveChild
+                                                ? 'bg-brand-softer text-brand-dark font-bold border border-brand/25'
+                                                : 'text-slate-600 hover:text-brand hover:bg-brand-softer'
+                                            }`}
+                                        >
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                <item.icon className={`${depth === 0 ? 'w-4 h-4' : 'w-3.5 h-3.5'} shrink-0 stroke-[1.75] ${hasActiveChild ? 'text-brand' : 'text-slate-400 group-hover:text-brand'}`} />
+                                                {sidebarOpen && <span className="truncate">{item.name}</span>}
+                                            </div>
+                                            {sidebarOpen && (
+                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                    {badge !== undefined && badge > 0 && (
+                                                        <span className="text-[9.5px] font-bold px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-600 border border-rose-200">
+                                                            {badge}
+                                                        </span>
+                                                    )}
+                                                    <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${isOpen ? 'rotate-180 text-brand' : ''}`} />
                                                 </div>
-                                                {sidebarOpen && badge !== undefined && badge > 0 && (
-                                                    <span className={`shrink-0 text-[9.5px] font-bold px-1.5 py-0.5 rounded-full ${isActive ? 'bg-white/25 text-white backdrop-blur-xs' : 'bg-rose-50 text-rose-600 border border-rose-200'
-                                                        }`}>
-                                                        {badge}
-                                                    </span>
-                                                )}
-                                                {!sidebarOpen && badge !== undefined && badge > 0 && (
-                                                    <span className="absolute top-1 right-2 flex h-2 w-2">
-                                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                                                        <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
-                                                    </span>
-                                                )}
-                                            </Link>
-                                        </li>
-                                    );
-                                })}
-                            </ul>
-                        </div>
-                    ))}
+                                            )}
+                                            {!sidebarOpen && badge !== undefined && badge > 0 && (
+                                                <span className="absolute top-1 right-2 flex h-2 w-2">
+                                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+                                                </span>
+                                            )}
+                                        </button>
+                                        {isOpen && sidebarOpen && (
+                                            <ul className="mt-1 ml-3 pl-2.5 border-l-2 border-brand-soft space-y-0.5 animate-in fade-in slide-in-from-top-1 duration-150">
+                                                {item.children.map((sub) => renderNavItem(sub, depth + 1))}
+                                            </ul>
+                                        )}
+                                    </li>
+                                );
+                            }
 
-                    {/* Reports Expandable Section */}
-                    {showReportSection && (
-                        <div className="space-y-1">
-                            {sidebarOpen && (
-                                <span className="px-2.5 text-[9.5px] font-bold text-slate-400 uppercase tracking-wider block select-none mb-1">
-                                    Reports
-                                </span>
-                            )}
-                            <div className="space-y-0.5">
-                                <button
-                                    type="button"
-                                    onClick={() => setReportExpanded(!reportExpanded)}
-                                    className={`group flex w-full items-center justify-between gap-2 px-2.5 py-2 rounded-xl text-[12.5px] font-medium transition-all duration-200 ${REPORT_PATHS.some(p => path.startsWith(p))
-                                        ? 'bg-brand-softer text-brand-dark font-bold border border-brand/25'
-                                        : 'text-slate-600 hover:text-brand hover:bg-brand-softer'
+                            const href = item.href || '/dashboard';
+                            const isActive = isNavItemActive(path, href);
+                            const badge = item.badge;
+                            return (
+                                <li key={menuKey}>
+                                    <Link
+                                        href={href}
+                                        onClick={() => isMobile && setSidebarOpen(false)}
+                                        className={`group relative flex items-center justify-between gap-2 rounded-lg transition-all duration-200 ${
+                                            depth === 0 ? 'px-2.5 py-2 rounded-xl text-[12.5px]' : 'px-2 py-1.5 text-[11.5px]'
+                                        } font-medium ${isActive
+                                            ? 'bg-gradient-to-r from-brand to-brand-dark text-white shadow-sm shadow-brand/20 font-bold'
+                                            : 'text-slate-600 hover:text-brand hover:bg-brand-softer'
                                         }`}
-                                >
-                                    <div className="flex items-center gap-2.5 min-w-0">
-                                        <BarChart3 className="w-4 h-4 shrink-0 stroke-[1.75] text-slate-400 group-hover:text-brand" />
-                                        {sidebarOpen && <span className="truncate">Reports</span>}
-                                    </div>
-                                    {sidebarOpen && (
-                                        <ChevronDown className={`w-3.5 h-3.5 shrink-0 text-slate-400 transition-transform duration-200 ${reportExpanded ? 'rotate-180 text-brand' : ''}`} />
-                                    )}
-                                </button>
-                                {reportExpanded && sidebarOpen && (
-                                    <ul className="mt-1 ml-3.5 pl-2.5 border-l-2 border-brand-soft space-y-0.5 animate-in fade-in slide-in-from-top-1 duration-150 relative">
-                                        {headOfficeReportItems.map((item) => {
-                                            const isActive = path === item.href;
-                                            return (
-                                                <li key={item.name}>
-                                                    <Link
-                                                        href={item.href}
-                                                        onClick={() => isMobile && setSidebarOpen(false)}
-                                                        className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg text-[11.5px] font-medium transition-all ${isActive
-                                                            ? 'bg-brand-soft text-brand-dark font-bold'
-                                                            : 'text-slate-500 hover:text-brand hover:bg-brand-softer'
-                                                            }`}
-                                                    >
-                                                        <item.icon className="w-3.5 h-3.5 shrink-0 stroke-[1.75] text-slate-400 group-hover:text-brand" />
-                                                        <span className="truncate">{item.name}</span>
-                                                    </Link>
-                                                </li>
-                                            );
-                                        })}
-                                    </ul>
-                                )}
-                            </div>
-                        </div>
-                    )}
+                                    >
+                                        <div className="flex items-center gap-2 min-w-0">
+                                            <item.icon className={`${depth === 0 ? 'w-4 h-4' : 'w-3.5 h-3.5'} shrink-0 stroke-[1.75] ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-brand'}`} />
+                                            {sidebarOpen && <span className="truncate">{item.name}</span>}
+                                        </div>
+                                        {sidebarOpen && badge !== undefined && badge > 0 && (
+                                            <span className={`shrink-0 text-[9.5px] font-bold px-1.5 py-0.5 rounded-full ${isActive ? 'bg-white/25 text-white backdrop-blur-xs' : 'bg-rose-50 text-rose-600 border border-rose-200'}`}>
+                                                {badge}
+                                            </span>
+                                        )}
+                                        {!sidebarOpen && badge !== undefined && badge > 0 && (
+                                            <span className="absolute top-1 right-2 flex h-2 w-2">
+                                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                                                <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+                                            </span>
+                                        )}
+                                    </Link>
+                                </li>
+                            );
+                        };
 
-                    {/* Setup/Configuration Expandable Section */}
-                    {showConfigurationSection && (
-                        <div className="space-y-1">
-                            {sidebarOpen && (
-                                <span className="px-2.5 text-[9.5px] font-bold text-slate-400 uppercase tracking-wider block select-none mb-1">
-                                    Settings
-                                </span>
-                            )}
-                            <div className="space-y-0.5">
-                                <button
-                                    type="button"
-                                    onClick={() => setSetupExpanded(!setupExpanded)}
-                                    className={`group flex w-full items-center justify-between gap-2 px-2.5 py-2 rounded-xl text-[12.5px] font-medium transition-all duration-200 ${SETUP_PATHS.some(p => path.startsWith(p))
-                                        ? 'bg-brand-softer text-brand-dark font-bold border border-brand/25'
-                                        : 'text-slate-600 hover:text-brand hover:bg-brand-softer'
-                                        }`}
-                                >
-                                    <div className="flex items-center gap-2.5 min-w-0">
-                                        <Settings className="w-4 h-4 shrink-0 stroke-[1.75] text-slate-400 group-hover:text-brand" />
-                                        {sidebarOpen && <span className="truncate">Configuration</span>}
-                                    </div>
-                                    {sidebarOpen && (
-                                        <ChevronDown className={`w-3.5 h-3.5 shrink-0 text-slate-400 transition-transform duration-200 ${setupExpanded ? 'rotate-180 text-brand' : ''}`} />
-                                    )}
-                                </button>
-                                {setupExpanded && sidebarOpen && (
-                                    <ul className="mt-1 ml-3.5 pl-2.5 border-l-2 border-brand-soft space-y-0.5 animate-in fade-in slide-in-from-top-1 duration-150 relative font-medium">
-                                        {headOfficeSetupItems.map((item) => {
-                                            const isActive = path === item.href;
-                                            return (
-                                                <li key={item.name}>
-                                                    <Link
-                                                        href={item.href}
-                                                        onClick={() => isMobile && setSidebarOpen(false)}
-                                                        className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg text-[11.5px] font-medium transition-all ${isActive
-                                                            ? 'bg-brand-soft text-brand-dark font-bold'
-                                                            : 'text-slate-500 hover:text-brand hover:bg-brand-softer'
-                                                            }`}
-                                                    >
-                                                        <item.icon className="w-3.5 h-3.5 shrink-0 stroke-[1.75] text-slate-400 group-hover:text-brand" />
-                                                        <span className="truncate">{item.name}</span>
-                                                    </Link>
-                                                </li>
-                                            );
-                                        })}
-                                    </ul>
+                        return (
+                            <div key={group.title} className="space-y-1">
+                                {sidebarOpen && (
+                                    <span className="px-2.5 text-[9.5px] font-bold text-slate-400 uppercase tracking-wider block select-none mb-1">
+                                        {group.title}
+                                    </span>
                                 )}
+                                <ul className="space-y-0.5">
+                                    {group.items.map((item) => renderNavItem(item, 0))}
+                                </ul>
                             </div>
-                        </div>
-                    )}
+                        );
+                    })}
                 </nav>
 
                 {/* Super Admin Maintenance Controls */}
@@ -871,7 +965,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                     <CalendarDays className="w-3.5 h-3.5 shrink-0" />
                                     <span>
                                         {activeBusinessDay?.has_open_day
-                                            ? `Open: ${activeBusinessDay.business_date}`
+                                            ? `Open: ${formatDate(activeBusinessDay.business_date)}`
                                             : 'Day Closed'}
                                     </span>
                                 </Link>

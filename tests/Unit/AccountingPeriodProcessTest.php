@@ -165,6 +165,7 @@ beforeEach(function () {
     });
 
     (require database_path('migrations/2026_11_25_181000_create_accounting_period_tables.php'))->up();
+    (require database_path('migrations/2026_11_25_184000_make_period_reopen_logs_branch_nullable.php'))->up();
 });
 
 function setupPeriodActors(): array
@@ -307,4 +308,30 @@ it('enforces active business day middleware and head office permissions', functi
     $allowed = $middleware->handle($req, fn () => new Response('OK'));
     expect($allowed->getStatusCode())->toBe(200)
         ->and($req->attributes->get('active_business_date'))->toBe('2026-11-25');
+});
+
+it('allows super admin to rollback a closed financial year with audit log', function () {
+    ['hoUser' => $hoUser, 'branchUser' => $branchUser, 'branch' => $branch] = setupPeriodActors();
+    $service = app(AccountingPeriodService::class);
+
+    $fy = $service->openFinancialYear(2026, $hoUser->id);
+    $service->closeFinancialYear($fy->id, 'Accidental close', $hoUser->id);
+    expect($fy->fresh()->isClosed())->toBeTrue();
+
+    // Branch user cannot reopen financial year
+    $this->actingAs($branchUser)
+        ->post("/head-office/accounting-periods/financial-years/{$fy->id}/reopen", [
+            'reason' => 'Branch should not be allowed',
+        ])
+        ->assertForbidden();
+
+    // Super admin / has_all_access user can rollback financial year
+    $this->actingAs($hoUser)
+        ->post("/head-office/accounting-periods/financial-years/{$fy->id}/reopen", [
+            'reason' => 'Closed by mistake, rolling back',
+        ])
+        ->assertRedirect();
+
+    expect($fy->fresh()->isClosed())->toBeFalse()
+        ->and(PeriodReopenLog::query()->where('kind', 'year')->whereNull('branch_id')->count())->toBe(1);
 });

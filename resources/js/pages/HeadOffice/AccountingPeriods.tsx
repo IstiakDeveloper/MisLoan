@@ -8,7 +8,9 @@ import {
     Trash2,
 } from 'lucide-react';
 import { useState } from 'react';
+import { ComboSelect } from '@/components/ComboSelect';
 import AdminLayout from '@/layouts/admin-layout';
+import { formatDate } from '@/utils/dateUtils';
 
 interface FinancialYear {
     id: number;
@@ -81,6 +83,7 @@ interface Props {
     reopenLogs: ReopenLog[];
     filters: { zone_id: number | null; area_id: number | null };
     canManage: boolean;
+    isSuperAdmin: boolean;
 }
 
 export default function AccountingPeriods({
@@ -94,8 +97,11 @@ export default function AccountingPeriods({
     reopenLogs,
     filters,
     canManage,
+    isSuperAdmin,
 }: Props) {
     const [tab, setTab] = useState<'monitor' | 'initial' | 'fy' | 'holidays'>('monitor');
+    const [reopenFyId, setReopenFyId] = useState<number | null>(null);
+    const fyReopenForm = useForm({ reason: '' });
 
     const fyForm = useForm<{ start_year: number; period?: string }>({
         start_year: currentFySuggestion.start_year,
@@ -178,33 +184,27 @@ export default function AccountingPeriods({
                         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
                             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                                 <h2 className="text-sm font-bold text-slate-900">সকল শাখার Day / Month স্ট্যাটাস</h2>
-                                <div className="flex gap-2">
-                                    <select
-                                        value={filters.zone_id ?? ''}
-                                        onChange={(e) => applyFilter(e.target.value, '')}
-                                        className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs"
-                                    >
-                                        <option value="">All Zones</option>
-                                        {zones.map((z) => (
-                                            <option key={z.id} value={z.id}>
-                                                {z.name}
-                                            </option>
-                                        ))}
-                                    </select>
-                                    <select
-                                        value={filters.area_id ?? ''}
-                                        onChange={(e) => applyFilter(String(filters.zone_id ?? ''), e.target.value)}
-                                        className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs"
-                                    >
-                                        <option value="">All Areas</option>
-                                        {areas
-                                            .filter((a) => !filters.zone_id || a.zone_id === filters.zone_id)
-                                            .map((a) => (
-                                                <option key={a.id} value={a.id}>
-                                                    {a.name}
-                                                </option>
-                                            ))}
-                                    </select>
+                                <div className="flex flex-wrap gap-2">
+                                    <div className="w-44">
+                                        <ComboSelect
+                                            size="sm"
+                                            value={filters.zone_id ?? null}
+                                            onChange={(val) => applyFilter(val ? String(val) : '', '')}
+                                            items={zones.map((z) => ({ value: z.id, label: z.name }))}
+                                            placeholder="All Zones"
+                                        />
+                                    </div>
+                                    <div className="w-44">
+                                        <ComboSelect
+                                            size="sm"
+                                            value={filters.area_id ?? null}
+                                            onChange={(val) => applyFilter(String(filters.zone_id ?? ''), val ? String(val) : '')}
+                                            items={areas
+                                                .filter((a) => !filters.zone_id || a.zone_id === filters.zone_id)
+                                                .map((a) => ({ value: a.id, label: a.name }))}
+                                            placeholder="All Areas"
+                                        />
+                                    </div>
                                 </div>
                             </div>
 
@@ -229,20 +229,20 @@ export default function AccountingPeriods({
                                                 <td className="py-2.5 text-slate-500">
                                                     {row.zone_name ?? '-'} / {row.area_name ?? '-'}
                                                 </td>
-                                                <td className="py-2.5 text-slate-700">{row.initial_date ?? 'Not Set'}</td>
+                                                <td className="py-2.5 text-slate-700">{row.initial_date ? formatDate(row.initial_date) : 'Not Set'}</td>
                                                 <td className="py-2.5">
                                                     {row.open_day ? (
                                                         <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
-                                                            {row.open_day} (Open)
+                                                            {formatDate(row.open_day)} (Open)
                                                         </span>
                                                     ) : (
                                                         <span className="text-slate-400">None</span>
                                                     )}
                                                 </td>
-                                                <td className="py-2.5 text-slate-600">{row.last_closed_day ?? '-'}</td>
+                                                <td className="py-2.5 text-slate-600">{formatDate(row.last_closed_day)}</td>
                                                 <td className="py-2.5 text-slate-600">
                                                     {row.last_month_date
-                                                        ? `${row.last_month_date} (${row.last_month_status})`
+                                                        ? `${formatDate(row.last_month_date)} (${row.last_month_status})`
                                                         : '-'}
                                                 </td>
                                             </tr>
@@ -266,27 +266,27 @@ export default function AccountingPeriods({
                                     Reopen Closed Day / Month (Head Office Override)
                                 </h3>
                                 <div className="mt-3 grid gap-3 md:grid-cols-4">
-                                    <select
-                                        value={reopenForm.data.branch_id}
-                                        onChange={(e) => reopenForm.setData('branch_id', e.target.value)}
-                                        className="rounded-xl border border-slate-200 px-3 py-2 text-xs"
-                                        required
-                                    >
-                                        <option value="">শাখা নির্বাচন করুন</option>
-                                        {branches.map((b) => (
-                                            <option key={b.id} value={b.id}>
-                                                {b.name} ({b.code})
-                                            </option>
-                                        ))}
-                                    </select>
-                                    <select
+                                    <ComboSelect
+                                        size="sm"
+                                        value={reopenForm.data.branch_id ? Number(reopenForm.data.branch_id) : null}
+                                        onChange={(val) => reopenForm.setData('branch_id', val ? String(val) : '')}
+                                        items={branches.map((b) => ({
+                                            value: b.id,
+                                            label: `${b.name} (${b.code})`,
+                                            keywords: `${b.name} ${b.code}`,
+                                        }))}
+                                        placeholder="শাখা নির্বাচন করুন"
+                                    />
+                                    <ComboSelect
+                                        size="sm"
+                                        clearable={false}
                                         value={reopenForm.data.kind}
-                                        onChange={(e) => reopenForm.setData('kind', e.target.value)}
-                                        className="rounded-xl border border-slate-200 px-3 py-2 text-xs"
-                                    >
-                                        <option value="day">Day</option>
-                                        <option value="month">Month (Month-End Date)</option>
-                                    </select>
+                                        onChange={(val) => reopenForm.setData('kind', val ?? 'day')}
+                                        items={[
+                                            { value: 'day', label: 'Day' },
+                                            { value: 'month', label: 'Month (Month-End Date)' },
+                                        ]}
+                                    />
                                     <input
                                         type="date"
                                         value={reopenForm.data.period_date}
@@ -333,38 +333,33 @@ export default function AccountingPeriods({
                         </p>
 
                         <div>
-                            <label className="block text-xs font-semibold text-slate-700">Financial Year</label>
-                            <select
-                                value={initialForm.data.financial_year_id}
-                                onChange={(e) => initialForm.setData('financial_year_id', e.target.value)}
-                                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                                required
-                            >
-                                <option value="">অর্থবছর নির্বাচন করুন</option>
-                                {financialYears
+                            <label className="mb-1 block text-xs font-semibold text-slate-700">Financial Year</label>
+                            <ComboSelect
+                                value={initialForm.data.financial_year_id ? Number(initialForm.data.financial_year_id) : null}
+                                onChange={(val) => initialForm.setData('financial_year_id', val ?? '')}
+                                items={financialYears
                                     .filter((f) => !f.closed_at)
-                                    .map((f) => (
-                                        <option key={f.id} value={f.id}>
-                                            {f.name} ({f.starts_on} → {f.ends_on})
-                                        </option>
-                                    ))}
-                            </select>
+                                    .map((f) => ({
+                                        value: f.id,
+                                        label: `${f.name} (${formatDate(f.starts_on)} → ${formatDate(f.ends_on)})`,
+                                        keywords: f.name,
+                                    }))}
+                                placeholder="অর্থবছর নির্বাচন করুন"
+                            />
                         </div>
 
                         <div>
-                            <label className="block text-xs font-semibold text-slate-700">Branch</label>
-                            <select
-                                value={initialForm.data.branch_id}
-                                onChange={(e) => initialForm.setData('branch_id', e.target.value)}
-                                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                                required
-                            >
-                                {branches.map((b) => (
-                                    <option key={b.id} value={b.id}>
-                                        {b.name} ({b.code})
-                                    </option>
-                                ))}
-                            </select>
+                            <label className="mb-1 block text-xs font-semibold text-slate-700">Branch</label>
+                            <ComboSelect
+                                value={initialForm.data.branch_id ? Number(initialForm.data.branch_id) : null}
+                                onChange={(val) => initialForm.setData('branch_id', val ?? '')}
+                                items={branches.map((b) => ({
+                                    value: b.id,
+                                    label: `${b.name} (${b.code})`,
+                                    keywords: `${b.name} ${b.code}`,
+                                }))}
+                                placeholder="শাখা নির্বাচন করুন"
+                            />
                         </div>
 
                         <div>
@@ -446,7 +441,7 @@ export default function AccountingPeriods({
                                         <tr key={fy.id} className="border-b border-slate-50">
                                             <td className="py-2.5 font-bold text-slate-800">{fy.name}</td>
                                             <td className="py-2.5 text-slate-600">
-                                                {fy.starts_on} → {fy.ends_on}
+                                                {formatDate(fy.starts_on)} → {formatDate(fy.ends_on)}
                                             </td>
                                             <td className="py-2.5 text-slate-600">{fy.branch_financial_years_count}</td>
                                             <td className="py-2.5">
@@ -472,6 +467,58 @@ export default function AccountingPeriods({
                                                         <Lock className="h-3 w-3" />
                                                         Close Year
                                                     </button>
+                                                )}
+                                                {isSuperAdmin && fy.closed_at && (
+                                                    reopenFyId === fy.id ? (
+                                                        <form
+                                                            onSubmit={(e) => {
+                                                                e.preventDefault();
+                                                                fyReopenForm.post(
+                                                                    `/head-office/accounting-periods/financial-years/${fy.id}/reopen`,
+                                                                    {
+                                                                        onSuccess: () => {
+                                                                            setReopenFyId(null);
+                                                                            fyReopenForm.reset();
+                                                                        },
+                                                                    },
+                                                                );
+                                                            }}
+                                                            className="flex items-center gap-1.5"
+                                                        >
+                                                            <input
+                                                                type="text"
+                                                                value={fyReopenForm.data.reason}
+                                                                onChange={(e) => fyReopenForm.setData('reason', e.target.value)}
+                                                                placeholder="Rollback কারণ লিখুন"
+                                                                className="w-40 rounded-lg border border-slate-200 px-2 py-1 text-[11px]"
+                                                                required
+                                                                minLength={5}
+                                                            />
+                                                            <button
+                                                                type="submit"
+                                                                disabled={fyReopenForm.processing}
+                                                                className="rounded-lg bg-amber-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-amber-700"
+                                                            >
+                                                                Confirm
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setReopenFyId(null)}
+                                                                className="rounded-lg border border-slate-200 px-2 py-1 text-[11px] text-slate-600"
+                                                            >
+                                                                Cancel
+                                                            </button>
+                                                        </form>
+                                                    ) : (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setReopenFyId(fy.id)}
+                                                            className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-100"
+                                                        >
+                                                            <RotateCcw className="h-3 w-3" />
+                                                            Rollback / Reopen
+                                                        </button>
+                                                    )
                                                 )}
                                             </td>
                                         </tr>
@@ -504,15 +551,17 @@ export default function AccountingPeriods({
                                             className="rounded-xl border border-slate-200 px-3 py-2 text-xs"
                                             required
                                         />
-                                        <select
+                                        <ComboSelect
+                                            size="sm"
+                                            clearable={false}
                                             value={holidayForm.data.kind}
-                                            onChange={(e) => holidayForm.setData('kind', e.target.value)}
-                                            className="rounded-xl border border-slate-200 px-3 py-2 text-xs"
-                                        >
-                                            <option value="govt">Govt Holiday</option>
-                                            <option value="weekly">Weekly Holiday</option>
-                                            <option value="special">Special Holiday</option>
-                                        </select>
+                                            onChange={(val) => holidayForm.setData('kind', val ?? 'govt')}
+                                            items={[
+                                                { value: 'govt', label: 'Govt Holiday' },
+                                                { value: 'weekly', label: 'Weekly Holiday' },
+                                                { value: 'special', label: 'Special Holiday' },
+                                            ]}
+                                        />
                                     </div>
                                     <input
                                         type="text"
@@ -522,18 +571,17 @@ export default function AccountingPeriods({
                                         className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs"
                                         required
                                     />
-                                    <select
-                                        value={holidayForm.data.branch_id}
-                                        onChange={(e) => holidayForm.setData('branch_id', e.target.value)}
-                                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs"
-                                    >
-                                        <option value="">সকল শাখা (Global)</option>
-                                        {branches.map((b) => (
-                                            <option key={b.id} value={b.id}>
-                                                {b.name} ({b.code})
-                                            </option>
-                                        ))}
-                                    </select>
+                                    <ComboSelect
+                                        size="sm"
+                                        value={holidayForm.data.branch_id ? Number(holidayForm.data.branch_id) : null}
+                                        onChange={(val) => holidayForm.setData('branch_id', val ? String(val) : '')}
+                                        items={branches.map((b) => ({
+                                            value: b.id,
+                                            label: `${b.name} (${b.code})`,
+                                            keywords: `${b.name} ${b.code}`,
+                                        }))}
+                                        placeholder="সকল শাখা (Global)"
+                                    />
                                     <button
                                         type="submit"
                                         disabled={holidayForm.processing}
@@ -551,7 +599,7 @@ export default function AccountingPeriods({
                                         className="flex items-center justify-between rounded-xl border border-slate-100 px-3 py-2 text-xs"
                                     >
                                         <div>
-                                            <span className="font-bold text-slate-800">{h.holiday_date}</span> —{' '}
+                                            <span className="font-bold text-slate-800">{formatDate(h.holiday_date)}</span> —{' '}
                                             <span>{h.title}</span>{' '}
                                             <span className="text-[10px] text-slate-400">
                                                 ({h.branch ? h.branch.name : 'All Branches'})
@@ -582,7 +630,7 @@ export default function AccountingPeriods({
                                     reopenLogs.map((l) => (
                                         <div key={l.id} className="rounded-xl border border-slate-100 bg-slate-50 p-3 text-xs">
                                             <div className="font-bold text-slate-800">
-                                                {l.branch?.name} — {l.kind.toUpperCase()} ({l.period_date})
+                                                {l.branch?.name ?? 'All Branches (Financial Year)'} — {l.kind.toUpperCase()} ({formatDate(l.period_date)})
                                             </div>
                                             <div className="mt-0.5 text-slate-600">কারণ: {l.reason}</div>
                                             <div className="mt-1 text-[10px] text-slate-400">

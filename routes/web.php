@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Accounting\AccountingController;
 use App\Http\Controllers\AppRegistrationController;
 use App\Http\Controllers\ApprovalController;
 use App\Http\Controllers\BlockedAccountController;
@@ -7,6 +8,7 @@ use App\Http\Controllers\Branch\WorkProcessController;
 use App\Http\Controllers\ClusterHandoverController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\HeadOffice\AccountingPeriodController;
+use App\Http\Controllers\HeadOffice\PostingDefaultController;
 use App\Http\Controllers\HeadOffice\ApproverLoanApprovalReportController;
 use App\Http\Controllers\HeadOffice\BranchLoanPendingReportController;
 use App\Http\Controllers\HeadOffice\CsoDutyRosterController;
@@ -76,6 +78,17 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('complete-work', [WorkProcessController::class, 'completeWork'])->name('complete-work');
         Route::post('llp', [WorkProcessController::class, 'runLlpProcess'])->name('llp');
         Route::post('monthly', [WorkProcessController::class, 'runMonthlyProcess'])->name('monthly');
+    });
+
+    // Accounting Core (Chart of Accounts, Vouchers, Journal Registers)
+    Route::prefix('accounting')->name('accounting.')->middleware('branch.user')->group(function () {
+        Route::get('/', [AccountingController::class, 'index'])->name('index');
+        Route::post('coa/seed', [AccountingController::class, 'seedStandardCoa'])->name('coa.seed');
+        Route::post('coa', [AccountingController::class, 'storeAccount'])->name('coa.store');
+        Route::patch('coa/{ledgerAccount}/toggle', [AccountingController::class, 'toggleAccount'])->name('coa.toggle');
+        Route::post('vouchers', [AccountingController::class, 'submitVoucher'])->name('vouchers.submit');
+        Route::post('vouchers/{voucher}/approve', [AccountingController::class, 'approveVoucher'])->name('vouchers.approve');
+        Route::post('vouchers/{voucher}/reject', [AccountingController::class, 'rejectVoucher'])->name('vouchers.reject');
     });
 
     Route::post('admin/maintenance/toggle', [MaintenanceController::class, 'toggle'])->name('admin.maintenance.toggle');
@@ -528,10 +541,17 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::get('/', [AccountingPeriodController::class, 'index'])->name('index');
             Route::post('financial-years', [AccountingPeriodController::class, 'openFinancialYear'])->name('fy.open');
             Route::post('financial-years/{financialYear}/close', [AccountingPeriodController::class, 'closeFinancialYear'])->name('fy.close');
+            Route::post('financial-years/{financialYear}/reopen', [AccountingPeriodController::class, 'reopenFinancialYear'])->name('fy.reopen');
             Route::post('holidays', [AccountingPeriodController::class, 'storeHoliday'])->name('holidays.store');
             Route::delete('holidays/{holiday}', [AccountingPeriodController::class, 'destroyHoliday'])->name('holidays.destroy');
             Route::post('day-initial', [AccountingPeriodController::class, 'setBranchDayInitial'])->name('day-initial');
             Route::post('reopen', [AccountingPeriodController::class, 'reopenPeriod'])->name('reopen');
+        });
+
+        // GL Posting Defaults (Head Office Mapping)
+        Route::prefix('posting-defaults')->name('posting-defaults.')->group(function () {
+            Route::get('/', [PostingDefaultController::class, 'index'])->name('index');
+            Route::post('/', [PostingDefaultController::class, 'store'])->name('store');
         });
 
         // 3 Lakh+ Loan Guarantor & Informant Report

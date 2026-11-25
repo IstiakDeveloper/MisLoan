@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\AccountingVoucher;
 use App\Models\Branch;
 use App\Models\BranchAccountingPeriod;
 use App\Models\BranchFinancialYear;
@@ -14,6 +15,7 @@ use App\Models\PeriodReopenLog;
 use App\Models\SavingsApplication;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
 class AccountingPeriodService
@@ -82,6 +84,34 @@ class AccountingPeriodService
                 'closed_by' => $actorId,
                 'closed_at' => now(),
                 'close_reference' => $reference,
+            ]);
+
+            return $fy->fresh();
+        });
+    }
+
+    public function reopenFinancialYear(int $financialYearId, string $reason, int $actorId): FinancialYear
+    {
+        return DB::transaction(function () use ($financialYearId, $reason, $actorId) {
+            $fy = FinancialYear::query()->lockForUpdate()->findOrFail($financialYearId);
+
+            if (! $fy->isClosed()) {
+                $this->reject('এই অর্থবছরটি ইতিমধ্যে খোলা (Open) অবস্থায় আছে।');
+            }
+
+            $fy->update([
+                'closed_by' => null,
+                'closed_at' => null,
+                'close_reference' => null,
+            ]);
+
+            PeriodReopenLog::create([
+                'branch_id' => null,
+                'kind' => 'year',
+                'period_date' => $fy->starts_on->toDateString(),
+                'reason' => $reason,
+                'reopened_by' => $actorId,
+                'reopened_at' => now(),
             ]);
 
             return $fy->fresh();
@@ -380,6 +410,18 @@ class AccountingPeriodService
 
             if (! $day || $day->status !== BranchAccountingPeriod::STATUS_OPEN) {
                 $this->reject('এই তারিখের কর্মদিবস বর্তমানে খোলা (Open) অবস্থায় নেই।');
+            }
+
+            if (Schema::hasTable('accounting_vouchers')) {
+                $hasPendingVouchers = AccountingVoucher::query()
+                    ->where('branch_id', $branchId)
+                    ->where('business_date', $date)
+                    ->where('status', AccountingVoucher::STATUS_PENDING)
+                    ->exists();
+
+                if ($hasPendingVouchers) {
+                    $this->reject('এই তারিখে এখনো অনুমোদনের অপেক্ষায় থাকা ভাউচার (Pending Voucher) রয়েছে। আগে সেগুলো অনুমোদন বা বাতিল করুন।');
+                }
             }
 
             $summary = $this->computeDaySummary($branchId, $date);
