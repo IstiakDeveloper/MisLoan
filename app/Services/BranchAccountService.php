@@ -42,23 +42,39 @@ class BranchAccountService
             $user = new User;
         }
 
-        $username = $this->buildUsername($branch, $user->id ?? null);
-        $email = $this->buildEmail($branch, $user->id ?? null);
+        if ($user->exists) {
+            $user->fill([
+                'role_id' => $branchUserRole->id,
+                'branch_id' => $branch->id,
+                'area_id' => $branch->area_id,
+                'zone_id' => $branch->area?->zone_id,
+                'account_type' => 'branch',
+                'is_active' => (bool) $branch->is_active,
+                'has_all_access' => false,
+            ]);
 
-        $user->fill([
-            'name' => trim((string) $branch->name).' User',
-            'username' => $username,
-            'email' => $email,
-            'role_id' => $branchUserRole->id,
-            'branch_id' => $branch->id,
-            'area_id' => $branch->area_id,
-            'zone_id' => $branch->area?->zone_id,
-            'account_type' => 'branch',
-            'is_active' => (bool) $branch->is_active,
-            'has_all_access' => false,
-        ]);
-
-        if (! $user->exists || ! filled($user->password)) {
+            if (! filled($user->username)) {
+                $user->username = $this->buildUsername($branch, $user->id);
+            }
+            if (! filled($user->name)) {
+                $user->name = trim((string) $branch->name).' User';
+            }
+            if (! filled($user->email)) {
+                $user->email = $this->buildEmail($branch, $user->id);
+            }
+        } else {
+            $user->fill([
+                'name' => trim((string) $branch->name).' User',
+                'username' => $this->buildUsername($branch),
+                'email' => $this->buildEmail($branch),
+                'role_id' => $branchUserRole->id,
+                'branch_id' => $branch->id,
+                'area_id' => $branch->area_id,
+                'zone_id' => $branch->area?->zone_id,
+                'account_type' => 'branch',
+                'is_active' => (bool) $branch->is_active,
+                'has_all_access' => false,
+            ]);
             $user->password = '12345678';
         }
 

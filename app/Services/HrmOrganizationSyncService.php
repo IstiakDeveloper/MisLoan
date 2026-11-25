@@ -537,18 +537,21 @@ class HrmOrganizationSyncService
     }
 
     /**
-     * Apply HRM branch login PIN hash, or fall back to branch code as PIN.
+     * Apply login PIN only for newly created branches that have no PIN set in MisLoan yet.
+     * Existing branch PINs set in MisLoan are strictly preserved and never overwritten.
      *
      * @param  array<string, mixed>  $branchData
      */
     private function applyBranchLoginPin(Branch $branch, array $branchData): bool
     {
+        // If the branch already has a login PIN configured in MisLoan, preserve it!
+        if (filled($branch->getRawOriginal('login_pin'))) {
+            return false;
+        }
+
+        // For new branches: if HRM provided a pin hash, use it
         $hash = $branchData['login_pin_hash'] ?? null;
         if (is_string($hash) && $hash !== '') {
-            if ($branch->getRawOriginal('login_pin') === $hash) {
-                return false;
-            }
-
             $branch->forceFill(['login_pin' => $hash])->saveQuietly();
 
             return true;
@@ -559,7 +562,7 @@ class HrmOrganizationSyncService
             return false;
         }
 
-        // No HRM PIN yet — default to branch code as login PIN
+        // Fall back to branch code as initial PIN only if branch has no PIN at all
         $branch->forceFill(['login_pin' => Hash::make($code)])->saveQuietly();
 
         return true;
