@@ -578,8 +578,8 @@ export default function HeadOfficeFinesIndex({
                                                     </button>
                                                 )}
 
-                                                {/* Waive Button for any active/unwaived fine */}
-                                                {fine.status !== 'waived' && (
+                                                {/* Waive Button: Only for active/pending/approved fines (not for resolved, waived, or rejected) */}
+                                                {!['resolved', 'waived', 'rejected'].includes(fine.status) && (
                                                     <button
                                                         type="button"
                                                         onClick={() => {
