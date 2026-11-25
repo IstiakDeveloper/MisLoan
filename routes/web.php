@@ -43,7 +43,6 @@ use App\Http\Controllers\UserController;
 use App\Http\Controllers\UserFineController;
 use App\Http\Controllers\UserSessionController;
 use App\Http\Middleware\PreserveCycleLoanContext;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Redirect;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -611,67 +610,5 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('member/{member}/reject-issue', [LoanApplicationController::class, 'memberRejectIssue'])->name('member.reject-issue');
     });
 });
-
-Route::get('/storage-link', function () {
-    try {
-        Artisan::call('storage:link');
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Storage link created successfully!',
-            'output' => Artisan::output(),
-        ]);
-    } catch (Exception $e) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to create storage link',
-            'error' => $e->getMessage(),
-        ], 500);
-    }
-})->name('utility.storage-link');
-
-Route::get('/migrate', function () {
-    try {
-        Artisan::call('migrate', ['--force' => true]);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Migration completed successfully!',
-            'output' => Artisan::output(),
-        ]);
-    } catch (Exception $e) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Migration failed',
-            'error' => $e->getMessage(),
-        ], 500);
-    }
-})->name('utility.migrate');
-
-Route::get('/clear', function () {
-    try {
-        $output = [];
-        Artisan::call('config:clear');
-        $output['config'] = trim(Artisan::output());
-        Artisan::call('cache:clear');
-        $output['cache'] = trim(Artisan::output());
-        Artisan::call('view:clear');
-        $output['view'] = trim(Artisan::output());
-        Artisan::call('route:clear');
-        $output['route'] = trim(Artisan::output());
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Config, cache, view & route cleared successfully.',
-            'output' => $output,
-        ]);
-    } catch (Exception $e) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Clear failed',
-            'error' => $e->getMessage(),
-        ], 500);
-    }
-})->name('utility.clear');
 
 require __DIR__.'/settings.php';

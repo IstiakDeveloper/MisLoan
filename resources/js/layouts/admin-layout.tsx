@@ -1171,6 +1171,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/90 shadow-[0_-4px_12px_rgba(0,0,0,0.04)] pb-safe">
                     <div className="flex items-center justify-around h-13.5 px-1">
                         {mobileBottomNavItems.map((item) => {
+                            if (!item) return null;
                             const isActive = isNavItemActive(path, item.href);
                             const Icon = item.icon;
                             return (

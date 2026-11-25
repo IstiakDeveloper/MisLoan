@@ -22,10 +22,14 @@ export interface NavItem {
     isActive?: boolean;
 }
 
-export interface SharedData {
+export interface PageProps {
+    auth: Auth;
+    [key: string]: unknown;
+}
+
+export interface SharedData extends PageProps {
     name: string;
     quote: { message: string; author: string };
-    auth: Auth;
     sidebarOpen: boolean;
     hoSendCutoff?: {
         time: string;
@@ -34,7 +38,6 @@ export interface SharedData {
         is_blocked: boolean;
         blocked_message: string;
     } | null;
-    [key: string]: unknown;
 }
 
 export interface User {

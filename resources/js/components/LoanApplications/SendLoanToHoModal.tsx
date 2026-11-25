@@ -17,7 +17,7 @@ export interface HoLoanItem {
     application_no: string;
     applicant_name?: string;
     branch_name?: string;
-    amount?: number | null;
+    amount?: number | string | null;
 }
 
 interface Props {

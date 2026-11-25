@@ -9,6 +9,7 @@ import { useAutoFitPrint, triggerPrintWithAutoFit } from '@/hooks/useAutoFitPrin
 import { withLiveMemberCode } from '@/utils/memberCodeUtils';
 
 interface FieldInvestigationData {
+    recommended_loan_amount?: number;
     branch_name: string;
     branch_address: string;
     field_visit_date: string;
@@ -591,7 +592,7 @@ export default function FieldInvestigation({
         if (savedData) {
             setData((prev) => {
                 const reqAmt = Number(requestedAmount) || 0;
-                const merged = { ...prev, ...savedData };
+                const merged: FieldInvestigationData = { ...prev, ...savedData };
                 if (!String(merged.loan_disbursement_date || '').trim()) {
                     merged.loan_disbursement_date = savedDisbursementDate(existingApplication);
                 }

@@ -931,7 +931,7 @@ export default function Index({
             return: `/approvals/${selectedApproval.id}/return-to-branch`,
         };
 
-        const payload: Record<string, unknown> = { comments };
+        const payload: Record<string, import('@inertiajs/core').FormDataConvertible> = { comments };
         if (action === 'reject') {
             payload.push_to_block_list = pushToBlockList;
             if (pushToBlockList) {
@@ -1321,7 +1321,7 @@ export default function Index({
                 {
                     forward_to_user_id: loanForwardToUserId,
                     comments: loanComments,
-                    guarantor_data: loanGuarantorForm,
+                    guarantor_data: { ...loanGuarantorForm },
                     mark_guarantor_verified: loanGuarantorVerifiedMark,
                 },
                 {
@@ -1344,9 +1344,9 @@ export default function Index({
             return;
         }
 
-        const payload: Record<string, unknown> = {
+        const payload: Record<string, import('@inertiajs/core').FormDataConvertible> = {
             comments: loanComments,
-            guarantor_data: loanGuarantorForm,
+            guarantor_data: { ...loanGuarantorForm },
             mark_guarantor_verified: loanGuarantorVerifiedMark,
         };
         if (loanAction === 'approve' && !selectedLoanApproval.is_cancellation_approval) {
@@ -2251,7 +2251,7 @@ export default function Index({
                                                         }));
                                                     }}
                                                     className="mt-0.5"
-                                                    error={admissionBlockErrors.dob}
+                                                    error={admissionBlockErrors.dob ?? undefined}
                                                 />
                                             </div>
 
@@ -2658,7 +2658,7 @@ export default function Index({
                                                         }));
                                                     }}
                                                     className="mt-0.5"
-                                                    error={loanBlockErrors.dob}
+                                                    error={loanBlockErrors.dob ?? undefined}
                                                 />
                                             </div>
 

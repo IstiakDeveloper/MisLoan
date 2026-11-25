@@ -16,7 +16,7 @@ test('the term savings form never uploads signatures', function () {
         ->not->toContain('accountant_signature')
         ->not->toContain('branch_manager_signature')
         ->toContain('আবেদনকারীর স্বাক্ষর')
-        ->toContain('সব স্বাক্ষর ছাপানো ফর্মে হাতে নেওয়া হবে');
+        ->toContain('মুদ্রিত ফর্মে হাতে স্বাক্ষর করা হবে');
 });
 
 test('nominees keep a single default row with their own stamp size photo', function () {

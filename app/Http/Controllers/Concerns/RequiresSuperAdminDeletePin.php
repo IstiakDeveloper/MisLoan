@@ -19,8 +19,8 @@ trait RequiresSuperAdminDeletePin
             return false;
         }
 
-        $credential = (string) ($request->input('password') ?? $request->input('pin') ?? '');
-        if ($credential === '') {
+        $credential = $request->input('password') ?? $request->input('pin');
+        if (! is_string($credential) || $credential === '') {
             return false;
         }
 
@@ -31,8 +31,8 @@ trait RequiresSuperAdminDeletePin
 
         // 2. Backward compatibility: SuperAdmin PIN for super admins
         if ($user->isSuperAdmin()) {
-            $expected = (string) config('app.superadmin_delete_pin', '8934');
-            if ($expected !== '' && hash_equals($expected, $credential)) {
+            $expected = (string) config('app.superadmin_delete_pin');
+            if ($expected !== '' && $expected !== '8934' && hash_equals($expected, $credential)) {
                 return true;
             }
         }
@@ -104,7 +104,7 @@ trait RequiresSuperAdminDeletePin
 
     protected function sessionLoanEditKey(): string
     {
-        return 'superadmin_loan_edit_ids';
+        return 'superadmin_loan_edit_ids_v2';
     }
 
     protected function markLoanEditUnlocked(int $loanId): void
@@ -130,7 +130,7 @@ trait RequiresSuperAdminDeletePin
 
     protected function sessionSavingsEditKey(): string
     {
-        return 'superadmin_savings_edit_ids';
+        return 'superadmin_savings_edit_ids_v2';
     }
 
     protected function markSavingsEditUnlocked(int $savingsId): void

@@ -663,7 +663,7 @@ class MemberCycleHubController extends Controller
             ? Samity::where('branch_id', $admission->branch_id)->select('id', 'samity_name', 'samity_name_bn', 'samity_code', 'branch_id')->orderBy('samity_name')->get()
             : [];
 
-        $isOverrideUnlocked = (bool) $request->session()->get("cycle_override_unlocked_{$admission->id}", false);
+        $isOverrideUnlocked = (bool) $request->session()->get(CycleOverrideController::unlockSessionKey($admission->id), false);
 
         return Inertia::render('Member/CycleHub/CycleView', [
             'admission' => $renewal ? $display['admission'] : $admission,

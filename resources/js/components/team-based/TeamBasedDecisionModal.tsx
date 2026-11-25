@@ -863,7 +863,7 @@ function TeamBasedDecisionModalInner({
                                                 value={form.block_list.dob}
                                                 onChange={handleDobChange}
                                                 className="mt-1"
-                                                error={errors.dob}
+                                                error={errors.dob ?? undefined}
                                             />
                                         </div>
                                         <div>

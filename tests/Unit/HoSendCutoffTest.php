@@ -195,6 +195,7 @@ class HoSendCutoffTest extends TestCase
             $table->text('issue_description');
             $table->string('status')->default('pending');
             $table->text('response_message')->nullable();
+            $table->dateTime('responded_at')->nullable();
             $table->dateTime('zm_approved_at')->nullable();
             $table->timestamps();
         });
@@ -203,6 +204,7 @@ class HoSendCutoffTest extends TestCase
             $table->id();
             $table->unsignedBigInteger('member_admission_id');
             $table->unsignedBigInteger('user_id');
+            $table->integer('sequence')->default(1);
             $table->string('status')->default('pending');
             $table->string('level')->nullable();
             $table->timestamps();
@@ -212,6 +214,7 @@ class HoSendCutoffTest extends TestCase
             $table->id();
             $table->unsignedBigInteger('loan_application_id');
             $table->unsignedBigInteger('user_id');
+            $table->integer('sequence')->default(1);
             $table->string('status')->default('pending');
             $table->timestamps();
         });

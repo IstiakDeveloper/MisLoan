@@ -55,8 +55,8 @@ class CycleOverrideController extends Controller
             return false;
         }
 
-        $credential = (string) ($request->input('pin') ?? $request->input('password') ?? '');
-        if ($credential === '') {
+        $credential = $request->input('pin') ?? $request->input('password');
+        if (! is_string($credential) || $credential === '') {
             return false;
         }
 
@@ -72,8 +72,8 @@ class CycleOverrideController extends Controller
 
         // 3. Super Admin delete PIN (config)
         if (method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin()) {
-            $expected = (string) config('app.superadmin_delete_pin', '8934');
-            if ($expected !== '' && hash_equals($expected, $credential)) {
+            $expected = (string) config('app.superadmin_delete_pin');
+            if ($expected !== '' && $expected !== '8934' && hash_equals($expected, $credential)) {
                 return true;
             }
         }
@@ -87,14 +87,19 @@ class CycleOverrideController extends Controller
             return false;
         }
 
-        return (bool) $request->session()->get("cycle_override_unlocked_{$admissionId}", false);
+        return (bool) $request->session()->get(self::unlockSessionKey($admissionId), false);
     }
 
     protected function markSessionUnlocked(Request $request, int $admissionId): void
     {
         if ($request->hasSession()) {
-            $request->session()->put("cycle_override_unlocked_{$admissionId}", true);
+            $request->session()->put(self::unlockSessionKey($admissionId), true);
         }
+    }
+
+    public static function unlockSessionKey(int $admissionId): string
+    {
+        return "cycle_override_unlocked_v2_{$admissionId}";
     }
 
     /**

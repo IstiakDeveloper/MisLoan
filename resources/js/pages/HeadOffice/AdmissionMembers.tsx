@@ -399,7 +399,7 @@ export default function AdmissionMembers({
             const doReload = () => {
                 if (!reloaded) {
                     reloaded = true;
-                    router.reload(keepListFilters);
+                    router.reload();
                     window.removeEventListener('focus', doReload);
                 }
             };

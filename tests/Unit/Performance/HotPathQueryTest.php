@@ -25,6 +25,7 @@ beforeEach(function () {
 
     Schema::create('users', function (Blueprint $table) {
         $table->id();
+        $table->string('username')->nullable();
         $table->string('name');
         $table->string('email')->nullable();
         $table->timestamp('email_verified_at')->nullable();

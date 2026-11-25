@@ -8,10 +8,8 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
-Schedule::command('images:compress-existing --only-unconverted')
-    ->dailyAt('02:15')
-    ->withoutOverlapping()
-    ->name('images-compress-existing');
+// Existing image conversions delete the original before database references
+// are updated. Keep that bulk operation out of unattended scheduling.
 
 Schedule::command('notifications:digest')
     ->dailyAt('18:00')

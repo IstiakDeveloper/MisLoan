@@ -1,4 +1,5 @@
 export interface LoanAgreementData {
+    loan_amount_words: string;
     branch_name: string;
     branch_address: string;
     member_name_bn: string;

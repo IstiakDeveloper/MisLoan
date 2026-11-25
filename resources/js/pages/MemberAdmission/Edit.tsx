@@ -207,8 +207,8 @@ export default function Edit({
         return isNaN(num) ? '' : num;
     };
 
-    const { data, setData, errors } =
-        useForm<any>({
+    const { data, setData: setInertiaData, errors } =
+        useForm<Record<string, any>>({
             application_no: admission.application_no || '',
             branch_id: admission.branch_id || 0,
             samity_id: admission.samity_id || 0,
@@ -349,6 +349,14 @@ export default function Edit({
             loan_dofa: admission.loan_dofa || '',
         });
 
+    const setData = (field: string | ((previous: typeof data) => typeof data), value?: unknown) => {
+        if (typeof field === 'function') {
+            setInertiaData(field);
+        } else {
+            setInertiaData((previous: typeof data) => ({ ...previous, [field]: value }));
+        }
+    };
+
     const canChangeMemberType = can_change_member_type ?? (admission.status === 'draft' || hasAllAccess);
     const isDraftAdmission = admission.status === 'draft';
     const saveButtonLabel = isDraftAdmission ? 'খসড়া সংরক্ষণ' : 'সংরক্ষণ';
@@ -368,13 +376,13 @@ export default function Edit({
                 'সদস্যের ধরণ "নতুন সদস্য" তে পরিবর্তন করতে চান? ঋণের দফা মুছে যাবে এবং নতুন সদস্য হিসেবে সংরক্ষিত হবে। চালিয়ে যাবেন?'
             );
             if (!ok) return;
-            setData((prev) => ({ ...prev, is_legacy: false, loan_dofa: '' }));
+            setData((prev: typeof data) => ({ ...prev, is_legacy: false, loan_dofa: '' }));
         } else {
             const ok = window.confirm(
                 'সদস্যের ধরণ "পুরাতন সদস্য" তে পরিবর্তন করতে চান? ঋণের দফা দিতে হবে। চালিয়ে যাবেন?'
             );
             if (!ok) return;
-            setData((prev) => ({ ...prev, is_legacy: true, loan_dofa: prev.loan_dofa || 1 }));
+            setData((prev: typeof data) => ({ ...prev, is_legacy: true, loan_dofa: prev.loan_dofa || 1 }));
         }
     };
 
@@ -393,7 +401,7 @@ export default function Edit({
 
     // Keep default «নিজ» row first and synced with applicant personal info
     useEffect(() => {
-        setData((prev) => {
+        setData((prev: typeof data) => {
             const members = [...(prev.family_members || [])];
             let selfIdx = members.findIndex((m) => m.relation_with_head === 'নিজ');
             const name = prev.applicant_name_bn || prev.applicant_name_en || '';
@@ -763,7 +771,7 @@ export default function Edit({
             );
             return;
         }
-        const newMembers = data.family_members!.filter((_, i) => i !== index);
+        const newMembers = data.family_members!.filter((_: unknown, i: number) => i !== index);
         setData('family_members', newMembers);
     };
 
@@ -804,7 +812,7 @@ export default function Edit({
     };
 
     const removeOtherAsset = (index: number) => {
-        const newAssets = data.other_assets!.filter((_, i) => i !== index);
+        const newAssets = data.other_assets!.filter((_: unknown, i: number) => i !== index);
         setData('other_assets', newAssets);
     };
 

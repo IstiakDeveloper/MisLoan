@@ -6,6 +6,7 @@ const ORG_ADDRESS = 'উকিলপাড়া, নওগাঁ।';
 const DOCUMENT_TITLE = 'মাসিক ঋণ যাচাই ও অনুমোদন সংক্রান্ত তথ্য।';
 
 export interface TeamBasedApproverInfo {
+    approver_signature?: string | null;
     approver_name?: string | null;
     approver_role?: string | null;
     status?: string | null;

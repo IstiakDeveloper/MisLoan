@@ -88,6 +88,7 @@ interface LoanApplicationIssue {
 }
 
 interface LoanApplication {
+    proposed_amount?: number | string | null;
     id: number;
     application_no: string;
     status: string;

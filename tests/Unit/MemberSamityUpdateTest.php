@@ -148,6 +148,7 @@ beforeEach(function () {
         $table->id();
         $table->unsignedBigInteger('member_admission_id');
         $table->unsignedBigInteger('user_id');
+        $table->integer('sequence')->default(1);
         $table->string('status')->default('pending');
         $table->string('level')->nullable();
         $table->timestamps();
@@ -158,6 +159,7 @@ beforeEach(function () {
         $table->unsignedBigInteger('loan_application_id');
         $table->string('status')->default('pending');
         $table->text('response_message')->nullable();
+        $table->dateTime('responded_at')->nullable();
         $table->timestamps();
     });
 
@@ -165,6 +167,7 @@ beforeEach(function () {
         $table->id();
         $table->unsignedBigInteger('loan_application_id');
         $table->unsignedBigInteger('user_id');
+        $table->integer('sequence')->default(1);
         $table->string('status')->default('pending');
         $table->timestamps();
     });

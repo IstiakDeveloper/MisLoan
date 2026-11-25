@@ -633,7 +633,7 @@ export default function AgrosorProfile({
                     Math.round(Number(merged.last_year_total_income) - Number(merged.last_year_total_expense)),
                 );
             }
-            setData((prev) => withLiveMemberCode({ ...prev, ...merged }, member));
+            setData((prev: AgrosorProfileData) => withLiveMemberCode({ ...prev, ...merged }, member));
             setLocalRestored(true);
         }
         const t = setTimeout(() => {
@@ -655,7 +655,7 @@ export default function AgrosorProfile({
 
     useEffect(() => {
         if (savedData && Object.keys(savedData).length > 0) {
-            setData((prev) => ({
+            setData((prev: AgrosorProfileData) => ({
                 ...prev,
                 branch_manager_post_inspection_comments:
                     str((savedData as any).branch_manager_post_inspection_comments) ||
@@ -747,7 +747,7 @@ export default function AgrosorProfile({
 
     const pageProps = {
         data,
-        setData: (key: string, value: any) => setData(key as any, value),
+        setData: (key: string, value: unknown) => setData((prev: AgrosorProfileData) => ({ ...prev, [key]: value })),
         member,
         loanProduct,
         loanCategory,

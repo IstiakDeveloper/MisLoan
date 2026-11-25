@@ -44,6 +44,9 @@ import EditApprovalCommentModal from '../Member/LoanApplications/Components/Edit
 import EditLoanDetailsModal from '../Member/LoanApplications/Components/EditLoanDetailsModal';
 
 interface Loan {
+    loan_product_id?: number | null;
+    updated_at?: string | null;
+    disbursed_amount?: number | string | null;
     id: number;
     application_no: string;
     form_type: number;
@@ -142,6 +145,7 @@ interface Loan {
         status: string;
         response_message?: string;
         responded_at?: string;
+        zm_approved_at?: string | null;
         responder?: {
             id: number;
             name: string;
@@ -223,6 +227,7 @@ export default function LoanApplicationShow({ loan, categories = [], flash }: Pr
         userName?: string;
         roleName?: string;
         comments?: string;
+        currentComment?: string;
     } | null>(null);
     const [commentInput, setCommentInput] = useState('');
     const [savingComment, setSavingComment] = useState(false);
@@ -473,9 +478,6 @@ export default function LoanApplicationShow({ loan, categories = [], flash }: Pr
         } else if (activeTab === 'details') {
             const detailsEl = document.querySelector('.printable-area') as HTMLElement;
             executeDedicatedPrint(detailsEl);
-        } else if (activeTab === 'issues') {
-            const issuesEl = document.getElementById('issues-print-area') as HTMLElement;
-            executeDedicatedPrint(issuesEl);
         } else {
             printFormContent();
         }

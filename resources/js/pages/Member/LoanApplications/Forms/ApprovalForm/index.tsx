@@ -327,8 +327,6 @@ export default function ApprovalForm({
         project_manpower_family: '',
         project_manpower_outside: '',
         project_manpower_trained: '',
-        project_income_1_2_yr: '',
-        project_expense_1_2_yr: '',
         capital_total: '',
         capital_own: '',
         capital_applied_loan: requestedAmount ? String(requestedAmount) : '',
@@ -383,22 +381,7 @@ export default function ApprovalForm({
         est_other_exp_2_desc: '', est_other_exp_2_amount: '',
         est_other_exp_3_desc: '', est_other_exp_3_amount: '',
         est_main_income_desc: projectNameFromAdmission,
-        est_main_income_amount: durationIncomeFromAdmission || '',
         est_other_income_desc: '', est_other_income_amount: '',
-        installment_type: computedInstallment.installment_type,
-        installment_principal: computedInstallment.installment_principal,
-        installment_service_charge: computedInstallment.installment_service_charge,
-        installment_total: computedInstallment.installment_total,
-        number_of_installments: computedInstallment.number_of_installments
-            || (loanProduct?.number_of_installments
-                ? String(loanProduct.number_of_installments)
-                : (loanProduct?.duration_months ? String(loanProduct.duration_months) : '')),
-        last_installment_amount: computedInstallment.last_installment_amount,
-        last_installment_principal: computedInstallment.last_installment_principal,
-        last_installment_service_charge: computedInstallment.last_installment_service_charge,
-        total_principal: computedInstallment.total_principal,
-        total_service_charge: computedInstallment.total_service_charge,
-        total_payable: computedInstallment.total_payable,
         guarantor_1_name: firstGuarantor?.guarantor_name || member?.guarantor_name || '',
         guarantor_1_address: firstGuarantorAddr || '',
         guarantor_1_mobile: firstGuarantor?.guarantor_mobile || member?.guarantor_mobile || '',
@@ -557,7 +540,7 @@ export default function ApprovalForm({
             delete (restored as any).zonal_manager_comments;
             delete (restored as any).final_approver_comments;
             delete (restored as any).final_approver_remarks;
-            setData((prev) => {
+            setData((prev: LoanApplicationApprovalData) => {
                 const merged = { ...prev, ...restored };
                 return withLiveMemberCode({
                     ...merged,
@@ -666,7 +649,7 @@ export default function ApprovalForm({
         }
 
         if (Object.keys(updates).length > 0) {
-            setData((prev) => ({ ...prev, ...updates }));
+            setData((prev: LoanApplicationApprovalData) => ({ ...prev, ...updates }));
         }
     }, [
         data.est_emp_salary,
@@ -698,13 +681,13 @@ export default function ApprovalForm({
                 loanCategory,
                 data.loan_disbursement_date,
             ).lastInstallmentDate || '';
-        if (next) setData('loan_repayment_date', next);
+        if (next) setData((prev: LoanApplicationApprovalData) => ({ ...prev, loan_repayment_date: next }));
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [data.loan_disbursement_date]);
 
     useEffect(() => {
         if (savedData && Object.keys(savedData).length > 0) {
-            setData((prev) => ({
+            setData((prev: LoanApplicationApprovalData) => ({
                 ...prev,
                 branch_manager_post_inspection_comments:
                     (savedData as any).branch_manager_post_inspection_comments ?? prev.branch_manager_post_inspection_comments,
@@ -730,10 +713,11 @@ export default function ApprovalForm({
             alert(result.error);
             return;
         }
-        setData(field, result.dataUrl);
+        setData((prev: LoanApplicationApprovalData) => ({ ...prev, [field]: result.dataUrl }));
     };
 
-    const removeImage = (field: string) => setData(field, '');
+    const removeImage = (field: string) =>
+        setData((prev: LoanApplicationApprovalData) => ({ ...prev, [field]: '' }));
 
     const handleSubmit = (e?: React.FormEvent) => {
         if (e) e.preventDefault();
@@ -816,19 +800,19 @@ export default function ApprovalForm({
         });
     };
 
-    const setFormData: typeof setData = ((key: any, value?: any) => {
+    const setFormData: import('./Types').FormPageProps['setData'] = (key, value) => {
         if (typeof key === 'function') {
-            return (setData as any)(key);
+            return setData(key);
         }
         if (typeof value === 'string' && /[০-৯]/.test(value)) {
             const converted = toEnglishDigits(value);
             const numericOnly = converted.replace(/,/g, '');
             if (/^[+-]?[0-9]*[.]?[0-9]*$/.test(numericOnly)) {
-                return setData(key, converted);
+                return setData((prev: LoanApplicationApprovalData) => ({ ...prev, [key]: converted }));
             }
         }
-        return setData(key, value);
-    }) as typeof setData;
+        return setData((prev: LoanApplicationApprovalData) => ({ ...prev, [key]: value }));
+    };
 
     const commonProps = {
         data,

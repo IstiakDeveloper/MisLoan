@@ -52,6 +52,7 @@ interface Branch {
 }
 
 interface Issue {
+    resolution_note?: string | null;
     id: number;
     issue_description: string;
     reporter: {

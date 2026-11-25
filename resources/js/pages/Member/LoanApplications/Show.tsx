@@ -62,6 +62,8 @@ import EditApprovalCommentModal from './Components/EditApprovalCommentModal';
 import EditLoanDetailsModal from './Components/EditLoanDetailsModal';
 
 interface LoanApplication {
+    updated_at?: string | null;
+    approvals?: Array<{ comments?: string | null }>;
     id: number;
     application_no: string;
     form_type: number | string;
@@ -128,6 +130,12 @@ interface LoanApplication {
         mobile_no?: string;
         present_village_road?: string;
         present_address_en?: string;
+        present_post_code?: string | null;
+        present_upazila?: string | null;
+        present_district?: string | null;
+        guarantor_name?: string | null;
+        guarantor_mobile?: string | null;
+        loan_dofa?: number | null;
     };
     submitted_by?: { id: number; name: string } | null;
     submittedBy?: { id: number; name: string } | null;
@@ -346,6 +354,7 @@ export default function Show({ application, routes, categories = [], can_update_
         userName?: string;
         roleName?: string;
         comments?: string;
+        currentComment?: string;
     } | null>(null);
     const [commentInput, setCommentInput] = useState('');
     const [savingComment, setSavingComment] = useState(false);
@@ -2040,7 +2049,7 @@ export default function Show({ application, routes, categories = [], can_update_
                             <Button 
                                 size="sm" 
                                 className="w-full sm:w-auto bg-amber-600 hover:bg-amber-700 text-white shrink-0 rounded-lg text-xs"
-                                onClick={() => setActiveTab('issues')}
+                                onClick={() => setActiveTab('approvals')}
                             >
                                 সমস্যা সমাধান করুন ({pendingIssues.length})
                             </Button>

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 
-export type Appearance = 'light' | 'dark';
+export type Appearance = 'light' | 'dark' | 'system';
 
 const setCookie = (name: string, value: string, days = 365) => {
   if (typeof document === 'undefined') {
@@ -12,7 +12,7 @@ const setCookie = (name: string, value: string, days = 365) => {
 };
 
 const applyTheme = (appearance: Appearance) => {
-  const isDark = appearance === 'dark';
+  const isDark = appearance === 'dark' || (appearance === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
 
   document.documentElement.classList.toggle('dark', isDark);
   document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';

@@ -83,7 +83,10 @@ export default function AdmissionEdit({
         }));
     };
     useEffect(() => {
-        form.setData('revision', cycle.revision);
+        form.setData((previous: Record<string, any>) => ({
+            ...previous,
+            revision: cycle.revision,
+        }));
     }, [cycle.revision]);
     useEffect(() => {
         const timer = setTimeout(() => {

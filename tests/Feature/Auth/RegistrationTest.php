@@ -1,19 +1,8 @@
 <?php
 
-test('registration screen can be rendered', function () {
-    $response = $this->get(route('register'));
+use Illuminate\Support\Facades\Route;
 
-    $response->assertStatus(200);
-});
-
-test('new users can register', function () {
-    $response = $this->post(route('register.store'), [
-        'name' => 'Test User',
-        'email' => 'test@example.com',
-        'password' => 'password',
-        'password_confirmation' => 'password',
-    ]);
-
-    $this->assertAuthenticated();
-    $response->assertRedirect(route('dashboard', absolute: false));
+it('keeps public self-registration disabled', function () {
+    expect(Route::has('register'))->toBeFalse();
+    expect(Route::has('register.store'))->toBeFalse();
 });

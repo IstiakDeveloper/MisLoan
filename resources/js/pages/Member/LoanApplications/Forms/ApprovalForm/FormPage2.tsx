@@ -15,7 +15,8 @@ const sumOrEmpty = (...vals: unknown[]): string => {
 };
 
 export default function FormPage2({ data, setData, requestedAmount }: FormPageProps) {
-    const initialPopulatedLoans = (data.other_loan_status || []).reduce((max, row, i) => {
+    const loans: Array<Partial<Record<'current_status' | 'round' | 'borrower_name' | 'mobile' | 'remarks' | 'source_name', string>>> = data.other_loan_status || [];
+    const initialPopulatedLoans = loans.reduce((max, row, i) => {
         const hasValue = row?.current_status || row?.round || row?.borrower_name || row?.mobile || row?.remarks || row?.source_name;
         return hasValue ? Math.max(max, i + 1) : max;
     }, 1);
@@ -47,7 +48,7 @@ export default function FormPage2({ data, setData, requestedAmount }: FormPagePr
         (approvedAmountNum > 0 ? String(approvedAmountNum) : '') ||
         data.capital_applied_loan ||
         data.approval_amount_digits ||
-        (requestedAmount != null && requestedAmount !== '' ? String(requestedAmount) : '');
+        (requestedAmount != null ? String(requestedAmount) : '');
 
     // নিজস্ব তহবিল = পেজ ১ এর (ক) নিজস্ব মূলধন
     const ownCapital = data.capital_own || '';

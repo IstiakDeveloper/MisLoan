@@ -27,7 +27,7 @@ const bn = (v: unknown): string => {
     if (v === null || v === undefined || v === '') {
         return '';
     }
-    return toBanglaDigits(v);
+    return toBanglaDigits(String(v));
 };
 
 const noDecimal = (v: any): string => {

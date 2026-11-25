@@ -127,6 +127,6 @@ return [
     /*
     | SuperAdmin delete confirmation PIN (Head Office bulk/single delete).
     */
-    'superadmin_delete_pin' => env('SUPERADMIN_DELETE_PIN', '8934'),
+    'superadmin_delete_pin' => env('SUPERADMIN_DELETE_PIN'),
 
 ];

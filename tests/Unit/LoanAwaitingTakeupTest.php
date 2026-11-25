@@ -151,6 +151,10 @@ function createAwaitingTakeupTables(): void
         $table->boolean('is_legacy')->default(false);
         $table->unsignedInteger('loan_dofa')->nullable();
         $table->string('status')->default('approved');
+        $table->unsignedInteger('revision_count')->default(0);
+        $table->text('revision_comments')->nullable();
+        $table->timestamp('submitted_at')->nullable();
+        $table->timestamp('reviewed_at')->nullable();
         $table->timestamps();
         $table->softDeletes();
     });
@@ -178,6 +182,7 @@ function createAwaitingTakeupTables(): void
         $table->text('issue_description')->nullable();
         $table->string('status')->default('pending');
         $table->text('resolution_note')->nullable();
+        $table->dateTime('resolved_at')->nullable();
         $table->dateTime('zm_approved_at')->nullable();
         $table->timestamps();
     });
@@ -189,6 +194,7 @@ function createAwaitingTakeupTables(): void
         $table->unsignedBigInteger('loan_product_id')->nullable();
         $table->unsignedBigInteger('branch_id')->nullable();
         $table->unsignedBigInteger('submitted_by')->nullable();
+        $table->timestamp('submitted_at')->nullable();
         $table->string('status')->default('draft');
         $table->decimal('requested_amount', 12, 2)->nullable();
         $table->decimal('approved_amount', 12, 2)->nullable();
@@ -216,6 +222,7 @@ function createAwaitingTakeupTables(): void
         $table->text('issue_description')->nullable();
         $table->string('status')->default('pending');
         $table->text('response_message')->nullable();
+        $table->dateTime('responded_at')->nullable();
         $table->dateTime('zm_approved_at')->nullable();
         $table->timestamps();
     });
@@ -224,6 +231,7 @@ function createAwaitingTakeupTables(): void
         $table->id();
         $table->unsignedBigInteger('member_admission_id');
         $table->unsignedBigInteger('user_id');
+        $table->integer('sequence')->default(1);
         $table->string('status')->default('pending');
         $table->string('level')->nullable();
         $table->timestamps();
@@ -233,6 +241,7 @@ function createAwaitingTakeupTables(): void
         $table->id();
         $table->unsignedBigInteger('loan_application_id');
         $table->unsignedBigInteger('user_id');
+        $table->integer('sequence')->default(1);
         $table->string('status')->default('pending');
         $table->timestamps();
     });

@@ -25,6 +25,12 @@ interface LoanMember {
     loan_release_or_approval_date?: string;
     loan_distribution_date?: string;
     approved_by?: string;
+    approved_by_name?: string | null;
+    approved_by_designation?: string | null;
+    approval_date?: string | null;
+    guarantor_name?: string | null;
+    guarantor_relation?: string | null;
+    disbursement_date?: string | null;
     remarks?: string;
     status?: string;
 }

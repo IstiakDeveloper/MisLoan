@@ -455,7 +455,7 @@ export default function Show({ admission, cycleSurveys = [], can_update_samity =
                                 </div>
                                 <p className="text-[11px] sm:text-xs text-slate-500 mt-1 font-medium break-words flex items-center gap-1.5 flex-wrap">
                                     <span>আবেদন নং / মেম্বার কোড: <span className="font-mono font-bold text-blue-700">{toBanglaDigits(admission.application_no)}</span></span>
-                                    {admission.status !== 'disbursed' && !hasDisbursedLoan && (
+                                    {!hasDisbursedLoan && (
                                         <button
                                             type="button"
                                             onClick={() => {
