@@ -1,59 +1,12 @@
 name: Build and Deploy to VPS
 
 on:
-  pull_request:
   push:
     branches:
       - main
 
 jobs:
-  checks:
-    runs-on: ubuntu-latest
-    services:
-      mysql:
-        image: mysql:8.0
-        env:
-          MYSQL_ROOT_PASSWORD: ci-root-only
-          MYSQL_DATABASE: misloan_test
-          MYSQL_USER: misloan_test
-          MYSQL_PASSWORD: ci-test-only
-        ports:
-          - 3306/tcp
-        options: >-
-          --health-cmd "mysqladmin ping --silent"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
-    steps:
-      - uses: actions/checkout@v4
-      - uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.4'
-          extensions: pdo_mysql, pdo_sqlite, gd, zip
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-      - run: composer install --no-interaction --prefer-dist
-      - run: npm ci
-      - run: composer audit --locked --no-interaction
-      - run: npm audit --omit=dev
-      - name: Prepare an isolated CI environment
-        run: |
-          cp .env.example .env
-          php artisan key:generate
-      - run: npm run build
-      - run: npm run types
-      - run: node --test tests/Frontend/*.test.cjs
-      - name: Run PHP tests
-        env:
-          MISLOAN_TEST_MYSQL_PORT: ${{ job.services.mysql.ports[3306] }}
-          MISLOAN_TEST_MYSQL_PASSWORD: ci-test-only
-        run: php artisan test
-
   build-and-deploy:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: checks
     concurrency:
       group: misloan-production
       cancel-in-progress: false

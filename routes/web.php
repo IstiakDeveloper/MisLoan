@@ -5,6 +5,7 @@ use App\Http\Controllers\AppRegistrationController;
 use App\Http\Controllers\ApprovalController;
 use App\Http\Controllers\BlockedAccountController;
 use App\Http\Controllers\Branch\WorkProcessController;
+use App\Http\Controllers\CashDeskController;
 use App\Http\Controllers\ClusterHandoverController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\HeadOffice\AccountingPeriodController;
@@ -80,6 +81,15 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('monthly', [WorkProcessController::class, 'runMonthlyProcess'])->name('monthly');
     });
 
+    // Cash Desk & Bank Reconciliation
+    Route::prefix('cash-desk')->name('cash-desk.')->middleware('branch.user')->group(function () {
+        Route::get('/', [CashDeskController::class, 'index'])->name('index');
+        Route::post('open', [CashDeskController::class, 'openSession'])->name('open');
+        Route::post('sessions/{session}/submit', [CashDeskController::class, 'submitSession'])->name('sessions.submit');
+        Route::post('sessions/{session}/review', [CashDeskController::class, 'reviewSession'])->name('sessions.review');
+        Route::post('bank-lines', [CashDeskController::class, 'storeBankLine'])->name('bank-lines.store');
+        Route::post('bank-lines/{line}/match', [CashDeskController::class, 'matchBankLine'])->name('bank-lines.match');
+    });
     // Accounting Core (Chart of Accounts, Vouchers, Journal Registers)
     Route::prefix('accounting')->name('accounting.')->middleware('branch.user')->group(function () {
         Route::get('/', [AccountingController::class, 'index'])->name('index');

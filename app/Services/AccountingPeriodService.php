@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\AccountingVoucher;
 use App\Models\Branch;
+use App\Models\CashierSession;
 use App\Models\BranchAccountingPeriod;
 use App\Models\BranchFinancialYear;
 use App\Models\BranchMonthProcess;
@@ -421,6 +422,18 @@ class AccountingPeriodService
 
                 if ($hasPendingVouchers) {
                     $this->reject('এই তারিখে এখনো অনুমোদনের অপেক্ষায় থাকা ভাউচার (Pending Voucher) রয়েছে। আগে সেগুলো অনুমোদন বা বাতিল করুন।');
+                }
+            }
+
+            if (Schema::hasTable('cashier_sessions')) {
+                $unapprovedSession = CashierSession::query()
+                    ->where('branch_id', $branchId)
+                    ->where('business_date', $date)
+                    ->where('status', '!=', CashierSession::STATUS_APPROVED)
+                    ->exists();
+
+                if ($unapprovedSession) {
+                    $this->reject('এই তারিখের ক্যাশ সেশন (Cash Desk) এখনো অনুমোদিত (Approved) হয়নি। আগে ক্যাশ মিলিয়ে অনুমোদন করুন।');
                 }
             }
 
