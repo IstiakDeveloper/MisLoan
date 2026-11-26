@@ -106,7 +106,7 @@ class HeadOfficeRecentDeletionController extends Controller
 
         $zones = Zone::orderBy('name')->get(['id', 'name']);
         $areas = Area::with('zone:id,name')->orderBy('name')->get(['id', 'name', 'zone_id']);
-        $branches = Branch::with('area:id,name,zone_id')->orderBy('name')->get(['id', 'name', 'code', 'area_id']);
+        $branches = Branch::operational()->with('area:id,name,zone_id')->orderedByCode()->get(['id', 'name', 'code', 'area_id']);
 
         return Inertia::render('HeadOffice/RecentDeletions', [
             'deletions' => $deletions,

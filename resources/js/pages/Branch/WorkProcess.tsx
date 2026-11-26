@@ -1,13 +1,10 @@
 import { Head, router, useForm } from '@inertiajs/react';
 import {
     AlertTriangle,
-    CalendarCheck,
     CalendarClock,
     CheckCircle2,
-    FileSpreadsheet,
     Lock,
     Play,
-    ShieldCheck,
 } from 'lucide-react';
 import { useState } from 'react';
 import { ComboSelect } from '@/components/ComboSelect';
@@ -103,7 +100,7 @@ export default function WorkProcess({
     defaultMonthDate,
     canManage,
 }: Props) {
-    const [activeTab, setActiveTab] = useState<'start' | 'complete' | 'llp' | 'monthly'>(
+    const [activeTab, setActiveTab] = useState<'start' | 'complete'>(
         dayState?.has_open_day ? 'complete' : 'start',
     );
 
@@ -117,17 +114,6 @@ export default function WorkProcess({
         branch_id: branch?.id ?? '',
         date: dayState?.business_date ?? '',
         reference: '',
-    });
-
-    const llpForm = useForm<{ branch_id: string | number; month_date: string; period?: string }>({
-        branch_id: branch?.id ?? '',
-        month_date: defaultMonthDate,
-    });
-
-    const monthlyForm = useForm<{ branch_id: string | number; month_date: string; close_month: boolean; period?: string }>({
-        branch_id: branch?.id ?? '',
-        month_date: defaultMonthDate,
-        close_month: false,
     });
 
     const handleBranchChange = (branchId: string) => {
@@ -193,13 +179,11 @@ export default function WorkProcess({
                     </div>
                 </div>
 
-                {/* gBanker-Style Process Menu Tabs */}
-                <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
+                {/* Daily Work Process Tabs (Monthly & LLP are managed exclusively from Head Office) */}
+                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                     {[
                         { id: 'start', label: 'Start Work Process', sub: 'Day Open করুন', icon: Play },
                         { id: 'complete', label: 'Complete Work Process', sub: 'Day Close করুন', icon: Lock },
-                        { id: 'llp', label: 'LLP Voucher Process', sub: 'প্রভিশন ক্যালকুলেশন', icon: FileSpreadsheet },
-                        { id: 'monthly', label: 'Monthly Process', sub: 'মাসিক সামারি ও ক্লোজ', icon: CalendarCheck },
                     ].map((tab) => {
                         const Icon = tab.icon;
                         const active = activeTab === tab.id;
@@ -339,89 +323,10 @@ export default function WorkProcess({
                             )}
                         </div>
                     )}
+                </div>
 
-                    {activeTab === 'llp' && (
-                        <form
-                            onSubmit={(e) => {
-                                e.preventDefault();
-                                llpForm.post('/branch/process/llp');
-                            }}
-                            className="max-w-lg space-y-4"
-                        >
-                            <h2 className="text-sm font-bold text-slate-900">LLP Voucher Process</h2>
-                            <p className="text-xs text-slate-500">
-                                মাসের সক্রিয় ঋণ পোর্টফোলিওর ওপর ভিত্তি করে Loan Loss Provisioning (LLP) স্ন্যাপশট প্রস্তুত করুন।
-                            </p>
-                            <div>
-                                <label className="block text-xs font-semibold text-slate-700">মাসের যেকোনো তারিখ</label>
-                                <input
-                                    type="date"
-                                    value={llpForm.data.month_date}
-                                    onChange={(e) => llpForm.setData('month_date', e.target.value)}
-                                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                                    required
-                                />
-                                {llpForm.errors.period && (
-                                    <p className="mt-1 text-xs font-medium text-rose-600">{llpForm.errors.period}</p>
-                                )}
-                            </div>
-                            <button
-                                type="submit"
-                                disabled={!canManage || llpForm.processing}
-                                className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-indigo-700 disabled:opacity-50"
-                            >
-                                <FileSpreadsheet className="h-3.5 w-3.5" />
-                                Run LLP Voucher Process
-                            </button>
-                        </form>
-                    )}
-
-                    {activeTab === 'monthly' && (
-                        <form
-                            onSubmit={(e) => {
-                                e.preventDefault();
-                                monthlyForm.post('/branch/process/monthly');
-                            }}
-                            className="max-w-lg space-y-4"
-                        >
-                            <h2 className="text-sm font-bold text-slate-900">Monthly Process & Month Close</h2>
-                            <p className="text-xs text-slate-500">
-                                মাসের সব কর্মদিবস Close করার পর মাসিক সামারি তৈরি ও Month Close করুন। Month Close হয়ে গেলে ওই মাসে আর কোনো এন্ট্রি করা যাবে না।
-                            </p>
-                            <div>
-                                <label className="block text-xs font-semibold text-slate-700">মাসের যেকোনো তারিখ</label>
-                                <input
-                                    type="date"
-                                    value={monthlyForm.data.month_date}
-                                    onChange={(e) => monthlyForm.setData('month_date', e.target.value)}
-                                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                                    required
-                                />
-                                {monthlyForm.errors.period && (
-                                    <p className="mt-1 text-xs font-medium text-rose-600">{monthlyForm.errors.period}</p>
-                                )}
-                            </div>
-
-                            <label className="flex items-center gap-2 text-xs font-semibold text-slate-700">
-                                <input
-                                    type="checkbox"
-                                    checked={monthlyForm.data.close_month}
-                                    onChange={(e) => monthlyForm.setData('close_month', e.target.checked)}
-                                    className="rounded border-slate-300"
-                                />
-                                মাসটি চূড়ান্তভাবে বন্ধ (Month Close) করুন
-                            </label>
-
-                            <button
-                                type="submit"
-                                disabled={!canManage || monthlyForm.processing}
-                                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
-                            >
-                                <ShieldCheck className="h-3.5 w-3.5" />
-                                {monthlyForm.data.close_month ? 'Run & Close Month' : 'Process Monthly Summary'}
-                            </button>
-                        </form>
-                    )}
+                <div className="rounded-xl border border-indigo-200 bg-indigo-50/70 px-4 py-2.5 text-xs text-indigo-800">
+                    নোট: <strong>LLP Voucher Process</strong>, <strong>Month-End Auto Batch</strong> ও <strong>Monthly Process (Month Close)</strong> শুধুমাত্র Head Office থেকে পরিচালনা করা হয়।
                 </div>
 
                 {/* Recent Days & Monthly Processes Tables */}
@@ -475,7 +380,7 @@ export default function WorkProcess({
                     <div className="space-y-5">
                         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
                             <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-600">
-                                Monthly Process স্ট্যাটাস
+                                Monthly Process স্ট্যাটাস (Head Office)
                             </h3>
                             <div className="overflow-x-auto">
                                 <table className="w-full text-left text-xs">

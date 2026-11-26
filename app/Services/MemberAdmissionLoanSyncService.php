@@ -29,6 +29,7 @@ class MemberAdmissionLoanSyncService
         if (! $includeDisbursedAndAll) {
             $query->whereNotIn('status', [
                 LoanApplication::STATUS_DISBURSED,
+                LoanApplication::STATUS_REPAID,
                 LoanApplication::STATUS_CANCELLED,
             ]);
         }

@@ -8,8 +8,13 @@ use App\Http\Controllers\Branch\WorkProcessController;
 use App\Http\Controllers\CashDeskController;
 use App\Http\Controllers\ClusterHandoverController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DocumentController;
+use App\Http\Controllers\FinancialReportsController;
 use App\Http\Controllers\HeadOffice\AccountingPeriodController;
+use App\Http\Controllers\HeadOffice\LegacyImportController;
 use App\Http\Controllers\HeadOffice\PostingDefaultController;
+use App\Http\Controllers\HelpGuideController;
+use App\Http\Controllers\LoanLedgerController;
 use App\Http\Controllers\HeadOffice\ApproverLoanApprovalReportController;
 use App\Http\Controllers\HeadOffice\BranchLoanPendingReportController;
 use App\Http\Controllers\HeadOffice\CsoDutyRosterController;
@@ -40,6 +45,7 @@ use App\Http\Controllers\PortfolioHandoverController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SamityController;
+use App\Http\Controllers\SavingsLedgerController;
 use App\Http\Controllers\SavingsCategoryController;
 use App\Http\Controllers\SavingsProductController;
 use App\Http\Controllers\TeamBasedApprovalController;
@@ -64,6 +70,10 @@ Route::get('/', function () {
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
+    // Role-based Bengali Help Center & Video Guides
+    Route::get('help', [HelpGuideController::class, 'index'])->name('help.index');
+    Route::put('help/{helpGuide}', [HelpGuideController::class, 'update'])->name('help.update');
+
     // Portfolio handover (allowed while locked; middleware whitelists these routes)
     Route::get('portfolio-handover', [PortfolioHandoverController::class, 'index'])->name('portfolio-handover.index');
     Route::post('portfolio-handover', [PortfolioHandoverController::class, 'store'])->name('portfolio-handover.store');
@@ -72,17 +82,18 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('cluster-handover', [ClusterHandoverController::class, 'store'])->name('cluster-handover.store');
     Route::post('cluster-handover/reassign', [ClusterHandoverController::class, 'reassign'])->name('cluster-handover.reassign');
 
-    // Branch Work Process (Day Open/Close, LLP, Monthly Process)
-    Route::prefix('branch/process')->name('branch.process.')->middleware('branch.user')->group(function () {
+    // Branch Work Process (Day Open/Close; Pilot/Accounting branches)
+    Route::prefix('branch/process')->name('branch.process.')->middleware(['branch.user', 'branch.accounting'])->group(function () {
         Route::get('/', [WorkProcessController::class, 'index'])->name('index');
         Route::post('start-work', [WorkProcessController::class, 'startWork'])->name('start-work');
         Route::post('complete-work', [WorkProcessController::class, 'completeWork'])->name('complete-work');
         Route::post('llp', [WorkProcessController::class, 'runLlpProcess'])->name('llp');
         Route::post('monthly', [WorkProcessController::class, 'runMonthlyProcess'])->name('monthly');
+        Route::post('month-end-batch', [WorkProcessController::class, 'runMonthEndAutoBatch'])->name('month-end-batch');
     });
 
     // Cash Desk & Bank Reconciliation
-    Route::prefix('cash-desk')->name('cash-desk.')->middleware('branch.user')->group(function () {
+    Route::prefix('cash-desk')->name('cash-desk.')->middleware(['branch.user', 'branch.accounting'])->group(function () {
         Route::get('/', [CashDeskController::class, 'index'])->name('index');
         Route::post('open', [CashDeskController::class, 'openSession'])->name('open');
         Route::post('sessions/{session}/submit', [CashDeskController::class, 'submitSession'])->name('sessions.submit');
@@ -90,8 +101,39 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('bank-lines', [CashDeskController::class, 'storeBankLine'])->name('bank-lines.store');
         Route::post('bank-lines/{line}/match', [CashDeskController::class, 'matchBankLine'])->name('bank-lines.match');
     });
+    // Loan Ledger, Schedule & Daily Collection
+    Route::prefix('loan-ledger')->name('loan-ledger.')->middleware(['branch.user', 'branch.accounting'])->group(function () {
+        Route::get('/', [LoanLedgerController::class, 'index'])->name('index');
+        Route::post('disburse', [LoanLedgerController::class, 'disburse'])->name('disburse');
+        Route::post('bulk-dcs', [LoanLedgerController::class, 'bulkDcs'])->name('bulk-dcs');
+        Route::post('{loanAccount}/collect', [LoanLedgerController::class, 'collect'])->name('collect');
+        Route::post('{loanAccount}/settle-early', [LoanLedgerController::class, 'settleEarly'])->name('settle-early');
+        Route::get('{loanAccount}/passbook', [LoanLedgerController::class, 'passbook'])->name('passbook');
+        Route::get('transactions/{transaction}/receipt', [LoanLedgerController::class, 'receipt'])->name('receipt');
+        Route::post('transactions/{transaction}/correction', [LoanLedgerController::class, 'requestCorrection'])->name('corrections.request');
+        Route::post('corrections/{correction}/review', [LoanLedgerController::class, 'reviewCorrection'])->name('corrections.review');
+    });
+
+    // Savings Sub-Ledger & Profit
+    Route::prefix('savings-ledger')->name('savings-ledger.')->middleware(['branch.user', 'branch.accounting'])->group(function () {
+        Route::get('/', [SavingsLedgerController::class, 'index'])->name('index');
+        Route::post('open', [SavingsLedgerController::class, 'openAccount'])->name('open');
+        Route::post('{savingsAccount}/deposit', [SavingsLedgerController::class, 'deposit'])->name('deposit');
+        Route::post('{savingsAccount}/withdraw', [SavingsLedgerController::class, 'withdraw'])->name('withdraw');
+        Route::post('{savingsAccount}/profit', [SavingsLedgerController::class, 'postProfit'])->name('profit');
+    });
+
+    // Financial & Regulatory Reports (Trial Balance, Balance Sheet, POMIS & PAR)
+    Route::get('financial-reports', [FinancialReportsController::class, 'index'])
+        ->middleware('branch.accounting')
+        ->name('financial-reports.index');
+
+    // Authenticated Private Document Delivery
+    Route::get('documents/member/{memberAdmission}/{field}', [DocumentController::class, 'showMemberDocument'])
+        ->name('documents.member');
+
     // Accounting Core (Chart of Accounts, Vouchers, Journal Registers)
-    Route::prefix('accounting')->name('accounting.')->middleware('branch.user')->group(function () {
+    Route::prefix('accounting')->name('accounting.')->middleware(['branch.user', 'branch.accounting'])->group(function () {
         Route::get('/', [AccountingController::class, 'index'])->name('index');
         Route::post('coa/seed', [AccountingController::class, 'seedStandardCoa'])->name('coa.seed');
         Route::post('coa', [AccountingController::class, 'storeAccount'])->name('coa.store');
@@ -556,12 +598,23 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::delete('holidays/{holiday}', [AccountingPeriodController::class, 'destroyHoliday'])->name('holidays.destroy');
             Route::post('day-initial', [AccountingPeriodController::class, 'setBranchDayInitial'])->name('day-initial');
             Route::post('reopen', [AccountingPeriodController::class, 'reopenPeriod'])->name('reopen');
+            Route::patch('branches/{branch}/toggle-accounting', [AccountingPeriodController::class, 'toggleBranchAccounting'])->name('branches.toggle-accounting');
+            Route::post('llp', [AccountingPeriodController::class, 'runLlpProcess'])->name('llp');
+            Route::post('month-end-batch', [AccountingPeriodController::class, 'runMonthEndAutoBatch'])->name('month-end-batch');
+            Route::post('monthly', [AccountingPeriodController::class, 'runMonthlyProcess'])->name('monthly');
         });
 
         // GL Posting Defaults (Head Office Mapping)
         Route::prefix('posting-defaults')->name('posting-defaults.')->group(function () {
             Route::get('/', [PostingDefaultController::class, 'index'])->name('index');
             Route::post('/', [PostingDefaultController::class, 'store'])->name('store');
+        });
+
+        // Legacy Opening Balance Importer
+        Route::prefix('legacy-import')->name('legacy-import.')->group(function () {
+            Route::get('/', [LegacyImportController::class, 'index'])->name('index');
+            Route::get('template', [LegacyImportController::class, 'downloadTemplate'])->name('template');
+            Route::post('/', [LegacyImportController::class, 'import'])->name('import');
         });
 
         // 3 Lakh+ Loan Guarantor & Informant Report

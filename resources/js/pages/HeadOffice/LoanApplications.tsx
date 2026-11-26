@@ -153,6 +153,7 @@ interface Props {
         ho_pending_cancellation?: number;
         rejected: number;
         disbursed: number;
+        repaid?: number;
         pending_my_approval?: number;
     };
     zones: Zone[];
@@ -412,6 +413,7 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
             ho_pending_cancellation: { label: 'HO পেন্ডিং — বাতিল জমা', bg: 'bg-fuchsia-50 border-fuchsia-200', text: 'text-fuchsia-800' },
             rejected: { label: 'প্রত্যাখ্যাত', bg: 'bg-red-50 border-red-200', text: 'text-red-700' },
             disbursed: { label: 'বিতরণকৃত', bg: 'bg-teal-50 border-teal-200', text: 'text-teal-700' },
+            repaid: { label: 'পরিশোধিত', bg: 'bg-blue-50 border-blue-200', text: 'text-blue-700' },
         };
 
         const current = status === 'pending_cancellation' && cancellationFromStatus === 'pending_head_office'
@@ -525,6 +527,16 @@ export default function LoanApplications({ loans, filters, stats, zones, areas, 
             iconBg: 'bg-emerald-50',
             barColor: 'from-emerald-500 to-emerald-600',
             activeBg: 'bg-emerald-600 border-emerald-600 text-white',
+        },
+        {
+            key: 'repaid',
+            label: 'পরিশোধিত',
+            count: stats.repaid ?? 0,
+            icon: CheckCheck,
+            iconColor: 'text-blue-600',
+            iconBg: 'bg-blue-50',
+            barColor: 'from-blue-500 to-blue-600',
+            activeBg: 'bg-blue-600 border-blue-600 text-white',
         },
         ...(canViewAllLoans
             ? [

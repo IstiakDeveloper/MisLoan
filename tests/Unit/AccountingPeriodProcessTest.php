@@ -335,3 +335,100 @@ it('allows super admin to rollback a closed financial year with audit log', func
     expect($fy->fresh()->isClosed())->toBeFalse()
         ->and(PeriodReopenLog::query()->where('kind', 'year')->whereNull('branch_id')->count())->toBe(1);
 });
+
+it('enforces per-branch accounting_enabled pilot toggle and restricts monthly process to head office', function () {
+    $toggleMigration = require base_path('database/migrations/2026_11_26_175000_add_accounting_enabled_to_branches_table.php');
+    $toggleMigration->up();
+
+    ['hoUser' => $hoUser, 'branchUser' => $branchUser, 'branch' => $branch] = setupPeriodActors();
+    $service = app(AccountingPeriodService::class);
+    $middleware = app(EnsureActiveBusinessDay::class);
+
+    // Branch defaults to Legacy OFF (accounting_enabled = false)
+    $branch->refresh();
+    expect($branch->accounting_enabled)->toBeFalse();
+
+    // Branch user cannot access Work Process / Cash Desk / Ledgers while accounting_enabled = false
+    $this->actingAs($branchUser)
+        ->get('/branch/process')
+        ->assertForbidden();
+
+    // EnsureActiveBusinessDay does not block legacy branch without accounting_enabled
+    $req = Request::create('/dummy', 'POST');
+    $req->setUserResolver(fn () => $branchUser);
+    $req->headers->set('Accept', 'application/json');
+    expect($middleware->handle($req, fn () => new Response('OK'))->getStatusCode())->toBe(200);
+
+    // Head Office enables Pilot Accounting for this branch
+    $this->actingAs($hoUser)
+        ->patch("/head-office/accounting-periods/branches/{$branch->id}/toggle-accounting", [
+            'accounting_enabled' => true,
+        ])
+        ->assertRedirect();
+
+    expect($branch->fresh()->accounting_enabled)->toBeTrue();
+
+    // Now branch user can access /branch/process, and EnsureActiveBusinessDay blocks when Day Closed
+    $this->actingAs($branchUser)
+        ->get('/branch/process')
+        ->assertOk();
+
+    expect($middleware->handle($req, fn () => new Response('OK'))->getStatusCode())->toBe(422);
+
+    // Open & Close day as branch user
+    $fy = $service->openFinancialYear(2026, $hoUser->id);
+    $service->setBranchDayInitial($fy->id, $branch->id, '2026-11-30', $hoUser->id);
+    $service->startWorkProcess($branch->id, '2026-11-30', $branchUser->id);
+    $service->completeWorkProcess($branch->id, '2026-11-30', 'End of Nov', $branchUser->id);
+
+    // Branch user is forbidden from running Monthly Process / LLP
+    $this->actingAs($branchUser)
+        ->post('/branch/process/monthly', [
+            'branch_id' => $branch->id,
+            'month_date' => '2026-11-30',
+            'close_month' => true,
+        ])
+        ->assertForbidden();
+
+    $this->actingAs($branchUser)
+        ->post('/branch/process/llp', [
+            'branch_id' => $branch->id,
+            'month_date' => '2026-11-30',
+        ])
+        ->assertForbidden();
+
+    // Head Office runs Monthly Process for accounting-enabled branch
+    $this->actingAs($hoUser)
+        ->post('/head-office/accounting-periods/monthly', [
+            'branch_id' => $branch->id,
+            'month_date' => '2026-11-30',
+            'close_month' => true,
+        ])
+        ->assertRedirect();
+
+    expect(\App\Models\BranchMonthProcess::query()->where('branch_id', $branch->id)->value('status'))->toBe('closed');
+});
+
+it('sorts operational branches by code and excludes Head Office and Unknown', function () {
+    $toggleMigration = require base_path('database/migrations/2026_11_26_175000_add_accounting_enabled_to_branches_table.php');
+    $toggleMigration->up();
+    $cleanupMigration = require base_path('database/migrations/2026_11_26_181000_deactivate_unknown_branch_and_clean_cache.php');
+
+    Branch::create(['name' => 'Zebra Branch', 'code' => '0002', 'is_active' => true]);
+    Branch::create(['name' => 'Alpha Branch', 'code' => '0010', 'is_active' => true]);
+    Branch::create(['name' => 'Naogaon Sadar', 'code' => '0001', 'is_active' => true]);
+    $hoPseudo = Branch::create(['name' => 'Head Office', 'code' => '0000', 'is_active' => true]);
+    $unknown = Branch::create(['name' => 'Unknown', 'code' => '1000', 'is_active' => true]);
+
+    $cleanupMigration->up();
+
+    expect($unknown->fresh()->is_active)->toBeFalse()
+        ->and($hoPseudo->fresh()->is_active)->toBeTrue();
+
+    $codes = Branch::operational()->orderedByCode()->pluck('code')->all();
+    expect($codes)->toBe(['0001', '0002', '0010']);
+
+    $service = app(AccountingPeriodService::class);
+    $monitorCodes = collect($service->getBranchMonitorList())->pluck('branch_code')->all();
+    expect($monitorCodes)->toBe(['0001', '0002', '0010']);
+});

@@ -22,6 +22,26 @@ class HeadOfficeVerificationController extends Controller
     use Concerns\ResolvesListPerPage;
     use Concerns\ScopesToAccessibleBranches;
 
+    /** @var string[] Loan statuses already past HO approval that cannot be re-approved in Verification. */
+    private const NON_APPROVABLE_LOAN_STATUSES = [
+        LoanApplication::STATUS_APPROVED,
+        LoanApplication::STATUS_PENDING_DISBURSEMENT,
+        LoanApplication::STATUS_AWAITING_TAKEUP,
+        LoanApplication::STATUS_PENDING_CANCELLATION,
+        LoanApplication::STATUS_CANCELLED,
+        LoanApplication::STATUS_DISBURSED,
+        LoanApplication::STATUS_REPAID,
+        LoanApplication::STATUS_REJECTED,
+    ];
+
+    /** @var string[] Terminal loan statuses where Verification issues, replies, ZM approvals, or rejections are locked. */
+    private const LOCKED_TERMINAL_LOAN_STATUSES = [
+        LoanApplication::STATUS_CANCELLED,
+        LoanApplication::STATUS_DISBURSED,
+        LoanApplication::STATUS_REPAID,
+        LoanApplication::STATUS_REJECTED,
+    ];
+
     public function __construct(private VerificationIssueService $verificationIssues) {}
 
     /**
@@ -317,6 +337,8 @@ class HeadOfficeVerificationController extends Controller
             'raw_id' => $admission->id,
             'item_type' => 'admission',
             'application_no' => $admission->application_no,
+            'member_code' => $admission->application_no,
+            'loan_dofa' => $admission->loan_dofa ? (int) $admission->loan_dofa : 1,
             'applicant_name' => $admission->applicant_name_bn ?: $admission->applicant_name_en,
             'applicant_name_en' => $admission->applicant_name_en,
             'mobile_number' => $admission->mobile_number,
@@ -421,7 +443,13 @@ class HeadOfficeVerificationController extends Controller
             }
         }
 
-        if (in_array($loan->status, [LoanApplication::STATUS_APPROVED, LoanApplication::STATUS_PENDING_DISBURSEMENT, LoanApplication::STATUS_DISBURSED, LoanApplication::STATUS_REJECTED], true) && $loan->reviewed_at) {
+        if (in_array($loan->status, [
+            LoanApplication::STATUS_APPROVED,
+            LoanApplication::STATUS_PENDING_DISBURSEMENT,
+            LoanApplication::STATUS_DISBURSED,
+            LoanApplication::STATUS_REPAID,
+            LoanApplication::STATUS_REJECTED,
+        ], true) && $loan->reviewed_at) {
             $timelineDates->push(Carbon::parse($loan->reviewed_at)->toIso8601String());
         }
 
@@ -437,6 +465,8 @@ class HeadOfficeVerificationController extends Controller
             'raw_id' => $loan->id,
             'item_type' => 'loan',
             'application_no' => $loan->application_no,
+            'member_code' => $loan->memberAdmission?->application_no ?? null,
+            'loan_dofa' => $loan->memberAdmission?->loan_dofa ? (int) $loan->memberAdmission->loan_dofa : null,
             'applicant_name' => $loan->memberAdmission?->applicant_name_bn ?: ($loan->memberAdmission?->applicant_name_en ?? '—'),
             'applicant_name_en' => $loan->memberAdmission?->applicant_name_en ?? '',
             'mobile_number' => $loan->memberAdmission?->mobile_number ?? '',
@@ -559,6 +589,10 @@ class HeadOfficeVerificationController extends Controller
             $loan = LoanApplication::findOrFail($validated['raw_id']);
             $this->ensureCanAccessBranch($loan->branch_id);
 
+            if (in_array($loan->status, self::LOCKED_TERMINAL_LOAN_STATUSES, true)) {
+                return back()->with('error', 'বিতরণকৃত, পরিশোধিত বা বাতিল ঋণে আর আপত্তির জবাব দেওয়া যাবে না।');
+            }
+
             $issue = null;
             if (! empty($validated['issue_id'])) {
                 $issue = LoanApplicationIssue::where('loan_application_id', $loan->id)
@@ -678,6 +712,10 @@ class HeadOfficeVerificationController extends Controller
             $loan = LoanApplication::findOrFail($validated['raw_id']);
             $this->ensureCanAccessBranch($loan->branch_id);
 
+            if (in_array($loan->status, self::LOCKED_TERMINAL_LOAN_STATUSES, true)) {
+                return back()->with('error', 'বিতরণকৃত, পরিশোধিত বা বাতিল ঋণে আর ZM অনুমোদন দেওয়া যাবে না।');
+            }
+
             $updateData = [
                 'zm_approved_at' => now(),
                 'zm_approved_by' => $authUser->id,
@@ -762,7 +800,7 @@ class HeadOfficeVerificationController extends Controller
                     $approvedCount++;
                 } else {
                     $loan = LoanApplication::find($itemData['raw_id']);
-                    if (! $loan) {
+                    if (! $loan || in_array($loan->status, self::LOCKED_TERMINAL_LOAN_STATUSES, true)) {
                         continue;
                     }
                     $this->ensureCanAccessBranch($loan->branch_id);
@@ -863,15 +901,7 @@ class HeadOfficeVerificationController extends Controller
                     $approvedCount++;
                 } else {
                     $loan = LoanApplication::find($itemData['raw_id']);
-                    if (! $loan || in_array($loan->status, [
-                        LoanApplication::STATUS_APPROVED,
-                        LoanApplication::STATUS_PENDING_DISBURSEMENT,
-                        LoanApplication::STATUS_AWAITING_TAKEUP,
-                        LoanApplication::STATUS_PENDING_CANCELLATION,
-                        LoanApplication::STATUS_CANCELLED,
-                        LoanApplication::STATUS_DISBURSED,
-                        LoanApplication::STATUS_REJECTED,
-                    ], true)) {
+                    if (! $loan || in_array($loan->status, self::NON_APPROVABLE_LOAN_STATUSES, true)) {
                         continue;
                     }
                     $this->ensureCanAccessBranch($loan->branch_id);
@@ -934,6 +964,10 @@ class HeadOfficeVerificationController extends Controller
         } else {
             $loan = LoanApplication::findOrFail($validated['raw_id']);
             $this->ensureCanAccessBranch($loan->branch_id);
+
+            if (in_array($loan->status, self::LOCKED_TERMINAL_LOAN_STATUSES, true)) {
+                return back()->with('error', 'বিতরণকৃত, পরিশোধিত বা বাতিল ঋণ আবেদন এখান থেকে প্রত্যাখ্যান করা যাবে না।');
+            }
 
             DB::transaction(function () use ($loan, $validated, $authUser) {
                 $loan->update([
@@ -1065,15 +1099,7 @@ class HeadOfficeVerificationController extends Controller
             return back()->with('error', 'শুধুমাত্র হেড অফিস কর্মকর্তা বা সুপার অ্যাডমিন চূড়ান্ত অনুমোদন করতে পারবেন।');
         }
 
-        if (in_array($loanApplication->status, [
-            LoanApplication::STATUS_APPROVED,
-            LoanApplication::STATUS_PENDING_DISBURSEMENT,
-            LoanApplication::STATUS_AWAITING_TAKEUP,
-            LoanApplication::STATUS_PENDING_CANCELLATION,
-            LoanApplication::STATUS_CANCELLED,
-            LoanApplication::STATUS_DISBURSED,
-            LoanApplication::STATUS_REJECTED,
-        ], true)) {
+        if (in_array($loanApplication->status, self::NON_APPROVABLE_LOAN_STATUSES, true)) {
             return back()->with('error', 'এই অবস্থার ঋণ আবেদন অনুমোদন করা যাবে না।');
         }
 
@@ -1152,6 +1178,10 @@ class HeadOfficeVerificationController extends Controller
             $loan = LoanApplication::findOrFail($validated['raw_id']);
             $this->ensureCanAccessBranch($loan->branch_id);
 
+            if (in_array($loan->status, self::LOCKED_TERMINAL_LOAN_STATUSES, true)) {
+                return back()->with('error', 'বিতরণকৃত, পরিশোধিত বা বাতিল ঋণে নতুন আপত্তি যুক্ত করা যাবে না।');
+            }
+
             LoanApplicationIssue::create([
                 'loan_application_id' => $loan->id,
                 'reported_by' => auth()->id(),
@@ -1183,7 +1213,10 @@ class HeadOfficeVerificationController extends Controller
                 'resolution_note' => $validated['note'] ?: ($issue->resolution_note ?? 'সমাধান করা হয়েছে'),
             ]);
         } else {
-            $issue = LoanApplicationIssue::findOrFail($validated['issue_id']);
+            $issue = LoanApplicationIssue::with('loanApplication')->findOrFail($validated['issue_id']);
+            if ($issue->loanApplication && in_array($issue->loanApplication->status, self::LOCKED_TERMINAL_LOAN_STATUSES, true)) {
+                return back()->with('error', 'বিতরণকৃত, পরিশোধিত বা বাতিল ঋণের আপত্তি পরিবর্তন করা যাবে না।');
+            }
             $issue->update([
                 'status' => 'resolved',
                 'responded_at' => now(),

@@ -25,3 +25,15 @@ Schedule::command('hrm:sync-organization')
     ->dailyAt('04:00')
     ->withoutOverlapping()
     ->name('hrm-sync-organization');
+
+Schedule::command('finance:flag-overdue')
+    ->dailyAt('08:00')
+    ->timezone('Asia/Dhaka')
+    ->withoutOverlapping()
+    ->name('finance-flag-overdue');
+
+Schedule::command('finance:check-ledgers')
+    ->dailyAt('23:45')
+    ->timezone('Asia/Dhaka')
+    ->withoutOverlapping()
+    ->name('finance-check-ledgers');

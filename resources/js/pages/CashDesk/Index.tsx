@@ -102,7 +102,15 @@ export default function CashDeskIndex({
         note: '',
     });
 
-    const bankForm = useForm({
+    const bankForm = useForm<{
+        branch_id: string | number;
+        ledger_account_id: string | number;
+        statement_date: string;
+        reference_no: string;
+        description: string;
+        debit_amount: string;
+        credit_amount: string;
+    }>({
         branch_id: branch?.id ?? '',
         ledger_account_id: bankAccounts[0]?.id ?? '',
         statement_date: dayState?.business_date ?? new Date().toISOString().slice(0, 10),

@@ -11,6 +11,7 @@ use App\Models\RecentDeletion;
 use App\Models\SavingsApplication;
 use App\Models\SavingsCategory;
 use App\Models\SavingsProduct;
+use App\Services\Loans\ApplicationLedgerSyncService;
 use App\Models\Zone;
 use App\Services\ImageCompressionService;
 use App\Services\MemberCodeService;
@@ -710,6 +711,8 @@ class SavingsApplicationController extends Controller
             'start_date' => $application->start_date ?? now()->toDateString(),
             'maturity_date' => $application->maturity_date ?? now()->addMonths($application->duration_months ?: 12)->toDateString(),
         ]);
+
+        app(ApplicationLedgerSyncService::class)->syncSavingsActivation($application->fresh('savingsProduct'), (int) $user->id);
 
         return back()->with('success', 'সঞ্চয় হিসাব সফলভাবে সক্রিয় করা হয়েছে।');
     }

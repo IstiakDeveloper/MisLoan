@@ -7,6 +7,7 @@ use App\Http\Middleware\CheckPermission;
 use App\Http\Middleware\CheckRole;
 use App\Http\Middleware\CheckTeamBasedApprovalReportAccess;
 use App\Http\Middleware\EnsureActiveBusinessDay;
+use App\Http\Middleware\EnsureBranchAccountingEnabled;
 use App\Http\Middleware\EnsureCanViewMemberAdmission;
 use App\Http\Middleware\EnsurePortfolioHandoverComplete;
 use App\Http\Middleware\EnsureProfileComplete;
@@ -54,6 +55,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'team-based.report' => CheckTeamBasedApprovalReportAccess::class,
             'member.admission.view' => EnsureCanViewMemberAdmission::class,
             'business.day' => EnsureActiveBusinessDay::class,
+            'branch.accounting' => EnsureBranchAccountingEnabled::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

@@ -45,6 +45,8 @@ import {
     Smartphone,
     ShieldAlert,
     Receipt,
+    HelpCircle,
+    Search,
 } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { usePwaInstallPrompt } from '@/hooks/usePwaInstallPrompt';
@@ -59,6 +61,7 @@ interface User {
     has_all_access: boolean;
     is_read_only?: boolean;
     branch_id?: number | null;
+    branch?: { id: number; name: string; accounting_enabled?: boolean } | null;
     profile_photo?: string | null;
     avatar?: string | null;
     cso_areas?: Array<{ id: number; name: string; code: string }>;
@@ -155,6 +158,11 @@ function getPageTitle(currentPath: string): string {
     if (currentPath.includes('/accounting-periods')) return 'Accounting Periods & Day Initial';
     if (currentPath.includes('/posting-defaults')) return 'GL Posting Defaults';
     if (currentPath.includes('/accounting')) return 'Accounting & Vouchers';
+    if (currentPath.includes('/cash-desk')) return 'Cash Desk & Bank Reconciliation';
+    if (currentPath.includes('/loan-ledger')) return 'Loan Ledger & Daily Collection';
+    if (currentPath.includes('/savings-ledger')) return 'Savings Ledger & Profit';
+    if (currentPath.includes('/financial-reports')) return 'Financial & MRA/PKSF Reports';
+    if (currentPath.includes('/legacy-import')) return 'Legacy Opening Balance Import';
     if (currentPath.includes('/branch/process')) return 'Work Process (Day Open / Close)';
     if (currentPath.includes('/loan-workflow-settings')) return 'Loan Workflow & Rules (ঋণ অনুমোদন ও ফরম)';
     if (currentPath.includes('/cluster-handover')) return 'Cluster Handover';
@@ -181,6 +189,7 @@ function getPageTitle(currentPath: string): string {
     if (currentPath.includes('/roles')) return 'Roles & Permissions';
     if (currentPath.includes('/profile')) return 'Profile & Settings';
     if (currentPath.includes('/notifications')) return 'Notifications';
+    if (currentPath.includes('/help')) return 'সহায়তা ও ভিডিও গাইড (Help Center)';
     return 'Dashboard';
 }
 
@@ -203,6 +212,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     const userDropdownRef = useRef<HTMLDivElement>(null);
     const [flashMessage, setFlashMessage] = useState<{ type: string; message: string } | null>(null);
     const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
+    const [navSearch, setNavSearch] = useState('');
 
     // Close user dropdown on outside click
     useEffect(() => {
@@ -255,6 +265,8 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         roleName === 'branch_manager' ||
         roleName === 'branch_user' ||
         roleName === 'field_officer';
+
+    const branchAccountingEnabled = Boolean(auth.user?.branch?.accounting_enabled);
 
     // ADMF/DMF/Area/Zone: approver-only menu. ED keeps approver menu + full Head Office navigation.
     const isTeamApproverRole =
@@ -354,7 +366,11 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         { name: 'Fines & Penalties', href: '/head-office/fines', icon: ShieldAlert },
     ];
 
-    const headOfficeReportItems: SidebarSubItem[] = [
+    const financialPortfolioReportItems: SidebarSubItem[] = [
+        { name: 'Financial & POMIS Reports', href: '/financial-reports', icon: BarChart3 },
+    ];
+
+    const misApprovalReportItems: SidebarSubItem[] = [
         { name: 'App Registrations (অ্যাপ রেজিস্ট্রেশন)', href: APP_REGISTRATION_REPORT_HREF, icon: Smartphone },
         ...(canViewTeamBasedReport ? [{ name: 'Team Based Report', href: TEAM_BASED_REPORT_HREF, icon: PieChart }] : []),
         ...(canViewGuarantorReport ? [{ name: 'Guarantor & Informant Report', href: GUARANTOR_INFORMANT_REPORT_HREF, icon: Users }] : []),
@@ -368,9 +384,16 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         { name: 'Send Deadline (Cutoff)', href: '/head-office/send-cutoff', icon: Clock },
     ];
 
-    const accountingCoreSubItems: SidebarNavItem[] = [
+    const microfinanceLedgersSubItems: SidebarNavItem[] = [
+        { name: 'Loan Ledger & DCS', href: '/loan-ledger', icon: Banknote },
+        { name: 'Savings Ledger & Profit', href: '/savings-ledger', icon: PiggyBank },
+    ];
+
+    const cashAndGeneralLedgerSubItems: SidebarNavItem[] = [
+        { name: 'Cash Desk & Bank Recon', href: '/cash-desk', icon: Wallet },
         { name: 'Accounting & Vouchers', href: '/accounting', icon: Receipt },
         { name: 'GL Posting Defaults', href: '/head-office/posting-defaults', icon: SlidersHorizontal },
+        { name: 'Legacy Balance Import', href: '/head-office/legacy-import', icon: FileSpreadsheet },
     ];
 
     const productsAndRulesSubItems: SidebarSubItem[] = [
@@ -419,10 +442,10 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         }
     };
 
-    // Grouping related menus into clean collapsible Menu -> Sub-Menu sections
+    // Domain-separated 2-level navigation (no giant mixed dropdowns, no narrow 3rd level)
     const menuGroups = useMemo<SidebarSection[]>(() => {
         if (isBranchRole) {
-            const processItems = branchMenuItems.filter(m => m.href === '/branch/process');
+            const hasProcess = branchMenuItems.some(m => m.href === '/branch/process');
             const memberLoanItems = branchMenuItems.filter(m =>
                 ['/member/cycle-hub', '/member-admissions', '/member/loan-applications', '/member/savings-applications'].includes(m.href)
             );
@@ -438,49 +461,64 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 },
             ];
 
-            if (processItems.length > 0) {
+            if (hasProcess && roleName !== 'field_officer' && branchAccountingEnabled) {
                 sections.push({
-                    title: 'Process & Accounting',
+                    title: 'Daily Process',
                     items: [
-                        {
-                            name: 'Day & Month Process',
-                            icon: CalendarDays,
-                            children: processItems,
-                        },
-                        ...(roleName !== 'field_officer'
-                            ? [{
-                                name: 'Accounting',
-                                icon: Receipt,
-                                children: [
-                                    { name: 'Vouchers & Journals', href: '/accounting', icon: Receipt },
-                                ],
-                            }]
-                            : []),
+                        { name: 'Work Process (Day Open/Close)', href: '/branch/process', icon: CalendarDays },
+                        { name: 'Cash Desk & Bank Recon', href: '/cash-desk', icon: Wallet },
                     ],
                 });
             }
 
-            const operationsMenu: SidebarNavItem[] = [];
+            const misItems: SidebarNavItem[] = [];
             if (memberLoanItems.length > 0) {
-                operationsMenu.push({
-                    name: 'Member & Loan',
-                    icon: Banknote,
+                misItems.push({
+                    name: 'Member & Origination',
+                    icon: UserPlus,
                     children: memberLoanItems,
                 });
             }
+            if (branchAccountingEnabled) {
+                if (roleName !== 'field_officer') {
+                    misItems.push({
+                        name: 'Collection & Savings',
+                        icon: Banknote,
+                        children: microfinanceLedgersSubItems,
+                    });
+                } else {
+                    misItems.push(
+                        { name: 'Loan Ledger & DCS', href: '/loan-ledger', icon: Banknote },
+                        { name: 'Savings Ledger', href: '/savings-ledger', icon: PiggyBank },
+                    );
+                }
+            }
+            sections.push({ title: 'Field & Ledgers (MIS)', items: misItems });
+
+            if (roleName !== 'field_officer' && branchAccountingEnabled) {
+                sections.push({
+                    title: 'Accounting & Reports',
+                    items: [
+                        { name: 'Vouchers & Journals', href: '/accounting', icon: Receipt },
+                        { name: 'Financial & POMIS Reports', href: '/financial-reports', icon: BarChart3 },
+                    ],
+                });
+            }
+
+            const approvalItems: SidebarNavItem[] = [];
             if (verificationApprovalItems.length > 0) {
-                operationsMenu.push({
-                    name: 'Approvals & Fines',
+                approvalItems.push({
+                    name: 'Verification & Approvals',
                     icon: ClipboardCheck,
                     badge: verificationApprovalItems.reduce((sum, i) => sum + (i.badge || 0), 0),
                     children: verificationApprovalItems,
                 });
             }
             if (clusterItem) {
-                operationsMenu.push(clusterItem);
+                approvalItems.push(clusterItem);
             }
-            if (operationsMenu.length > 0) {
-                sections.push({ title: 'Operations', items: operationsMenu });
+            if (approvalItems.length > 0) {
+                sections.push({ title: 'Approvals & Handover', items: approvalItems });
             }
 
             return sections;
@@ -546,24 +584,26 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             ...headOfficeMainItems.filter(m => ['/verifications', '/head-office/team-based-approvals', '/head-office/fines'].includes(m.href)),
         ];
 
-        const sections: SidebarSection[] = [
+        return [
             {
                 title: 'Overview',
                 items: [{ name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard }],
             },
             {
-                title: 'Core Operations',
+                title: 'Process & Control',
                 items: [
                     {
-                        name: 'Process & Accounting',
+                        name: 'Period & Work Process',
                         icon: CalendarDays,
-                        children: [
-                            ...periodAndWorkProcessSubItems,
-                            ...accountingCoreSubItems,
-                        ],
+                        children: periodAndWorkProcessSubItems,
                     },
+                ],
+            },
+            {
+                title: 'Member, Loan & Approvals',
+                items: [
                     {
-                        name: 'Member & Loan',
+                        name: 'Member & Origination',
                         icon: Banknote,
                         badge: memberLoanItems.reduce((sum, i) => sum + (i.badge || 0), 0),
                         children: memberLoanItems,
@@ -576,10 +616,28 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                     },
                 ],
             },
+            {
+                title: 'Microfinance Ledgers (MIS)',
+                items: [
+                    {
+                        name: 'Loan & Savings Ledger',
+                        icon: PiggyBank,
+                        children: microfinanceLedgersSubItems,
+                    },
+                ],
+            },
+            {
+                title: 'Accounting (AIS)',
+                items: [
+                    {
+                        name: 'Cash & General Ledger',
+                        icon: Receipt,
+                        children: cashAndGeneralLedgerSubItems,
+                    },
+                ],
+            },
         ];
-
-        return sections;
-    }, [isBranchRole, isCsoRole, isEdRole, isTeamApproverRole, branchMenuItems, approverMenuItems, approverOperationsItems, headOfficeMainItems]);
+    }, [isBranchRole, branchAccountingEnabled, isCsoRole, isEdRole, isTeamApproverRole, roleName, branchMenuItems, approverMenuItems, approverOperationsItems, headOfficeMainItems]);
 
     // Compute items for mobile bottom nav (Pending Approvals prioritized for roles that approve)
     const mobileBottomNavItems = useMemo(() => {
@@ -629,7 +687,9 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         ].slice(0, 4).filter(Boolean);
     }, [isFieldOfficer, isBranchRole, isTeamApproverRole, isEdRole, branchMenuItems, approverMenuItems, approverOperationsItems, headOfficeMainItems, badgeCounts.pendingApprovals]);
 
-    const showReportSection = headOfficeReportItems.length > 0;
+    const showReportSection = !isBranchRole
+        ? (financialPortfolioReportItems.length > 0 || misApprovalReportItems.length > 0)
+        : misApprovalReportItems.length > 0;
     const currentTitle = getPageTitle(path);
 
     return (
@@ -710,14 +770,43 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                     </div>
                 )}
 
+                {/* Sidebar Quick Search */}
+                {sidebarOpen && (
+                    <div className="px-2.5 pb-1">
+                        <div className="relative">
+                            <Search className="pointer-events-none absolute top-2 left-2.5 h-3.5 w-3.5 text-slate-400" />
+                            <input
+                                type="text"
+                                value={navSearch}
+                                onChange={(e) => setNavSearch(e.target.value)}
+                                placeholder="মেনু খুঁজুন (DCS, Voucher...)"
+                                className="w-full rounded-xl border border-slate-200 bg-slate-50/80 py-1.5 pr-7 pl-8 text-[11px] text-slate-700 placeholder:text-slate-400 focus:border-brand focus:bg-white focus:outline-none"
+                            />
+                            {navSearch && (
+                                <button
+                                    type="button"
+                                    onClick={() => setNavSearch('')}
+                                    className="absolute top-1.5 right-2 text-slate-400 hover:text-slate-600"
+                                    aria-label="Clear menu search"
+                                >
+                                    <X className="h-3.5 w-3.5" />
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                )}
+
                 {/* Navigation Menu */}
                 <nav className="flex-1 overflow-y-auto overflow-x-hidden py-2 px-2.5 space-y-3.5">
                     {([
                         ...menuGroups,
                         ...(showReportSection
                             ? [{
-                                title: 'Reports',
-                                items: [{ name: 'Reports', icon: BarChart3, children: headOfficeReportItems }],
+                                title: 'Reports & Analytics',
+                                items: [
+                                    ...(!isBranchRole ? [{ name: 'Financial & Portfolio', icon: BarChart3, children: financialPortfolioReportItems }] : []),
+                                    { name: 'MIS & Approval Reports', icon: FileSpreadsheet, children: misApprovalReportItems },
+                                ],
                             }]
                             : []),
                         ...(showConfigurationSection
@@ -730,12 +819,35 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                 ],
                             }]
                             : []),
-                    ] as SidebarSection[]).map((group) => {
+                    ] as SidebarSection[])
+                        .map((group) => {
+                            const query = navSearch.trim().toLowerCase();
+                            if (!query) return group;
+
+                            const filteredItems = group.items
+                                .map((item) => {
+                                    if (item.children && item.children.length > 0) {
+                                        const parentMatch = item.name.toLowerCase().includes(query);
+                                        const matchingChildren = parentMatch
+                                            ? item.children
+                                            : item.children.filter((sub) => sub.name.toLowerCase().includes(query));
+                                        if (matchingChildren.length === 0) return null;
+                                        return { ...item, children: matchingChildren };
+                                    }
+                                    return item.name.toLowerCase().includes(query) ? item : null;
+                                })
+                                .filter(Boolean) as SidebarNavItem[];
+
+                            return { ...group, items: filteredItems };
+                        })
+                        .filter((group) => group.items.length > 0)
+                        .map((group) => {
                         const renderNavItem = (item: SidebarNavItem, depth = 0) => {
                             const menuKey = `${group.title}:${depth}:${item.name}`;
                             if (item.children && item.children.length > 0) {
                                 const hasActiveChild = hasActiveDescendant(item, path);
-                                const isOpen = openMenus[menuKey] ?? hasActiveChild;
+                                const isSearching = navSearch.trim().length > 0;
+                                const isOpen = isSearching || (openMenus[menuKey] ?? hasActiveChild);
                                 const badge = item.badge;
 
                                 return (
@@ -745,10 +857,10 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                             onClick={() => {
                                                 if (!sidebarOpen) {
                                                     setSidebarOpen(true);
-                                                    setOpenMenus((prev) => ({ ...prev, [menuKey]: true }));
+                                                    setOpenMenus({ [menuKey]: true });
                                                     return;
                                                 }
-                                                setOpenMenus((prev) => ({ ...prev, [menuKey]: !isOpen }));
+                                                setOpenMenus(() => ({ [menuKey]: !isOpen }));
                                             }}
                                             className={`group relative flex w-full items-center justify-between gap-2 rounded-xl transition-all duration-200 ${
                                                 depth === 0 ? 'px-2.5 py-2 text-[12.5px]' : 'px-2 py-1.5 text-[11.5px]'
@@ -953,7 +1065,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
                         {/* Header Right Actions */}
                         <div className="flex items-center gap-1.5 sm:gap-2">
-                            {isBranchRole && (
+                            {isBranchRole && branchAccountingEnabled && (
                                 <Link
                                     href="/branch/process"
                                     className={`hidden sm:inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-[11px] font-bold transition-colors ${activeBusinessDay?.has_open_day
@@ -970,6 +1082,18 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                     </span>
                                 </Link>
                             )}
+                            <Link
+                                href="/help"
+                                className={`inline-flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl border text-[11px] font-bold transition-all duration-200 ${
+                                    path.startsWith('/help')
+                                        ? 'border-brand bg-brand text-white shadow-xs'
+                                        : 'border-brand/25 bg-brand-softer text-brand-dark hover:bg-brand hover:text-white'
+                                }`}
+                                title="সহায়তা ও ভিডিও টিউটোরিয়াল (Help)"
+                            >
+                                <HelpCircle className="w-3.5 h-3.5 shrink-0" />
+                                <span className="hidden sm:inline">সহায়তা (Help)</span>
+                            </Link>
                             {/* Mousumi Apps portal link (Icon on mobile, full label on tablet/desktop) */}
                             <a
                                 href="https://app.mousumibd.org"

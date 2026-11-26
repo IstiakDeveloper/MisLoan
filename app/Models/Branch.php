@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Schema;
 
 class Branch extends Model
 {
@@ -22,12 +23,14 @@ class Branch extends Model
         'phone',
         'address',
         'is_active',
+        'accounting_enabled',
         'login_pin',
         'branch_user_id',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
+        'accounting_enabled' => 'boolean',
     ];
 
     protected $hidden = [
@@ -94,9 +97,44 @@ class Branch extends Model
         return $query->where('is_active', true);
     }
 
+    /**
+     * Operational field branches only (excludes Head Office & Unknown pseudo-branches).
+     */
+    public function scopeOperational($query)
+    {
+        return $query
+            ->where('is_active', true)
+            ->where(function ($q) {
+                $q->whereNull('code')
+                    ->orWhereNotIn('code', ['0000', '1000']);
+            })
+            ->whereRaw('LOWER(name) NOT IN (?, ?)', ['head office', 'unknown']);
+    }
+
     public function scopeOrderedByCode($query)
     {
-        return $query->orderBy('code');
+        return $query->orderBy('code')->orderBy('name');
+    }
+
+    public static function resolveOperationalDefaultId(?int $preferredBranchId = null): ?int
+    {
+        if ($preferredBranchId && static::operational()->whereKey($preferredBranchId)->exists()) {
+            return $preferredBranchId;
+        }
+
+        if (Schema::hasColumn('branches', 'accounting_enabled')) {
+            $pilotId = static::operational()
+                ->where('accounting_enabled', true)
+                ->orderedByCode()
+                ->value('id');
+            if ($pilotId) {
+                return (int) $pilotId;
+            }
+        }
+
+        $id = static::operational()->orderedByCode()->value('id');
+
+        return $id ? (int) $id : null;
     }
 
     public function getFullNameAttribute(): string

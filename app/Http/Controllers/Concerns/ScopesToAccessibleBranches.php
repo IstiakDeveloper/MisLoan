@@ -75,14 +75,14 @@ trait ScopesToAccessibleBranches
                 return [
                     'zones' => Zone::active()->orderBy('name')->get(),
                     'areas' => Area::active()->with('zone')->orderBy('name')->get(),
-                    'branches' => Branch::active()->with('area.zone')->orderedByCode()->get(),
+                    'branches' => Branch::operational()->with('area.zone')->orderedByCode()->get(),
                 ];
             });
         }
 
         $ids = $this->accessibleBranchIds();
 
-        $branches = Branch::active()
+        $branches = Branch::operational()
             ->with('area.zone')
             ->whereIn('id', $ids ?: [0])
             ->orderedByCode()

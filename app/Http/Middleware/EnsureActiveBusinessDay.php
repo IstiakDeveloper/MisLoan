@@ -2,9 +2,11 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Branch;
 use App\Services\AccountingPeriodService;
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
 use Symfony\Component\HttpFoundation\Response;
 
 class EnsureActiveBusinessDay
@@ -20,6 +22,11 @@ class EnsureActiveBusinessDay
 
         $branchId = $user->branch_id ? (int) $user->branch_id : null;
         if (! $branchId) {
+            return $next($request);
+        }
+
+        if (Schema::hasColumn('branches', 'accounting_enabled')
+            && ! (bool) Branch::whereKey($branchId)->value('accounting_enabled')) {
             return $next($request);
         }
 

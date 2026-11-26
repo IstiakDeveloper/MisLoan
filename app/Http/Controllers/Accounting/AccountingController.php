@@ -60,7 +60,7 @@ class AccountingController extends Controller
             'journals' => $journals,
             'branch' => $branchId ? Branch::query()->find($branchId, ['id', 'name', 'code']) : null,
             'branches' => $canSelectBranch
-                ? Branch::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'code'])
+                ? Branch::operational()->orderedByCode()->get(['id', 'name', 'code'])
                 : [],
             'canSelectBranch' => $canSelectBranch,
             'dayState' => $branchId ? $this->periods->getBranchDayState($branchId) : null,
@@ -179,12 +179,12 @@ class AccountingController extends Controller
     {
         $user = $request->user();
         if ($this->isHeadOfficeOrAdmin($user)) {
-            $candidate = $requestedBranchId ?: $request->integer('branch_id') ?: $user->branch_id;
+            $candidate = $requestedBranchId ?: $request->integer('branch_id');
             if ($candidate) {
                 return (int) $candidate;
             }
 
-            return Branch::query()->where('is_active', true)->orderBy('name')->value('id');
+            return Branch::resolveOperationalDefaultId($user->branch_id ? (int) $user->branch_id : null);
         }
 
         return $user->branch_id ? (int) $user->branch_id : null;

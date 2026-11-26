@@ -86,6 +86,8 @@ interface VerificationItem {
     raw_id: number;
     item_type: 'admission' | 'loan';
     application_no: string;
+    member_code?: string | null;
+    loan_dofa?: number | null;
     applicant_name: string;
     applicant_name_en?: string;
     mobile_number?: string;
@@ -353,7 +355,7 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
     // Selection Handlers - Only items eligible for action can be selected
     const selectablePageItems = useMemo(() => {
         return (items?.data ?? []).filter((item) => {
-            const isResolved = ['approved', 'pending_disbursement', 'disbursed', 'rejected'].includes(item.status);
+            const isResolved = ['approved', 'pending_disbursement', 'disbursed', 'repaid', 'rejected', 'awaiting_takeup', 'pending_cancellation', 'cancelled'].includes(item.status);
             if (isResolved) return false;
             if (permissions.can_approve) {
                 return Boolean(item.is_zm_approved);
@@ -1028,7 +1030,8 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                                     (items?.data ?? []).map((item, index) => {
                                         const isAdmission = item.item_type === 'admission';
                                         const isAwaitingTakeupOrCancelled = item.status === 'awaiting_takeup' || item.status === 'pending_cancellation' || item.status === 'cancelled';
-                                        const isApproved = item.status === 'approved' || item.status === 'pending_disbursement' || item.status === 'disbursed' || isAwaitingTakeupOrCancelled;
+                                        const isRepaid = item.status === 'repaid';
+                                        const isApproved = item.status === 'approved' || item.status === 'pending_disbursement' || item.status === 'disbursed' || isRepaid || isAwaitingTakeupOrCancelled;
                                         const isRejected = item.status === 'rejected';
                                         const isSelected = selectedIds.includes(item.id);
                                         const isActionReady = item.is_zm_approved && !isApproved && !isRejected;
@@ -1125,7 +1128,7 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
 
                                                 {/* Type & App No */}
                                                 <td className="py-3.5 px-3 align-top">
-                                                    <div className="flex items-center gap-1.5">
+                                                    <div className="flex items-center gap-1.5 flex-wrap">
                                                         <span
                                                             className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold ${
                                                                 isAdmission
@@ -1135,10 +1138,20 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                                                         >
                                                             {isAdmission ? 'ভর্তি' : 'ঋণ'}
                                                         </span>
+                                                        {item.loan_dofa ? (
+                                                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-teal-50 text-teal-800 border border-teal-200">
+                                                                দফা {item.loan_dofa}
+                                                            </span>
+                                                        ) : null}
                                                         <span className="font-mono font-semibold text-indigo-900">
                                                             {item.application_no}
                                                         </span>
                                                     </div>
+                                                    {!isAdmission && item.member_code ? (
+                                                        <div className="text-[10px] text-slate-600 mt-1 font-mono font-semibold">
+                                                            সদস্য কোড: {item.member_code}
+                                                        </div>
+                                                    ) : null}
                                                     <div className="text-[10px] text-slate-500 mt-1 font-medium flex items-center gap-1" title="আবেদন হেড অফিসে প্রেরণের তারিখ">
                                                         <CalendarDays className="w-3 h-3 text-slate-400 shrink-0" />
                                                         <span>
@@ -1187,7 +1200,11 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
 
                                                 {/* Status */}
                                                 <td className="py-3.5 px-3 text-center whitespace-nowrap align-top">
-                                                    {isApproved ? (
+                                                    {isRepaid ? (
+                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-300">
+                                                            <CheckCircle2 className="w-3 h-3" /> পরিশোধিত (Repaid)
+                                                        </span>
+                                                    ) : isApproved ? (
                                                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
                                                             <CheckCircle2 className="w-3 h-3" /> চূড়ান্ত অনুমোদিত
                                                         </span>
@@ -1762,14 +1779,15 @@ export default function VerificationIndex({ items, stats, filters, permissions, 
                                     isApproved={
                                         selectedItemForHistory.status === 'approved' ||
                                         selectedItemForHistory.status === 'pending_disbursement' ||
-                                        selectedItemForHistory.status === 'disbursed'
+                                        selectedItemForHistory.status === 'disbursed' ||
+                                        selectedItemForHistory.status === 'repaid'
                                     }
                                     isRejected={selectedItemForHistory.status === 'rejected'}
                                 />
                             )}
 
                             {/* Add new issue form (Head Office only) */}
-                            {permissions.is_head_office && (
+                            {permissions.is_head_office && !['disbursed', 'repaid', 'cancelled', 'rejected'].includes(selectedItemForHistory.status) && (
                                 <form onSubmit={handleStoreNewIssue} className="pt-3 border-t border-slate-200 space-y-2">
                                     <label className="block text-xs font-bold text-slate-700">
                                         নতুন আপত্তি / তদন্ত নোট যোগ করুন (HO):

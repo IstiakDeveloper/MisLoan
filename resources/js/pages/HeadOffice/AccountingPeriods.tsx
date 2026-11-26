@@ -3,8 +3,11 @@ import {
     Building2,
     Calendar,
     CalendarPlus,
+    FileSpreadsheet,
     Lock,
+    Power,
     RotateCcw,
+    ShieldCheck,
     Trash2,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -35,6 +38,7 @@ interface Branch {
     name: string;
     code: string;
     area_id: number;
+    accounting_enabled: boolean;
 }
 
 interface Zone {
@@ -52,6 +56,7 @@ interface BranchMonitorRow {
     branch_id: number;
     branch_name: string;
     branch_code: string;
+    accounting_enabled: boolean;
     area_name: string | null;
     zone_name: string | null;
     initial_date: string | null;
@@ -60,6 +65,16 @@ interface BranchMonitorRow {
     last_closed_day: string | null;
     last_month_date: string | null;
     last_month_status: string | null;
+}
+
+interface BranchMonthProcess {
+    id: number;
+    branch_id: number;
+    month_date: string;
+    status: string;
+    llp_summary: { estimated_llp_amount?: number } | null;
+    summary: { loans_disbursed?: number } | null;
+    branch?: { id: number; name: string; code: string } | null;
 }
 
 interface ReopenLog {
@@ -80,6 +95,8 @@ interface Props {
     zones: Zone[];
     areas: Area[];
     branchMonitor: BranchMonitorRow[];
+    monthProcesses: BranchMonthProcess[];
+    defaultMonthDate: string;
     reopenLogs: ReopenLog[];
     filters: { zone_id: number | null; area_id: number | null };
     canManage: boolean;
@@ -94,14 +111,19 @@ export default function AccountingPeriods({
     zones,
     areas,
     branchMonitor,
+    monthProcesses,
+    defaultMonthDate,
     reopenLogs,
     filters,
     canManage,
     isSuperAdmin,
 }: Props) {
-    const [tab, setTab] = useState<'monitor' | 'initial' | 'fy' | 'holidays'>('monitor');
+    const [tab, setTab] = useState<'monitor' | 'monthly' | 'initial' | 'fy' | 'holidays'>('monitor');
     const [reopenFyId, setReopenFyId] = useState<number | null>(null);
     const fyReopenForm = useForm({ reason: '' });
+
+    const enabledCount = branchMonitor.filter((b) => b.accounting_enabled).length;
+    const legacyCount = branchMonitor.length - enabledCount;
 
     const fyForm = useForm<{ start_year: number; period?: string }>({
         start_year: currentFySuggestion.start_year,
@@ -125,6 +147,22 @@ export default function AccountingPeriods({
         kind: 'day',
         period_date: '',
         reason: '',
+    });
+
+    const llpForm = useForm<{ branch_id: string; month_date: string; period?: string }>({
+        branch_id: '',
+        month_date: defaultMonthDate,
+    });
+
+    const batchForm = useForm<{ branch_id: string; business_date: string; period?: string }>({
+        branch_id: '',
+        business_date: defaultMonthDate,
+    });
+
+    const monthlyForm = useForm<{ branch_id: string; month_date: string; close_month: boolean; period?: string }>({
+        branch_id: '',
+        month_date: defaultMonthDate,
+        close_month: false,
     });
 
     const applyFilter = (zoneId: string, areaId: string) => {
@@ -154,7 +192,8 @@ export default function AccountingPeriods({
                 {/* Tabs */}
                 <div className="flex flex-wrap gap-2">
                     {[
-                        { id: 'monitor', label: 'Branch Monitor & Reopen', icon: Building2 },
+                        { id: 'monitor', label: 'Branch Monitor & Pilot Control', icon: Building2 },
+                        { id: 'monthly', label: 'Monthly Process & LLP', icon: ShieldCheck },
                         { id: 'initial', label: 'Manage Day Initial', icon: CalendarPlus },
                         { id: 'fy', label: 'Financial Years', icon: Calendar },
                         { id: 'holidays', label: 'Holidays & Reopen Logs', icon: RotateCcw },
@@ -183,7 +222,12 @@ export default function AccountingPeriods({
                     <div className="space-y-5">
                         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
                             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                                <h2 className="text-sm font-bold text-slate-900">সকল শাখার Day / Month স্ট্যাটাস</h2>
+                                <div>
+                                    <h2 className="text-sm font-bold text-slate-900">সকল শাখার Pilot মোড ও Day / Month স্ট্যাটাস</h2>
+                                    <p className="mt-0.5 text-[11px] text-slate-500">
+                                        একাউন্টিং চালু (Pilot ON): <strong className="text-emerald-700">{enabledCount}টি</strong> শাখা • সাধারণ MIS (Legacy OFF): <strong className="text-slate-700">{legacyCount}টি</strong> শাখা
+                                    </p>
+                                </div>
                                 <div className="flex flex-wrap gap-2">
                                     <div className="w-44">
                                         <ComboSelect
@@ -214,6 +258,7 @@ export default function AccountingPeriods({
                                         <tr className="border-b border-slate-100 text-slate-500">
                                             <th className="py-2">শাখা</th>
                                             <th className="py-2">Zone / Area</th>
+                                            <th className="py-2">হিসাব-নিকাশ মোড (Pilot)</th>
                                             <th className="py-2">Initial Date</th>
                                             <th className="py-2">Open Day</th>
                                             <th className="py-2">Last Closed Day</th>
@@ -224,10 +269,32 @@ export default function AccountingPeriods({
                                         {branchMonitor.map((row) => (
                                             <tr key={row.branch_id} className="border-b border-slate-50">
                                                 <td className="py-2.5 font-semibold text-slate-800">
-                                                    {row.branch_name} ({row.branch_code})
+                                                    {row.branch_code ? `${row.branch_code} - ` : ''}{row.branch_name}
                                                 </td>
                                                 <td className="py-2.5 text-slate-500">
                                                     {row.zone_name ?? '-'} / {row.area_name ?? '-'}
+                                                </td>
+                                                <td className="py-2.5">
+                                                    <button
+                                                        type="button"
+                                                        disabled={!canManage}
+                                                        onClick={() =>
+                                                            router.patch(
+                                                                `/head-office/accounting-periods/branches/${row.branch_id}/toggle-accounting`,
+                                                                { accounting_enabled: !row.accounting_enabled },
+                                                                { preserveScroll: true },
+                                                            )
+                                                        }
+                                                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-bold transition-colors disabled:opacity-50 ${
+                                                            row.accounting_enabled
+                                                                ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                                                                : 'border-slate-200 bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                                        }`}
+                                                        title="ক্লিক করে Pilot Accounting চালু বা বন্ধ করুন"
+                                                    >
+                                                        <Power className="h-3 w-3" />
+                                                        {row.accounting_enabled ? 'Pilot ON (হিসাব চালু)' : 'Legacy OFF (আগের মোড)'}
+                                                    </button>
                                                 </td>
                                                 <td className="py-2.5 text-slate-700">{row.initial_date ? formatDate(row.initial_date) : 'Not Set'}</td>
                                                 <td className="py-2.5">
@@ -316,6 +383,221 @@ export default function AccountingPeriods({
                                 </button>
                             </form>
                         )}
+                    </div>
+                )}
+
+                {tab === 'monthly' && (
+                    <div className="space-y-5">
+                        <div className="grid gap-5 lg:grid-cols-3">
+                            {/* 1. Month-End Auto Batch */}
+                            <form
+                                onSubmit={(e) => {
+                                    e.preventDefault();
+                                    batchForm.post('/head-office/accounting-periods/month-end-batch');
+                                }}
+                                className="space-y-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-xs"
+                            >
+                                <div className="flex items-center gap-2">
+                                    <ShieldCheck className="h-4 w-4 text-emerald-600" />
+                                    <h3 className="text-sm font-bold text-slate-900">১. Month-End Auto Batch</h3>
+                                </div>
+                                <p className="text-xs text-slate-500">
+                                    খোলা কর্মদিবসে সকল সক্রিয় সঞ্চয়ে মাসিক মুনাফা পোস্ট ও LLP Journal তৈরি করুন।
+                                </p>
+                                <div>
+                                    <label className="mb-1 block text-xs font-semibold text-slate-700">শাখা (ঐচ্ছিক)</label>
+                                    <ComboSelect
+                                        size="sm"
+                                        value={batchForm.data.branch_id ? Number(batchForm.data.branch_id) : null}
+                                        onChange={(val) => batchForm.setData('branch_id', val ? String(val) : '')}
+                                        items={branches.map((b) => ({
+                                            value: b.id,
+                                            label: `${b.name} (${b.code})${b.accounting_enabled ? ' [Pilot ON]' : ''}`,
+                                            keywords: `${b.name} ${b.code}`,
+                                        }))}
+                                        placeholder="সকল Pilot-ON শাখা"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-700">Business Date</label>
+                                    <input
+                                        type="date"
+                                        value={batchForm.data.business_date}
+                                        onChange={(e) => batchForm.setData('business_date', e.target.value)}
+                                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs"
+                                        required
+                                    />
+                                </div>
+                                <button
+                                    type="submit"
+                                    disabled={!canManage || batchForm.processing}
+                                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
+                                >
+                                    <ShieldCheck className="h-3.5 w-3.5" />
+                                    Run Auto Profit + LLP
+                                </button>
+                            </form>
+
+                            {/* 2. LLP Voucher Process */}
+                            <form
+                                onSubmit={(e) => {
+                                    e.preventDefault();
+                                    llpForm.post('/head-office/accounting-periods/llp');
+                                }}
+                                className="space-y-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-xs"
+                            >
+                                <div className="flex items-center gap-2">
+                                    <FileSpreadsheet className="h-4 w-4 text-indigo-600" />
+                                    <h3 className="text-sm font-bold text-slate-900">২. LLP Voucher Process</h3>
+                                </div>
+                                <p className="text-xs text-slate-500">
+                                    মাসের সক্রিয় ঋণ পোর্টফোলিওর ওপর ভিত্তি করে Loan Loss Provisioning (LLP) প্রস্তুত করুন।
+                                </p>
+                                <div>
+                                    <label className="mb-1 block text-xs font-semibold text-slate-700">শাখা (ঐচ্ছিক)</label>
+                                    <ComboSelect
+                                        size="sm"
+                                        value={llpForm.data.branch_id ? Number(llpForm.data.branch_id) : null}
+                                        onChange={(val) => llpForm.setData('branch_id', val ? String(val) : '')}
+                                        items={branches.map((b) => ({
+                                            value: b.id,
+                                            label: `${b.name} (${b.code})${b.accounting_enabled ? ' [Pilot ON]' : ''}`,
+                                            keywords: `${b.name} ${b.code}`,
+                                        }))}
+                                        placeholder="সকল Pilot-ON শাখা"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-700">মাসের যেকোনো তারিখ</label>
+                                    <input
+                                        type="date"
+                                        value={llpForm.data.month_date}
+                                        onChange={(e) => llpForm.setData('month_date', e.target.value)}
+                                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs"
+                                        required
+                                    />
+                                </div>
+                                <button
+                                    type="submit"
+                                    disabled={!canManage || llpForm.processing}
+                                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-700 disabled:opacity-50"
+                                >
+                                    <FileSpreadsheet className="h-3.5 w-3.5" />
+                                    Run LLP Voucher Process
+                                </button>
+                            </form>
+
+                            {/* 3. Monthly Process & Month Close */}
+                            <form
+                                onSubmit={(e) => {
+                                    e.preventDefault();
+                                    monthlyForm.post('/head-office/accounting-periods/monthly');
+                                }}
+                                className="space-y-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-xs"
+                            >
+                                <div className="flex items-center gap-2">
+                                    <Lock className="h-4 w-4 text-brand" />
+                                    <h3 className="text-sm font-bold text-slate-900">৩. Monthly Process & Month Close</h3>
+                                </div>
+                                <p className="text-xs text-slate-500">
+                                    মাসের সব কর্মদিবস Close হওয়ার পর মাসিক সামারি তৈরি ও Month Close করুন।
+                                </p>
+                                <div>
+                                    <label className="mb-1 block text-xs font-semibold text-slate-700">শাখা (ঐচ্ছিক)</label>
+                                    <ComboSelect
+                                        size="sm"
+                                        value={monthlyForm.data.branch_id ? Number(monthlyForm.data.branch_id) : null}
+                                        onChange={(val) => monthlyForm.setData('branch_id', val ? String(val) : '')}
+                                        items={branches.map((b) => ({
+                                            value: b.id,
+                                            label: `${b.name} (${b.code})${b.accounting_enabled ? ' [Pilot ON]' : ''}`,
+                                            keywords: `${b.name} ${b.code}`,
+                                        }))}
+                                        placeholder="সকল Pilot-ON শাখা"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-700">মাসের যেকোনো তারিখ</label>
+                                    <input
+                                        type="date"
+                                        value={monthlyForm.data.month_date}
+                                        onChange={(e) => monthlyForm.setData('month_date', e.target.value)}
+                                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs"
+                                        required
+                                    />
+                                </div>
+                                <label className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                                    <input
+                                        type="checkbox"
+                                        checked={monthlyForm.data.close_month}
+                                        onChange={(e) => monthlyForm.setData('close_month', e.target.checked)}
+                                        className="rounded border-slate-300"
+                                    />
+                                    মাসটি চূড়ান্তভাবে বন্ধ (Month Close) করুন
+                                </label>
+                                <button
+                                    type="submit"
+                                    disabled={!canManage || monthlyForm.processing}
+                                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand px-4 py-2 text-xs font-bold text-white hover:bg-brand-dark disabled:opacity-50"
+                                >
+                                    <Lock className="h-3.5 w-3.5" />
+                                    {monthlyForm.data.close_month ? 'Run & Close Month' : 'Process Monthly Summary'}
+                                </button>
+                            </form>
+                        </div>
+
+                        {/* Monthly Process History */}
+                        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
+                            <h3 className="mb-3 text-sm font-bold text-slate-900">সাম্প্রতিক Monthly Process লগ</h3>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left text-xs">
+                                    <thead>
+                                        <tr className="border-b border-slate-100 text-slate-500">
+                                            <th className="py-2">শাখা</th>
+                                            <th className="py-2">মাস</th>
+                                            <th className="py-2">স্ট্যাটাস</th>
+                                            <th className="py-2">LLP পরিমাণ</th>
+                                            <th className="py-2">লোন ডিসবার্স</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {monthProcesses.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={5} className="py-6 text-center text-slate-400">
+                                                    এখনো কোনো Monthly Process সম্পন্ন হয়নি
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            monthProcesses.map((m) => (
+                                                <tr key={m.id} className="border-b border-slate-50">
+                                                    <td className="py-2 font-semibold text-slate-800">
+                                                        {m.branch ? `${m.branch.name} (${m.branch.code})` : `Branch #${m.branch_id}`}
+                                                    </td>
+                                                    <td className="py-2 text-slate-700">{formatDate(m.month_date)}</td>
+                                                    <td className="py-2">
+                                                        <span
+                                                            className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                                                m.status === 'closed'
+                                                                    ? 'bg-emerald-100 text-emerald-700'
+                                                                    : 'bg-amber-100 text-amber-700'
+                                                            }`}
+                                                        >
+                                                            {m.status}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-2 text-slate-700">
+                                                        {m.llp_summary?.estimated_llp_amount !== undefined
+                                                            ? `৳${m.llp_summary.estimated_llp_amount.toLocaleString()}`
+                                                            : '-'}
+                                                    </td>
+                                                    <td className="py-2 text-slate-600">{m.summary?.loans_disbursed ?? 0} টি</td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                 )}
 

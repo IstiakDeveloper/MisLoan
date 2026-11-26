@@ -15,6 +15,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 use Inertia\Middleware;
 
@@ -152,8 +153,11 @@ class HandleInertiaRequests extends Middleware
             // Manually query branch if branch_id exists
             if ($user->branch_id) {
                 try {
+                    $selectColumns = Schema::hasColumn('branches', 'accounting_enabled')
+                        ? ['id', 'name', 'accounting_enabled']
+                        : ['id', 'name'];
                     $branch = DB::table('branches')
-                        ->select('id', 'name')
+                        ->select($selectColumns)
                         ->where('id', $user->branch_id)
                         ->first();
 
@@ -161,6 +165,7 @@ class HandleInertiaRequests extends Middleware
                         $userData['branch'] = [
                             'id' => $branch->id,
                             'name' => $this->sanitizeString($branch->name ?? ''),
+                            'accounting_enabled' => (bool) ($branch->accounting_enabled ?? false),
                         ];
                     }
                 } catch (\Exception $e) {
@@ -246,7 +251,11 @@ class HandleInertiaRequests extends Middleware
             'loanWorkflowConfig' => $request->user()
                 ? app(LoanWorkflowConfigService::class)->toSharedArray()
                 : null,
-            'activeBusinessDay' => ($request->user() && $request->user()->branch_id)
+            'activeBusinessDay' => ($request->user()
+                && $request->user()->branch_id
+                && Schema::hasTable('branch_accounting_periods')
+                && Schema::hasColumn('branches', 'accounting_enabled')
+                && (bool) DB::table('branches')->where('id', $request->user()->branch_id)->value('accounting_enabled'))
                 ? app(AccountingPeriodService::class)->getBranchDayState((int) $request->user()->branch_id)
                 : null,
         ]);

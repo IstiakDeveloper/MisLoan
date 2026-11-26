@@ -190,6 +190,7 @@ const statusConfig: Record<string, { label: string; color: string; icon: any }> 
     pending_amount_approval: { label: 'পরিমাণ পরিবর্তনের অনুমোদন অপেক্ষা', color: 'bg-orange-100 text-orange-800 border-orange-300', icon: Clock },
     rejected: { label: 'প্রত্যাখ্যাত', color: 'bg-rose-100 text-rose-800 border-rose-300', icon: XCircle },
     disbursed: { label: 'বিতরণ হয়েছে', color: 'bg-emerald-100 text-emerald-800 border-emerald-300', icon: CheckCircle2 },
+    repaid: { label: 'পরিশোধিত (Repaid)', color: 'bg-blue-100 text-blue-800 border-blue-300', icon: CheckCircle2 },
     cancelled: { label: 'বাতিল', color: 'bg-slate-100 text-slate-800 border-slate-300', icon: XCircle },
     needs_correction: { label: 'সংশোধন প্রয়োজন', color: 'bg-orange-100 text-orange-800 border-orange-300', icon: AlertCircle },
 };
@@ -572,6 +573,7 @@ export default function LoanApplicationShow({ loan, categories = [], flash }: Pr
             case 'pending_cancellation':
                 return 3;
             case 'disbursed':
+            case 'repaid':
                 return 4;
             default:
                 return 0;
@@ -669,6 +671,14 @@ export default function LoanApplicationShow({ loan, categories = [], flash }: Pr
                     badgeColor: 'bg-emerald-100 text-emerald-900 border-emerald-300',
                     cardBg: 'bg-emerald-50/90 border-emerald-200 text-emerald-950',
                     iconColor: 'text-emerald-600',
+                };
+            case 'repaid':
+                return {
+                    title: 'সম্পন্ন অবস্থা: ঋণ সফলভাবে পরিশোধ করা হয়েছে (Repaid)',
+                    desc: 'এই দফার ঋণ সম্পূর্ণরূপে পরিশোধ সম্পন্ন হয়েছে এবং এটি বন্ধ (Closed) অবস্থায় রয়েছে।',
+                    badgeColor: 'bg-blue-100 text-blue-900 border-blue-300',
+                    cardBg: 'bg-blue-50/90 border-blue-200 text-blue-950',
+                    iconColor: 'text-blue-600',
                 };
             case 'rejected':
                 return {

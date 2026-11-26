@@ -158,9 +158,20 @@ class VerificationIndexQuery
             ->toBase();
     }
 
+    private const COMPLETED_STATUSES = [
+        'approved',
+        'pending_disbursement',
+        'disbursed',
+        'repaid',
+        'rejected',
+        'awaiting_takeup',
+        'pending_cancellation',
+        'cancelled',
+    ];
+
     private function latestActionSql(string $parent, string $issueTable, string $issueKey, string $resolvedColumn): string
     {
-        $reviewed = "CASE WHEN {$parent}.status IN ('approved', 'pending_disbursement', 'disbursed', 'rejected') THEN {$parent}.reviewed_at ELSE NULL END";
+        $reviewed = "CASE WHEN {$parent}.status IN ('approved', 'pending_disbursement', 'disbursed', 'repaid', 'rejected') THEN {$parent}.reviewed_at ELSE NULL END";
         $stamps = [
             "(SELECT MAX(created_at) FROM {$issueTable} WHERE {$issueKey} = {$parent}.id)",
             "(SELECT MAX({$resolvedColumn}) FROM {$issueTable} WHERE {$issueKey} = {$parent}.id)",
@@ -206,7 +217,7 @@ class VerificationIndexQuery
 
     private function applyIssueStatus(\Illuminate\Database\Query\Builder $query, string $issueStatus): void
     {
-        $completed = ['approved', 'pending_disbursement', 'disbursed', 'rejected', 'awaiting_takeup', 'pending_cancellation', 'cancelled'];
+        $completed = self::COMPLETED_STATUSES;
 
         if ($issueStatus === 'pending_action') {
             $query->whereNotIn('status', $completed);
@@ -217,7 +228,7 @@ class VerificationIndexQuery
         } elseif ($issueStatus === 'pending') {
             $query->where('has_pending_issue', 1)->where('has_replied', 0)->whereNotIn('status', $completed);
         } elseif ($issueStatus === 'approved') {
-            $query->whereIn('status', ['approved', 'pending_disbursement', 'disbursed']);
+            $query->whereIn('status', ['approved', 'pending_disbursement', 'disbursed', 'repaid']);
         } elseif ($issueStatus === 'rejected') {
             $query->where('status', 'rejected');
         }
@@ -228,7 +239,7 @@ class VerificationIndexQuery
      */
     private function stats(\Illuminate\Database\Query\Builder $query): array
     {
-        $completed = "'approved','pending_disbursement','disbursed','rejected','awaiting_takeup','pending_cancellation','cancelled'";
+        $completed = "'".implode("','", self::COMPLETED_STATUSES)."'";
         $row = $query->selectRaw("
             COUNT(*) as total,
             SUM(CASE WHEN status NOT IN ({$completed}) THEN 1 ELSE 0 END) as pending_action,
@@ -237,7 +248,7 @@ class VerificationIndexQuery
             SUM(CASE WHEN has_pending_issue = 1 AND has_replied = 0 AND status NOT IN ({$completed}) THEN 1 ELSE 0 END) as pending_issues,
             SUM(CASE WHEN has_replied = 1 AND is_zm_approved = 0 AND status NOT IN ({$completed}) THEN 1 ELSE 0 END) as branch_replied,
             SUM(CASE WHEN is_zm_approved = 1 AND status NOT IN ({$completed}) THEN 1 ELSE 0 END) as zm_approved,
-            SUM(CASE WHEN status IN ('approved','pending_disbursement','disbursed') THEN 1 ELSE 0 END) as approved,
+            SUM(CASE WHEN status IN ('approved','pending_disbursement','disbursed','repaid') THEN 1 ELSE 0 END) as approved,
             SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected
         ")->first();
 

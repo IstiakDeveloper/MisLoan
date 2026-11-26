@@ -27,6 +27,7 @@ use App\Models\Zone;
 use App\Services\ApprovalService;
 use App\Services\HoSendCutoffService;
 use App\Services\LoanApplicationCloneService;
+use App\Services\Loans\ApplicationLedgerSyncService;
 use App\Services\LoanWorkflowConfigService;
 use App\Services\MemberAdmissionLoanSyncService;
 use App\Services\MemberCodeService;
@@ -1081,6 +1082,7 @@ class LoanApplicationController extends Controller
             'pending_head_office' => $countStatus(LoanApplication::STATUS_PENDING_HEAD_OFFICE),
             'under_review' => $countStatus(LoanApplication::STATUS_UNDER_REVIEW),
             'disbursed' => $countStatus(LoanApplication::STATUS_DISBURSED),
+            'repaid' => $countStatus(LoanApplication::STATUS_REPAID),
             'pending_my_approval' => $this->countPendingMyApproval($statsBaseQuery, $user, 'loan'),
         ];
 
@@ -2689,6 +2691,15 @@ class LoanApplicationController extends Controller
         }
 
         LoanApplication::findOrFail($application->id)->update($updateData);
+
+        $paymentMode = strtolower((string) ($validated['disbursement_method'] ?? 'cash')) === 'bank' ? 'bank' : 'cash';
+        app(ApplicationLedgerSyncService::class)->syncLoanDisbursement(
+            $application->fresh(['loanProduct', 'memberAdmission']),
+            $disbursementDate,
+            (float) $disbursedAmount,
+            $paymentMode,
+            (int) $user->id
+        );
 
         // Notify submitter / member
         if ($application->submittedBy) {

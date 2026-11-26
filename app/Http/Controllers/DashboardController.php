@@ -584,7 +584,7 @@ class DashboardController extends Controller
         $systemScale = [
             'total_zones' => Zone::where('is_active', true)->count(),
             'total_areas' => Area::where('is_active', true)->count(),
-            'total_branches' => Branch::where('is_active', true)->count(),
+            'total_branches' => Branch::operational()->count(),
             'total_users' => User::where('is_active', true)->count(),
             'total_admissions' => array_sum($admCounts),
             'total_loans' => $pipeline->loanCount($loanRollup, ...array_keys($loanRollup)),

@@ -234,6 +234,7 @@ const statusLabels: Record<string, { label: string; bg: string; text: string; bo
     pending_amount_approval: { label: 'Amount Re-approval (পরিমাণ অনুমোদন)', bg: 'bg-orange-50', text: 'text-orange-800', border: 'border-orange-200' },
     rejected: { label: 'Rejected (প্রত্যাখ্যাত)', bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200' },
     disbursed: { label: 'Disbursed (বিতরণকৃত)', bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' },
+    repaid: { label: 'Repaid (পরিশোধিত)', bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
 };
 
 function loanStatusPresentation(app: { status: string; cancellation_from_status?: string | null }) {
@@ -1014,6 +1015,7 @@ export default function Index({
             ready_for_head_office: (stats as any).ready_for_head_office || 0,
             under_review: (stats as any).under_review || 0,
             disbursed: (stats as any).disbursed || 0,
+            repaid: (stats as any).repaid || 0,
             pending_my_approval: (stats as any).pending_my_approval || 0,
         };
     }, [stats]);
@@ -1158,6 +1160,15 @@ export default function Index({
                 iconBg: 'bg-teal-50',
                 barColor: 'from-teal-500 to-teal-600',
                 activeBg: 'bg-teal-600 border-teal-600 text-white',
+            }, {
+                key: 'repaid',
+                label: 'পরিশোধিত',
+                count: filteredStats.repaid,
+                icon: CheckCircle2,
+                iconColor: 'text-blue-600',
+                iconBg: 'bg-blue-50',
+                barColor: 'from-blue-500 to-blue-600',
+                activeBg: 'bg-blue-600 border-blue-600 text-white',
             }]
             : []),
         {

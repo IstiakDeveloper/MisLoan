@@ -80,7 +80,7 @@ class CashDeskController extends Controller
         return Inertia::render('CashDesk/Index', [
             'branch' => $branchId ? Branch::query()->find($branchId, ['id', 'name', 'code']) : null,
             'branches' => $canSelectBranch
-                ? Branch::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'code'])
+                ? Branch::operational()->orderedByCode()->get(['id', 'name', 'code'])
                 : [],
             'canSelectBranch' => $canSelectBranch,
             'dayState' => $dayState,
@@ -207,9 +207,12 @@ class CashDeskController extends Controller
     {
         $user = $request->user();
         if ($this->isHeadOfficeOrAdmin($user)) {
-            $id = $requested ?: $request->integer('branch_id') ?: $user->branch_id;
+            $id = $requested ?: $request->integer('branch_id');
+            if ($id) {
+                return (int) $id;
+            }
 
-            return $id ? (int) $id : Branch::query()->where('is_active', true)->orderBy('name')->value('id');
+            return Branch::resolveOperationalDefaultId($user->branch_id ? (int) $user->branch_id : null);
         }
 
         return $user->branch_id ? (int) $user->branch_id : null;

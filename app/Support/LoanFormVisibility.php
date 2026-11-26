@@ -376,7 +376,11 @@ class LoanFormVisibility
 
         $roleName = strtolower((string) $roleName);
 
-        if (in_array($status, [LoanApplication::STATUS_DISBURSED, LoanApplication::STATUS_CANCELLED], true)) {
+        if (in_array($status, [
+            LoanApplication::STATUS_DISBURSED,
+            LoanApplication::STATUS_REPAID,
+            LoanApplication::STATUS_CANCELLED,
+        ], true)) {
             return false;
         }
 
@@ -399,6 +403,10 @@ class LoanFormVisibility
     {
         if ($status === LoanApplication::STATUS_DISBURSED) {
             return 'ঋণ বিতরণ সম্পন্ন হওয়ার পর ঋণ বিবরণ পরিবর্তন করা যাবে না।';
+        }
+
+        if ($status === LoanApplication::STATUS_REPAID) {
+            return 'ঋণ পরিশোধ সম্পন্ন হওয়ার পর ঋণ বিবরণ পরিবর্তন করা যাবে না।';
         }
 
         if ($status === LoanApplication::STATUS_CANCELLED) {

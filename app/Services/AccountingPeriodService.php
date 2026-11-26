@@ -10,10 +10,15 @@ use App\Models\BranchFinancialYear;
 use App\Models\BranchMonthProcess;
 use App\Models\FinancialYear;
 use App\Models\Holiday;
+use App\Models\LoanAccount;
 use App\Models\LoanApplication;
 use App\Models\MemberAdmission;
 use App\Models\PeriodReopenLog;
+use App\Models\SavingsAccount;
 use App\Models\SavingsApplication;
+use App\Services\Accounting\PostingDefaults;
+use App\Services\Accounting\VoucherService;
+use App\Services\Savings\SavingsLedgerService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -457,22 +462,90 @@ class AccountingPeriodService
             $monthEnd = CarbonImmutable::parse($monthDate)->endOfMonth()->toDateString();
             $enrollment = $this->resolveBranchEnrollmentForMonth($branchId, $monthEnd);
 
-            $activeLoansCount = LoanApplication::query()
-                ->where('branch_id', $branchId)
-                ->where('status', LoanApplication::STATUS_DISBURSED)
-                ->count();
+            $activeAccounts = Schema::hasTable('loan_accounts')
+                ? LoanAccount::query()
+                    ->with(['installments' => fn ($q) => $q->whereIn('status', ['pending', 'partial'])->orderBy('due_date')])
+                    ->where('branch_id', $branchId)
+                    ->where('status', LoanAccount::STATUS_ACTIVE)
+                    ->get()
+                : collect();
 
-            $activePortfolio = (float) LoanApplication::query()
-                ->where('branch_id', $branchId)
-                ->where('status', LoanApplication::STATUS_DISBURSED)
-                ->sum('disbursed_amount');
+            if ($activeAccounts->isNotEmpty()) {
+                $activeLoansCount = $activeAccounts->count();
+                $activePortfolio = 0.0;
+                $llpPaisa = 0;
+
+                foreach ($activeAccounts as $acc) {
+                    $outstanding = $acc->remainingPrincipalPaisa();
+                    $activePortfolio += $outstanding / 100;
+
+                    $oldestOverdue = $acc->installments->first(fn ($i) => $i->due_date->toDateString() < $monthEnd);
+                    $daysOverdue = $oldestOverdue
+                        ? CarbonImmutable::parse($oldestOverdue->due_date)->diffInDays(CarbonImmutable::parse($monthEnd))
+                        : 0;
+
+                    $rate = match (true) {
+                        $daysOverdue >= 365 => 1.00,
+                        $daysOverdue >= 181 => 0.75,
+                        $daysOverdue >= 31 => 0.25,
+                        $daysOverdue >= 1 => 0.05,
+                        default => 0.01,
+                    };
+                    $llpPaisa += (int) round($outstanding * $rate);
+                }
+
+                $llpAmount = round($llpPaisa / 100, 2);
+            } else {
+                $activeLoansCount = LoanApplication::query()
+                    ->where('branch_id', $branchId)
+                    ->where('status', LoanApplication::STATUS_DISBURSED)
+                    ->count();
+
+                $activePortfolio = (float) LoanApplication::query()
+                    ->where('branch_id', $branchId)
+                    ->where('status', LoanApplication::STATUS_DISBURSED)
+                    ->sum('disbursed_amount');
+
+                $llpPaisa = (int) round($activePortfolio * 100 * 0.01);
+                $llpAmount = round($llpPaisa / 100, 2);
+            }
+
+            $llpVoucherSubmitted = false;
+            if ($llpPaisa > 0 && Schema::hasTable('accounting_vouchers') && Schema::hasTable('gl_posting_defaults')) {
+                $openDay = BranchAccountingPeriod::query()
+                    ->where('branch_id', $branchId)
+                    ->where('kind', BranchAccountingPeriod::KIND_DAY)
+                    ->where('status', BranchAccountingPeriod::STATUS_OPEN)
+                    ->orderByDesc('period_date')
+                    ->first();
+
+                $defaults = app(PostingDefaults::class);
+                $llpExpId = $defaults->resolveAccountId('llp_expense');
+                $llpResId = $defaults->resolveAccountId('llp_reserve');
+
+                if ($openDay && $llpExpId && $llpResId) {
+                    app(VoucherService::class)->submitVoucher(
+                        $branchId,
+                        AccountingVoucher::KIND_JOURNAL,
+                        $openDay->period_date->toDateString(),
+                        "Monthly LLP Provision for {$monthEnd}",
+                        [
+                            ['ledger_account_id' => $llpExpId, 'debit_paisa' => $llpPaisa, 'credit_paisa' => 0],
+                            ['ledger_account_id' => $llpResId, 'debit_paisa' => 0, 'credit_paisa' => $llpPaisa],
+                        ],
+                        "llp-voucher:{$branchId}:{$monthEnd}",
+                        $actorId
+                    );
+                    $llpVoucherSubmitted = true;
+                }
+            }
 
             $llpSummary = [
                 'active_loans' => $activeLoansCount,
                 'active_portfolio' => round($activePortfolio, 2),
-                'standard_provision_rate' => 1.0,
-                'estimated_llp_amount' => round($activePortfolio * 0.01, 2),
-                'note' => 'Phase-1 Portfolio Snapshot (Auto-Voucher will post in Phase-3 AIS)',
+                'estimated_llp_amount' => $llpAmount,
+                'llp_paisa' => $llpPaisa,
+                'voucher_submitted' => $llpVoucherSubmitted,
             ];
 
             $existing = BranchMonthProcess::query()
@@ -506,6 +579,55 @@ class AccountingPeriodService
                 'processed_at' => now(),
                 'summary' => [],
             ]);
+        });
+    }
+
+    /**
+     * Run Month-End Auto Batch on the branch's active open business day:
+     * 1. Post monthly profit for all active savings accounts.
+     * 2. Run LLP calculation and submit LLP Journal Voucher.
+     *
+     * @return array{savings_accounts_posted: int, llp_amount: float, llp_voucher_submitted: bool}
+     */
+    public function runMonthEndAutoBatch(int $branchId, string $businessDate, int $actorId): array
+    {
+        return DB::transaction(function () use ($branchId, $businessDate, $actorId) {
+            $openDay = BranchAccountingPeriod::query()
+                ->where('branch_id', $branchId)
+                ->where('kind', BranchAccountingPeriod::KIND_DAY)
+                ->where('period_date', $businessDate)
+                ->where('status', BranchAccountingPeriod::STATUS_OPEN)
+                ->first();
+
+            if (! $openDay) {
+                $this->reject('Month-End Auto Batch চালাতে বর্তমান কর্মদিবস খোলা (Day Open) থাকতে হবে।');
+            }
+
+            $profitCount = 0;
+            if (Schema::hasTable('savings_accounts')) {
+                $savingsService = app(SavingsLedgerService::class);
+                $accounts = SavingsAccount::query()
+                    ->where('branch_id', $branchId)
+                    ->where('status', SavingsAccount::STATUS_ACTIVE)
+                    ->where('balance_paisa', '>', 0)
+                    ->where('profit_rate', '>', 0)
+                    ->get();
+
+                foreach ($accounts as $acc) {
+                    if ($savingsService->postMonthlyProfit($acc->id, $businessDate, $actorId)) {
+                        $profitCount++;
+                    }
+                }
+            }
+
+            $llpProcess = $this->runLlpVoucherProcess($branchId, $businessDate, $actorId);
+            $llpSummary = $llpProcess->llp_summary ?? [];
+
+            return [
+                'savings_accounts_posted' => $profitCount,
+                'llp_amount' => (float) ($llpSummary['estimated_llp_amount'] ?? 0),
+                'llp_voucher_submitted' => (bool) ($llpSummary['voucher_submitted'] ?? false),
+            ];
         });
     }
 
@@ -649,12 +771,11 @@ class AccountingPeriodService
     /** @return array<int, array<string, mixed>> */
     public function getBranchMonitorList(?int $zoneId = null, ?int $areaId = null): array
     {
-        $branches = Branch::query()
+        $branches = Branch::operational()
             ->with('area.zone')
-            ->where('is_active', true)
             ->when($areaId, fn ($q) => $q->where('area_id', $areaId))
             ->when($zoneId, fn ($q) => $q->whereHas('area', fn ($aq) => $aq->where('zone_id', $zoneId)))
-            ->orderBy('name')
+            ->orderedByCode()
             ->get();
 
         $enrollments = BranchFinancialYear::query()
@@ -693,6 +814,7 @@ class AccountingPeriodService
                 'branch_id' => $branch->id,
                 'branch_name' => $branch->name,
                 'branch_code' => $branch->code,
+                'accounting_enabled' => (bool) ($branch->accounting_enabled ?? false),
                 'area_name' => $branch->area?->name,
                 'zone_name' => $branch->area?->zone?->name,
                 'initial_date' => $enrollment?->initial_date?->toDateString(),

@@ -187,7 +187,8 @@ class HeadOfficeLoanController extends Controller
                 COUNT(CASE WHEN status = '" . LoanApplication::STATUS_AWAITING_TAKEUP . "' THEN 1 END) as awaiting_takeup,
                 COUNT(CASE WHEN status = '" . LoanApplication::STATUS_PENDING_CANCELLATION . "' THEN 1 END) as pending_cancellation,
                 COUNT(CASE WHEN status = '" . LoanApplication::STATUS_PENDING_CANCELLATION . "' AND cancellation_from_status = '" . LoanApplication::STATUS_PENDING_HEAD_OFFICE . "' THEN 1 END) as ho_pending_cancellation,
-                COUNT(CASE WHEN status = 'disbursed' THEN 1 END) as disbursed
+                COUNT(CASE WHEN status = 'disbursed' THEN 1 END) as disbursed,
+                COUNT(CASE WHEN status = 'repaid' THEN 1 END) as repaid
             ")
             ->first();
 
@@ -205,6 +206,7 @@ class HeadOfficeLoanController extends Controller
             'pending_cancellation' => (int) ($rawStats->pending_cancellation ?? 0),
             'ho_pending_cancellation' => (int) ($rawStats->ho_pending_cancellation ?? 0),
             'disbursed' => (int) ($rawStats->disbursed ?? 0),
+            'repaid' => (int) ($rawStats->repaid ?? 0),
             'pending_my_approval' => $this->countPendingMyApproval($statsQuery, $user, 'loan'),
         ];
 
@@ -748,6 +750,15 @@ class HeadOfficeLoanController extends Controller
      */
     public function storeIssue(Request $request, LoanApplication $loanApplication)
     {
+        if (in_array($loanApplication->status, [
+            LoanApplication::STATUS_DISBURSED,
+            LoanApplication::STATUS_REPAID,
+            LoanApplication::STATUS_CANCELLED,
+            LoanApplication::STATUS_REJECTED,
+        ], true)) {
+            return back()->with('error', 'বিতরণকৃত, পরিশোধিত বা বাতিল ঋণে নতুন সমস্যা লিপিবদ্ধ করা যাবে না।');
+        }
+
         $validated = $request->validate([
             'issue_description' => 'required|string|max:2000',
         ]);
@@ -1096,6 +1107,14 @@ class HeadOfficeLoanController extends Controller
      */
     public function rejectSingle(Request $request, LoanApplication $loanApplication)
     {
+        if (in_array($loanApplication->status, [
+            LoanApplication::STATUS_DISBURSED,
+            LoanApplication::STATUS_REPAID,
+            LoanApplication::STATUS_CANCELLED,
+        ], true)) {
+            return back()->with('error', 'বিতরণকৃত, পরিশোধিত বা বাতিল ঋণ আবেদন প্রত্যাখ্যান করা যাবে না।');
+        }
+
         $validated = $request->validate([
             'rejection_reason' => 'required|string|max:2000',
         ]);
@@ -1146,6 +1165,7 @@ class HeadOfficeLoanController extends Controller
         if (in_array($loanApplication->status, [
             LoanApplication::STATUS_DRAFT,
             LoanApplication::STATUS_DISBURSED,
+            LoanApplication::STATUS_REPAID,
             LoanApplication::STATUS_CANCELLED,
         ], true)) {
             return back()->with('error', 'এই অবস্থার ঋণ আবেদনের অনুমোদন রিসেট করা যাবে না।');
@@ -1223,6 +1243,7 @@ class HeadOfficeLoanController extends Controller
         if (in_array($loanApplication->status, [
             LoanApplication::STATUS_DRAFT,
             LoanApplication::STATUS_DISBURSED,
+            LoanApplication::STATUS_REPAID,
             LoanApplication::STATUS_CANCELLED,
         ], true)) {
             return back()->with('error', 'এই অবস্থার ঋণ আবেদনের অনুমোদন রিসেট করা যাবে না।');

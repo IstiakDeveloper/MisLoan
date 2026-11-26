@@ -12,6 +12,7 @@ use App\Services\AccountingPeriodService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -23,6 +24,9 @@ class WorkProcessController extends Controller
     {
         $user = $request->user();
         $branchId = $this->resolveBranchId($request);
+        if (! $this->isHeadOfficeOrAdmin($user)) {
+            abort_unless($this->branchAccountingEnabled($branchId), 403, 'এই শাখায় এখনো একাউন্টিং ও Work Process চালু করা হয়নি।');
+        }
         $branch = $branchId ? Branch::query()->find($branchId, ['id', 'name', 'code']) : null;
 
         $dayState = $branchId ? $this->service->getBranchDayState($branchId) : null;
@@ -63,7 +67,7 @@ class WorkProcessController extends Controller
         return Inertia::render('Branch/WorkProcess', [
             'branch' => $branch,
             'branches' => $canSelectBranch
-                ? Branch::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'code'])
+                ? Branch::operational()->orderedByCode()->get(['id', 'name', 'code'])
                 : [],
             'canSelectBranch' => $canSelectBranch,
             'dayState' => $dayState,
@@ -90,6 +94,9 @@ class WorkProcessController extends Controller
 
         $branchId = $this->resolveBranchId($request, $data['branch_id'] ?? null);
         abort_unless($branchId, 422, 'শাখা নির্ধারিত নেই।');
+        if (! $this->isHeadOfficeOrAdmin($request->user())) {
+            abort_unless($this->branchAccountingEnabled($branchId), 403, 'এই শাখায় এখনো একাউন্টিং ও Work Process চালু করা হয়নি।');
+        }
 
         $period = $this->service->startWorkProcess(
             $branchId,
@@ -113,6 +120,9 @@ class WorkProcessController extends Controller
 
         $branchId = $this->resolveBranchId($request, $data['branch_id'] ?? null);
         abort_unless($branchId, 422, 'শাখা নির্ধারিত নেই।');
+        if (! $this->isHeadOfficeOrAdmin($request->user())) {
+            abort_unless($this->branchAccountingEnabled($branchId), 403, 'এই শাখায় এখনো একাউন্টিং ও Work Process চালু করা হয়নি।');
+        }
 
         $period = $this->service->completeWorkProcess(
             $branchId,
@@ -126,7 +136,7 @@ class WorkProcessController extends Controller
 
     public function runLlpProcess(Request $request): RedirectResponse
     {
-        abort_unless($this->canOperateProcess($request->user()), 403);
+        abort_unless($this->isHeadOfficeOrAdmin($request->user()), 403, 'LLP ও Monthly Process শুধুমাত্র Head Office থেকে পরিচালনা করা যায়।');
 
         $data = $request->validate([
             'branch_id' => 'nullable|exists:branches,id',
@@ -143,7 +153,7 @@ class WorkProcessController extends Controller
 
     public function runMonthlyProcess(Request $request): RedirectResponse
     {
-        abort_unless($this->canOperateProcess($request->user()), 403);
+        abort_unless($this->isHeadOfficeOrAdmin($request->user()), 403, 'LLP ও Monthly Process শুধুমাত্র Head Office থেকে পরিচালনা করা যায়।');
 
         $data = $request->validate([
             'branch_id' => 'nullable|exists:branches,id',
@@ -164,16 +174,36 @@ class WorkProcessController extends Controller
         return back()->with('success', $msg);
     }
 
+    public function runMonthEndAutoBatch(Request $request): RedirectResponse
+    {
+        abort_unless($this->isHeadOfficeOrAdmin($request->user()), 403, 'LLP ও Monthly Process শুধুমাত্র Head Office থেকে পরিচালনা করা যায়।');
+
+        $data = $request->validate([
+            'branch_id' => 'nullable|exists:branches,id',
+            'business_date' => 'required|date',
+        ]);
+
+        $branchId = $this->resolveBranchId($request, $data['branch_id'] ?? null);
+        abort_unless($branchId, 422, 'শাখা নির্ধারিত নেই।');
+
+        $res = $this->service->runMonthEndAutoBatch($branchId, $data['business_date'], (int) $request->user()->id);
+
+        return back()->with(
+            'success',
+            "Month-End Auto Batch সম্পন্ন: {$res['savings_accounts_posted']}টি সঞ্চয়ে মুনাফা পোস্ট ও LLP (৳{$res['llp_amount']}) প্রসেস হয়েছে।"
+        );
+    }
+
     private function resolveBranchId(Request $request, $requestedBranchId = null): ?int
     {
         $user = $request->user();
         if ($this->isHeadOfficeOrAdmin($user)) {
-            $candidate = $requestedBranchId ?: $request->integer('branch_id') ?: $user->branch_id;
+            $candidate = $requestedBranchId ?: $request->integer('branch_id');
             if ($candidate) {
                 return (int) $candidate;
             }
 
-            return Branch::query()->where('is_active', true)->orderBy('name')->value('id');
+            return Branch::resolveOperationalDefaultId($user->branch_id ? (int) $user->branch_id : null);
         }
 
         return $user->branch_id ? (int) $user->branch_id : null;
@@ -184,6 +214,19 @@ class WorkProcessController extends Controller
         $role = $user?->role?->name;
 
         return (bool) ($user?->has_all_access || in_array($role, [Role::SUPER_ADMIN, Role::HEAD_OFFICE], true));
+    }
+
+    private function branchAccountingEnabled(?int $branchId): bool
+    {
+        if (! $branchId) {
+            return false;
+        }
+
+        if (! Schema::hasColumn('branches', 'accounting_enabled')) {
+            return true;
+        }
+
+        return (bool) Branch::whereKey($branchId)->value('accounting_enabled');
     }
 
     private function canOperateProcess($user): bool

@@ -106,6 +106,16 @@ class NavBadgeService
         return $query->whereDoesntHave('issues', fn ($issues) => $issues->where('status', 'pending'))->count();
     }
 
+    /** @var string[] */
+    private const COMPLETED_LOAN_VERIFICATION_STATUSES = [
+        'approved',
+        'rejected',
+        'cancelled',
+        'pending_disbursement',
+        'disbursed',
+        'repaid',
+    ];
+
     private function verificationCount(User $user, ?string $roleName): int
     {
         $isHoApprover = (bool) $user->has_all_access
@@ -124,7 +134,7 @@ class NavBadgeService
                 ->count();
 
             $loans = LoanApplication::query()
-                ->whereNotIn('status', ['approved', 'rejected', 'cancelled', 'pending_disbursement', 'disbursed'])
+                ->whereNotIn('status', self::COMPLETED_LOAN_VERIFICATION_STATUSES)
                 ->whereHas('issues', fn ($issues) => $issues->whereNotNull('zm_approved_at'))
                 ->count();
 
@@ -145,7 +155,7 @@ class NavBadgeService
                 ->count();
 
             $loans = LoanApplication::query()
-                ->whereNotIn('status', ['approved', 'rejected', 'cancelled', 'pending_disbursement', 'disbursed'])
+                ->whereNotIn('status', self::COMPLETED_LOAN_VERIFICATION_STATUSES)
                 ->whereIn('branch_id', $branchScope)
                 ->where(function ($query) {
                     $query->whereHas('issues', fn ($issues) => $issues->where('status', 'pending')->whereNull('zm_approved_at'))
@@ -168,7 +178,7 @@ class NavBadgeService
             });
 
         $loans = LoanApplication::query()
-            ->whereNotIn('status', ['approved', 'rejected', 'cancelled', 'pending_disbursement', 'disbursed'])
+            ->whereNotIn('status', self::COMPLETED_LOAN_VERIFICATION_STATUSES)
             ->whereIn('branch_id', $branchScope)
             ->where(function ($query) {
                 $query->whereHas('issues', function ($issues) {
