@@ -42,7 +42,7 @@ class PreserveCycleLoanContext
             ];
             foreach ($formRoutes as $route => $form) {
                 if ($request->routeIs('member.loan-applications.forms.'.$route)) {
-                    return redirect()->route('member.cycle-hub.renewals.form', ['cycle' => $cycle->id, 'form' => $form, ...$request->only(['resume_approval_id', 'action', 'return', 'step'])]);
+                    return redirect()->route('member.cycle-hub.renewals.form', ['cycle' => $cycle->id, 'form' => $form, ...$request->only(['resume_approval_id', 'action', 'return', 'step', 'disburse_wizard'])]);
                 }
             }
 
@@ -59,10 +59,14 @@ class PreserveCycleLoanContext
             abort_if($request->routeIs('member.loan-applications.update-member-code', 'member.loan-applications.update-samity'), 422, 'নতুন দফায় সদস্য নম্বর ও সমিতি অপরিবর্তিত থাকবে।');
             if ($request->routeIs('member.loan-applications.forms.*') || $request->routeIs('member.loan-applications.submit')) {
                 abort_unless($request->integer('cycle_revision') === $cycle->revision, 409, 'এই দফার তথ্য বদলেছে। পেজ রিফ্রেশ করে আবার চেষ্টা করুন।');
-                try {
-                    app(CycleRenewalService::class)->assertLoanAvailable($cycle, $loan->loanProduct, (int) $loan->loan_category_id);
-                } catch (ValidationException $e) {
-                    abort(422, collect($e->errors())->flatten()->first());
+                $postApprovalDisburseSave = $request->routeIs('member.loan-applications.forms.*')
+                    && in_array($loan->status, [LoanApplication::STATUS_APPROVED, LoanApplication::STATUS_PENDING_DISBURSEMENT], true);
+                if (! $postApprovalDisburseSave) {
+                    try {
+                        app(CycleRenewalService::class)->assertLoanAvailable($cycle, $loan->loanProduct, (int) $loan->loan_category_id);
+                    } catch (ValidationException $e) {
+                        abort(422, collect($e->errors())->flatten()->first());
+                    }
                 }
             }
             if ($request->routeIs('member.loan-applications.forms.*')) {

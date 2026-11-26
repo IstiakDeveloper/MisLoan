@@ -112,6 +112,7 @@ interface Props {
     embedded?: boolean;
     afterSaveUrl?: string;
     saveButtonLabel?: string;
+    cycleRevision?: number | null;
 }
 
 function resolveBackUrl(
@@ -299,6 +300,7 @@ export default function GuarantorCommitment({
     afterSaveUrl,
     saveButtonLabel,
     isLegacy = false,
+    cycleRevision = null,
 }: Props) {
     if (onlyPreview) {
         return (
@@ -603,6 +605,10 @@ export default function GuarantorCommitment({
         };
         if (isLegacy) payload.legacy = 1; else payload.member_id = member?.id;
         if (existingApplication?.id) payload.application_id = existingApplication.id;
+        const resolvedCycleRevision = cycleRevision ?? existingApplication?.cycle_revision;
+        if (resolvedCycleRevision !== undefined && resolvedCycleRevision !== null) {
+            payload.cycle_revision = resolvedCycleRevision;
+        }
         if (inDisburseWizard) {
             payload.disburse_wizard = 1;
         }
@@ -627,7 +633,10 @@ export default function GuarantorCommitment({
                 },
                 onError: (errors) => {
                     console.error('Save draft error:', errors);
-                    alert('খসড়া সার্ভারে সেভ হয়নি — আপনার ফর্মের তথ্য হারায়নি। আবার চেষ্টা করুন।');
+                    const firstError = errors && typeof errors === 'object'
+                        ? Object.values(errors).flat().find((msg) => typeof msg === 'string' && msg.trim() !== '')
+                        : null;
+                    alert((firstError as string) || 'খসড়া সার্ভারে সেভ হয়নি — আপনার ফর্মের তথ্য হারায়নি। আবার চেষ্টা করুন।');
                 },
             }
         );

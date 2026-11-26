@@ -158,6 +158,8 @@ interface LoanApplication {
     cancellation_reason?: string | null;
     cancellation_approver_name?: string | null;
     can_request_cancellation?: boolean;
+    cycle_id?: number | null;
+    cycle_revision?: number | null;
     amount_change_approver_name?: string | null;
     final_approver?: {
         id?: number | null;
@@ -2281,6 +2283,7 @@ export default function Show({ application, routes, categories = [], can_update_
                                             <div className="p-3 sm:p-6 bg-slate-50/50">
                                                 <GuarantorCommitment
                                                     embedded
+                                                    cycleRevision={application.cycle_revision}
                                                     saveButtonLabel="সংরক্ষণ করুন"
                                                     afterSaveUrl={`/member/loan-applications/${application.id}?form=2`}
                                                     member={application.member_admission}
@@ -2296,6 +2299,7 @@ export default function Show({ application, routes, categories = [], can_update_
                                             <div className="p-3 sm:p-6 bg-slate-50/50">
                                                 <DeathRiskFund
                                                     embedded
+                                                    cycleRevision={application.cycle_revision}
                                                     saveButtonLabel="সংরক্ষণ করুন"
                                                     afterSaveUrl={`/member/loan-applications/${application.id}?form=3`}
                                                     member={application.member_admission}

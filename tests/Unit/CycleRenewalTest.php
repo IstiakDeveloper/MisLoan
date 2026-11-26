@@ -669,3 +669,70 @@ it('safely deletes a source loan that has linked member loan cycles without cons
 
     expect(LoanApplication::find($source->id))->toBeNull();
 });
+
+it('exposes cycle_revision on loan show and allows saving embedded disbursement forms after approval', function () {
+    if (! Schema::hasTable('loan_application_issues')) {
+        Schema::create('loan_application_issues', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('loan_application_id');
+            $table->unsignedBigInteger('reported_by')->nullable();
+            $table->text('issue_description')->nullable();
+            $table->string('status')->default('pending');
+            $table->text('response_message')->nullable();
+            $table->unsignedBigInteger('responded_by')->nullable();
+            $table->dateTime('responded_at')->nullable();
+            $table->dateTime('zm_approved_at')->nullable();
+            $table->unsignedBigInteger('zm_approved_by')->nullable();
+            $table->timestamps();
+        });
+    }
+
+    extract(renewalContext());
+
+    [$cycle] = app(CycleRenewalService::class)->start($member, $user);
+    $cycle = app(CycleRenewalService::class)->selectLoan($cycle, $product->id, $category->id, 10000, $cycle->revision);
+    $loan = $cycle->loan;
+    $loan->update(['status' => LoanApplication::STATUS_PENDING_DISBURSEMENT, 'approved_amount' => 10000]);
+    $cycle->update(['state' => 'submitted', 'open_member_id' => null]);
+
+    // 1. Show page exposes cycle_revision for embedded forms
+    $showResponse = $this->actingAs($user)->get('/member/loan-applications/'.$loan->id);
+    $showResponse->assertOk();
+    $props = $showResponse->viewData('page')['props'];
+    expect($props['application']['cycle_id'])->toBe($cycle->id)
+        ->and($props['application']['cycle_revision'])->toBe($cycle->revision);
+
+    // 2. Disburse wizard redirect preserves disburse_wizard=1
+    $this->actingAs($user)
+        ->get('/member/loan-applications/forms/death-risk-fund?application_id='.$loan->id.'&disburse_wizard=1')
+        ->assertRedirect(route('member.cycle-hub.renewals.form', [
+            'cycle' => $cycle->id,
+            'form' => 3,
+            'disburse_wizard' => '1',
+        ]));
+
+    // 3. Missing cycle_revision still returns 409, while valid cycle_revision saves cleanly
+    $this->actingAs($user)->post('/member/loan-applications/forms/death-risk-fund/save-draft', [
+        'member_id' => $cycle->admission_id,
+        'loan_product_id' => $product->id,
+        'loan_category_id' => $category->id,
+        'requested_amount' => 10000,
+        'application_id' => $loan->id,
+        'form_data' => ['guardian_name' => 'Test Guardian'],
+    ])->assertStatus(409);
+
+    $oldRevision = $cycle->revision;
+    $this->actingAs($user)->post('/member/loan-applications/forms/death-risk-fund/save-draft', [
+        'member_id' => $cycle->admission_id,
+        'loan_product_id' => $product->id,
+        'loan_category_id' => $category->id,
+        'requested_amount' => 10000,
+        'application_id' => $loan->id,
+        'cycle_revision' => $oldRevision,
+        'form_data' => ['guardian_name' => 'Test Guardian', 'component_name' => 'AGR'],
+    ])->assertRedirect();
+
+    expect($cycle->fresh()->revision)->toBe($oldRevision + 1)
+        ->and($loan->fresh()->nominee_info['_user_saved'] ?? false)->toBeTrue()
+        ->and($loan->fresh()->nominee_info['guardian_name'] ?? null)->toBe('Test Guardian');
+});

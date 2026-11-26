@@ -69,6 +69,7 @@ interface Props {
     afterSaveUrl?: string;
     saveButtonLabel?: string;
     isLegacy?: boolean;
+    cycleRevision?: number | null;
 }
 
 /** Check if Customer Welfare Fund (গ্রাহক কল্যান তহবিল) policy is effective (on or after 01/11/2026) */
@@ -530,6 +531,7 @@ export default function DeathRiskFund({
     afterSaveUrl,
     saveButtonLabel,
     isLegacy = false,
+    cycleRevision = null,
 }: Props) {
     if (onlyPreview) {
         return (
@@ -744,6 +746,10 @@ export default function DeathRiskFund({
         if (existingApplication?.id) {
             payload.application_id = existingApplication.id;
         }
+        const resolvedCycleRevision = cycleRevision ?? existingApplication?.cycle_revision;
+        if (resolvedCycleRevision !== undefined && resolvedCycleRevision !== null) {
+            payload.cycle_revision = resolvedCycleRevision;
+        }
         if (inDisburseWizard || thenDisburse) {
             payload.disburse_wizard = 1;
         }
@@ -770,7 +776,10 @@ export default function DeathRiskFund({
                 },
                 onError: (errors) => {
                     console.error('Save draft error:', errors);
-                    alert('খসড়া সার্ভারে সেভ হয়নি — আপনার ফর্মের তথ্য হারায়নি। আবার চেষ্টা করুন।');
+                    const firstError = errors && typeof errors === 'object'
+                        ? Object.values(errors).flat().find((msg) => typeof msg === 'string' && msg.trim() !== '')
+                        : null;
+                    alert((firstError as string) || 'খসড়া সার্ভারে সেভ হয়নি — আপনার ফর্মের তথ্য হারায়নি। আবার চেষ্টা করুন।');
                 },
             }
         );

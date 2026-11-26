@@ -89,7 +89,7 @@ export default function LoanForm({
                     এই দফার ফাইলে ফিরুন
                 </Link>
             </div>
-            <Form {...props} />
+            <Form {...props} cycleRevision={revision} />
         </>
     );
 }

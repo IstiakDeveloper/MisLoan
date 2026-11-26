@@ -1870,6 +1870,12 @@ class LoanApplicationController extends Controller
 
         $this->attachFormMeta($application, request()->user(), null, true);
 
+        $cycle = Schema::hasTable('member_loan_cycles')
+            ? MemberLoanCycle::where('loan_id', $application->id)->first(['id', 'revision'])
+            : null;
+        $application->setAttribute('cycle_id', $cycle?->id);
+        $application->setAttribute('cycle_revision', $cycle?->revision);
+
         $categories = LoanCategory::where('is_active', true)
             ->with(['loanProducts' => function ($query) {
                 $query->where('is_active', true)
