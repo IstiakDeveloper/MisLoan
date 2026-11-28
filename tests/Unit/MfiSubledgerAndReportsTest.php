@@ -2,6 +2,9 @@
 
 use App\Models\Area;
 use App\Models\Branch;
+use App\Models\BranchBankAccount;
+use App\Models\GlPostingDefault;
+use App\Models\LedgerAccount;
 use App\Models\LoanAccount;
 use App\Models\LoanProduct;
 use App\Models\MemberAdmission;
@@ -129,6 +132,7 @@ beforeEach(function () {
     (require database_path('migrations/2026_11_25_200000_create_cash_desk_tables.php'))->up();
     (require database_path('migrations/2026_11_25_210000_create_loan_subledger_tables.php'))->up();
     (require database_path('migrations/2026_11_25_220000_create_savings_subledger_tables.php'))->up();
+    (require database_path('migrations/2026_11_28_110000_create_branch_bank_accounts_and_disbursement_tracking.php'))->up();
 });
 
 function setupFullMfiContext(): array
@@ -235,4 +239,86 @@ it('handles loan disbursement, schedule, collection, correction, and savings led
 
     $exitCode = Artisan::call('finance:check-ledgers');
     expect($exitCode)->toBe(0);
+});
+
+it('disburses from branch-specific bank account and resolves branch gl posting overrides', function () {
+    ['branch' => $branch, 'member' => $member, 'loanProduct' => $loanProduct, 'maker' => $maker, 'ho' => $ho] = setupFullMfiContext();
+
+    $loanLedger = app(LoanLedgerService::class);
+    $defaults = app(PostingDefaults::class);
+
+    $bankLedger = LedgerAccount::create([
+        'code' => '1020-B1-1',
+        'name' => 'Sonali Bank (Branch 1)',
+        'type' => LedgerAccount::TYPE_ASSET,
+        'is_active' => true,
+    ]);
+
+    $branchBank = BranchBankAccount::create([
+        'branch_id' => $branch->id,
+        'ledger_account_id' => $bankLedger->id,
+        'bank_name' => 'Sonali Bank PLC',
+        'branch_name' => 'Mirpur Branch',
+        'account_number' => '0011223344',
+        'is_default' => true,
+        'is_active' => true,
+        'created_by' => $ho->id,
+    ]);
+
+    $branchCashLedger = LedgerAccount::create([
+        'code' => '1010-B1',
+        'name' => 'Cash in Hand (Branch 1)',
+        'type' => LedgerAccount::TYPE_ASSET,
+        'is_active' => true,
+    ]);
+    $defaults->setDefault(GlPostingDefault::SCOPE_BRANCH, $branch->id, 'cash_in_hand', $branchCashLedger->id, $ho->id);
+
+    expect($defaults->resolveAccountId('cash_in_hand', null, null, $branch->id))->toBe($branchCashLedger->id);
+
+    $bankLoan = $loanLedger->createAndDisburse(
+        $branch->id,
+        $member->id,
+        $loanProduct->id,
+        500_000,
+        20.0,
+        10,
+        'flat',
+        'weekly',
+        '2026-11-25',
+        '2026-12-02',
+        'bank',
+        $maker->id,
+        null,
+        $branchBank->id,
+        'CHQ-9988'
+    );
+
+    $bankTx = $bankLoan->transactions()->first();
+    expect($bankTx->payment_mode)->toBe('bank')
+        ->and($bankTx->branch_bank_account_id)->toBe($branchBank->id)
+        ->and($bankTx->bank_reference)->toBe('CHQ-9988');
+
+    $bankCreditLine = $bankTx->journalEntry->lines()->where('credit_paisa', '>', 0)->first();
+    expect($bankCreditLine->ledger_account_id)->toBe($bankLedger->id);
+
+    $cashLoan = $loanLedger->createAndDisburse(
+        $branch->id,
+        $member->id,
+        $loanProduct->id,
+        300_000,
+        20.0,
+        10,
+        'flat',
+        'weekly',
+        '2026-11-25',
+        '2026-12-02',
+        'cash',
+        $maker->id
+    );
+
+    $cashTx = $cashLoan->transactions()->first();
+    $cashCreditLine = $cashTx->journalEntry->lines()->where('credit_paisa', '>', 0)->first();
+    expect($cashTx->payment_mode)->toBe('cash')
+        ->and($cashTx->branch_bank_account_id)->toBeNull()
+        ->and($cashCreditLine->ledger_account_id)->toBe($branchCashLedger->id);
 });

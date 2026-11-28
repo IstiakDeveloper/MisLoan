@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Accounting;
 use App\Http\Controllers\Controller;
 use App\Models\AccountingVoucher;
 use App\Models\Branch;
+use App\Models\BranchBankAccount;
 use App\Models\JournalEntry;
 use App\Models\LedgerAccount;
 use App\Models\Role;
@@ -54,10 +55,30 @@ class AccountingController extends Controller
                 ->get()
             : collect();
 
+        $bankAccounts = $branchId
+            ? BranchBankAccount::query()
+                ->with('ledgerAccount:id,code,name')
+                ->where('branch_id', $branchId)
+                ->where('is_active', true)
+                ->orderByDesc('is_default')
+                ->orderBy('bank_name')
+                ->get(['id', 'branch_id', 'ledger_account_id', 'bank_name', 'account_number', 'is_default'])
+            : collect();
+
+        $cashLedgerAccountId = $this->postingDefaults->resolveAccountId('cash_in_hand', null, null, $branchId);
+        $bankLedgerAccountId = $this->postingDefaults->resolveAccountId('bank_account', null, null, $branchId);
+
+        $requestedTab = (string) $request->query('tab', 'vouchers');
+        $initialTab = in_array($requestedTab, ['vouchers', 'journals', 'coa'], true) ? $requestedTab : 'vouchers';
+
         return Inertia::render('Accounting/Index', [
             'accounts' => $accounts,
             'vouchers' => $vouchers,
             'journals' => $journals,
+            'bankAccounts' => $bankAccounts,
+            'cashLedgerAccountId' => $cashLedgerAccountId,
+            'bankLedgerAccountId' => $bankLedgerAccountId,
+            'initialTab' => $initialTab,
             'branch' => $branchId ? Branch::query()->find($branchId, ['id', 'name', 'code']) : null,
             'branches' => $canSelectBranch
                 ? Branch::operational()->orderedByCode()->get(['id', 'name', 'code'])
@@ -66,7 +87,57 @@ class AccountingController extends Controller
             'dayState' => $branchId ? $this->periods->getBranchDayState($branchId) : null,
             'canManageCoa' => $canSelectBranch,
             'canOperateVoucher' => $this->canOperateVoucher($user),
+            'isSuperAdmin' => $this->isSuperAdmin($user),
             'currentUserId' => (int) $user->id,
+        ]);
+    }
+
+    public function createVoucher(Request $request): Response
+    {
+        $user = $request->user();
+        abort_unless($this->canOperateVoucher($user), 403);
+
+        $branchId = $this->resolveBranchId($request);
+
+        return Inertia::render('Accounting/VoucherForm', [
+            'voucher' => null,
+            'accounts' => LedgerAccount::query()->where('is_active', true)->orderBy('code')->get(['id', 'code', 'name', 'type']),
+            'bankAccounts' => $branchId
+                ? BranchBankAccount::query()
+                    ->with('ledgerAccount:id,code,name')
+                    ->where('branch_id', $branchId)
+                    ->where('is_active', true)
+                    ->orderByDesc('is_default')
+                    ->orderBy('bank_name')
+                    ->get(['id', 'branch_id', 'ledger_account_id', 'bank_name', 'account_number', 'is_default'])
+                : collect(),
+            'cashLedgerAccountId' => $this->postingDefaults->resolveAccountId('cash_in_hand', null, null, $branchId),
+            'bankLedgerAccountId' => $this->postingDefaults->resolveAccountId('bank_account', null, null, $branchId),
+            'branch' => $branchId ? Branch::query()->find($branchId, ['id', 'name', 'code']) : null,
+            'dayState' => $branchId ? $this->periods->getBranchDayState($branchId) : null,
+        ]);
+    }
+
+    public function editVoucher(Request $request, AccountingVoucher $voucher): Response
+    {
+        abort_unless($this->isSuperAdmin($request->user()), 403, 'শুধুমাত্র Super Admin ভাউচার এডিট করতে পারবেন।');
+
+        $branchId = (int) $voucher->branch_id;
+
+        return Inertia::render('Accounting/VoucherForm', [
+            'voucher' => $voucher,
+            'accounts' => LedgerAccount::query()->where('is_active', true)->orderBy('code')->get(['id', 'code', 'name', 'type']),
+            'bankAccounts' => BranchBankAccount::query()
+                ->with('ledgerAccount:id,code,name')
+                ->where('branch_id', $branchId)
+                ->where('is_active', true)
+                ->orderByDesc('is_default')
+                ->orderBy('bank_name')
+                ->get(['id', 'branch_id', 'ledger_account_id', 'bank_name', 'account_number', 'is_default']),
+            'cashLedgerAccountId' => $this->postingDefaults->resolveAccountId('cash_in_hand', null, null, $branchId),
+            'bankLedgerAccountId' => $this->postingDefaults->resolveAccountId('bank_account', null, null, $branchId),
+            'branch' => Branch::query()->find($branchId, ['id', 'name', 'code']),
+            'dayState' => $this->periods->getBranchDayState($branchId),
         ]);
     }
 
@@ -134,7 +205,7 @@ class AccountingController extends Controller
             'credit_paisa' => filled($line['credit_amount'] ?? null) ? Money::toPaisa((string) $line['credit_amount']) : 0,
         ], $data['lines']);
 
-        $this->vouchers->submitVoucher(
+        $this->vouchers->submitDirectVoucher(
             $branchId,
             $data['kind'],
             $data['business_date'],
@@ -144,7 +215,48 @@ class AccountingController extends Controller
             (int) $request->user()->id
         );
 
-        return back()->with('success', 'ভাউচারটি অনুমোদনের জন্য (Pending) সাবমিট করা হয়েছে।');
+        return redirect('/accounting?tab=vouchers')->with('success', 'ভাউচারটি সফলভাবে সেভ ও জার্নাল পোস্ট করা হয়েছে।');
+    }
+
+    public function updateVoucher(Request $request, AccountingVoucher $voucher): RedirectResponse
+    {
+        abort_unless($this->isSuperAdmin($request->user()), 403, 'শুধুমাত্র Super Admin ভাউচার এডিট করতে পারবেন।');
+
+        $data = $request->validate([
+            'kind' => 'required|in:payment,receipt,journal,contra',
+            'business_date' => 'required|date',
+            'description' => 'required|string|min:3|max:1000',
+            'lines' => 'required|array|min:2',
+            'lines.*.ledger_account_id' => 'required|exists:ledger_accounts,id',
+            'lines.*.debit_amount' => 'nullable|string',
+            'lines.*.credit_amount' => 'nullable|string',
+        ]);
+
+        $lines = array_map(fn (array $line) => [
+            'ledger_account_id' => (int) $line['ledger_account_id'],
+            'debit_paisa' => filled($line['debit_amount'] ?? null) ? Money::toPaisa((string) $line['debit_amount']) : 0,
+            'credit_paisa' => filled($line['credit_amount'] ?? null) ? Money::toPaisa((string) $line['credit_amount']) : 0,
+        ], $data['lines']);
+
+        $this->vouchers->updateDirectVoucher(
+            $voucher->id,
+            $data['kind'],
+            $data['business_date'],
+            $data['description'],
+            $lines,
+            (int) $request->user()->id
+        );
+
+        return redirect('/accounting?tab=vouchers')->with('success', 'ভাউচারটি সফলভাবে আপডেট করা হয়েছে।');
+    }
+
+    public function destroyVoucher(Request $request, AccountingVoucher $voucher): RedirectResponse
+    {
+        abort_unless($this->isSuperAdmin($request->user()), 403, 'শুধুমাত্র Super Admin ভাউচার ডিলিট করতে পারবেন।');
+
+        $this->vouchers->deleteDirectVoucher($voucher->id);
+
+        return back()->with('success', 'ভাউচার ও সংশ্লিষ্ট জার্নাল এন্ট্রি মুছে ফেলা হয়েছে।');
     }
 
     public function approveVoucher(Request $request, AccountingVoucher $voucher): RedirectResponse
@@ -204,6 +316,11 @@ class AccountingController extends Controller
         $role = $user?->role?->name;
 
         return (bool) ($user?->has_all_access || in_array($role, [Role::SUPER_ADMIN, Role::HEAD_OFFICE], true));
+    }
+
+    private function isSuperAdmin($user): bool
+    {
+        return (bool) ($user?->has_all_access || $user?->role?->name === Role::SUPER_ADMIN);
     }
 
     private function canOperateVoucher($user): bool

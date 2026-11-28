@@ -9,11 +9,12 @@ import {
 } from '@/components/configuration';
 import { useCanMutate } from '@/hooks/use-can-mutate';
 import AdminLayout from '@/layouts/admin-layout';
-import { Head, router } from '@inertiajs/react';
+import { Head, Link, router } from '@inertiajs/react';
 import {
     Building2,
     Edit,
     FileText,
+    Landmark,
     Plus,
     Printer,
     RefreshCw,
@@ -577,6 +578,14 @@ export default function Index({ zones, areas, branches, hrmSyncEnabled }: Props)
                                             </td>
                                             <td className="px-6 py-4 text-right whitespace-nowrap">
                                                 <div className="flex items-center justify-end gap-1">
+                                                    <Link
+                                                        href={`/head-office/branch-account-setup?branch_id=${branch.id}`}
+                                                        className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-700 transition-colors hover:border-brand hover:bg-brand/5 hover:text-brand"
+                                                        title="Branch Account & Bank Setup"
+                                                    >
+                                                        <Landmark className="size-3.5" />
+                                                        Bank / Account
+                                                    </Link>
                                                     {canMutate ? (
                                                     <>
                                                     <button

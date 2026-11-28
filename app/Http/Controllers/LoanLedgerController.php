@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Branch;
+use App\Models\BranchBankAccount;
 use App\Models\LoanAccount;
 use App\Models\LoanCorrectionRequest;
 use App\Models\LoanProduct;
@@ -44,11 +45,20 @@ class LoanLedgerController extends Controller
 
         $transactions = $branchId
             ? LoanTransaction::query()
-                ->with(['loanAccount:id,account_no', 'creator:id,name'])
+                ->with(['loanAccount:id,account_no', 'branchBankAccount:id,bank_name,account_number', 'creator:id,name'])
                 ->where('branch_id', $branchId)
                 ->orderByDesc('id')
                 ->limit(50)
                 ->get()
+            : collect();
+
+        $bankAccounts = $branchId
+            ? BranchBankAccount::query()
+                ->where('branch_id', $branchId)
+                ->where('is_active', true)
+                ->orderByDesc('is_default')
+                ->orderBy('bank_name')
+                ->get(['id', 'bank_name', 'branch_name', 'account_number', 'is_default'])
             : collect();
 
         $corrections = $branchId
@@ -87,6 +97,7 @@ class LoanLedgerController extends Controller
             'dayState' => $dayState,
             'accounts' => $accounts,
             'transactions' => $transactions,
+            'bankAccounts' => $bankAccounts,
             'corrections' => $corrections,
             'members' => $members,
             'samities' => $samities,
@@ -114,6 +125,8 @@ class LoanLedgerController extends Controller
             'disbursed_date' => 'required|date',
             'first_due_date' => 'required|date',
             'payment_mode' => 'required|in:cash,bank',
+            'branch_bank_account_id' => 'nullable|exists:branch_bank_accounts,id',
+            'bank_reference' => 'nullable|string|max:100',
         ]);
 
         $branchId = $this->resolveBranchId($request, $data['branch_id'] ?? null);
@@ -131,7 +144,10 @@ class LoanLedgerController extends Controller
             $data['disbursed_date'],
             $data['first_due_date'],
             $data['payment_mode'],
-            (int) $request->user()->id
+            (int) $request->user()->id,
+            null,
+            isset($data['branch_bank_account_id']) ? (int) $data['branch_bank_account_id'] : null,
+            $data['bank_reference'] ?? null
         );
 
         return back()->with('success', "লোন অ্যাকাউন্ট {$account->account_no} ডিসবার্স ও শিডিউল তৈরি হয়েছে।");

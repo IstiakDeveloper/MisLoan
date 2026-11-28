@@ -27,6 +27,8 @@ class LoanTransaction extends Model
         'service_charge_paisa',
         'total_paisa',
         'payment_mode',
+        'branch_bank_account_id',
+        'bank_reference',
         'idempotency_key',
         'journal_entry_id',
         'reversal_of_id',
@@ -56,5 +58,10 @@ class LoanTransaction extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function branchBankAccount(): BelongsTo
+    {
+        return $this->belongsTo(BranchBankAccount::class);
     }
 }

@@ -13,6 +13,8 @@ class GlPostingDefault extends Model
 
     public const SCOPE_SAVINGS_PRODUCT = 'savings_product';
 
+    public const SCOPE_BRANCH = 'branch';
+
     protected $fillable = [
         'scope',
         'product_id',

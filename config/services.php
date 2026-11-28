@@ -45,4 +45,25 @@ return [
         'token' => env('HRM_API_TOKEN'),
     ],
 
+    'gemini' => [
+        'api_key' => env('GEMINI_API_KEY'),
+        'model' => env('GEMINI_OCR_MODEL', 'gemini-3.8-flash'),
+    ],
+
+    'groq' => [
+        'api_key' => env('GROQ_API_KEY'),
+        'model' => env('GROQ_OCR_MODEL', 'meta-llama/llama-4-scout-17b-16e-instruct'),
+    ],
+
+    'openrouter' => [
+        'api_key' => env('OPENROUTER_API_KEY'),
+        'model' => env('OPENROUTER_OCR_MODEL', 'google/gemma-4-31b-it:free'),
+    ],
+
+    'nid_ocr' => [
+        'url' => env('NID_OCR_URL', 'http://127.0.0.1:8001'),
+        'token' => env('NID_OCR_TOKEN'),
+        'timeout' => (int) env('NID_OCR_TIMEOUT', 30),
+    ],
+
 ];

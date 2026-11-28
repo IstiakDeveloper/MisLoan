@@ -1,7 +1,8 @@
-import { Head, router, useForm } from '@inertiajs/react';
+import { Head, Link, router, useForm } from '@inertiajs/react';
 import {
     BookOpen,
     CheckCircle2,
+    Edit,
     FilePlus2,
     Layers,
     Plus,
@@ -9,7 +10,7 @@ import {
     Trash2,
     XCircle,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ComboSelect } from '@/components/ComboSelect';
 import AdminLayout from '@/layouts/admin-layout';
 import { formatDate } from '@/utils/dateUtils';
@@ -80,6 +81,8 @@ interface Props {
     dayState: DayState | null;
     canManageCoa: boolean;
     canOperateVoucher: boolean;
+    isSuperAdmin?: boolean;
+    initialTab?: 'vouchers' | 'journals' | 'coa';
     currentUserId: number;
 }
 
@@ -100,11 +103,17 @@ export default function AccountingIndex({
     dayState,
     canManageCoa,
     canOperateVoucher,
+    isSuperAdmin = false,
+    initialTab = 'vouchers',
     currentUserId,
 }: Props) {
-    const [tab, setTab] = useState<'vouchers' | 'journals' | 'coa'>('vouchers');
+    const [tab, setTab] = useState<'vouchers' | 'journals' | 'coa'>(initialTab);
     const [rejectVoucherId, setRejectVoucherId] = useState<number | null>(null);
     const [rejectReason, setRejectReason] = useState('');
+
+    useEffect(() => {
+        setTab(initialTab);
+    }, [initialTab]);
 
     const activeAccounts = useMemo(() => accounts.filter((a) => a.is_active), [accounts]);
     const accountMap = useMemo(() => new Map(accounts.map((a) => [a.id, a])), [accounts]);
@@ -231,152 +240,21 @@ export default function AccountingIndex({
 
                 {tab === 'vouchers' && (
                     <div className="space-y-5">
-                        {canOperateVoucher && (
-                            <form
-                                onSubmit={(e) => {
-                                    e.preventDefault();
-                                    voucherForm.post('/accounting/vouchers', {
-                                        onSuccess: () => voucherForm.reset('description'),
-                                    });
-                                }}
-                                className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-xs"
-                            >
-                                <div className="flex items-center justify-between">
-                                    <h2 className="text-sm font-bold text-slate-900">নতুন ভাউচার তৈরি (Voucher Entry)</h2>
-                                    <span className="text-xs font-semibold text-slate-500">
-                                        Debit: ৳{totals.debit} | Credit: ৳{totals.credit}
-                                    </span>
-                                </div>
-
-                                <div className="grid gap-3 md:grid-cols-3">
-                                    <div>
-                                        <label className="mb-1 block text-xs font-semibold text-slate-700">Voucher Type</label>
-                                        <ComboSelect
-                                            size="sm"
-                                            clearable={false}
-                                            value={voucherForm.data.kind}
-                                            onChange={(val) => voucherForm.setData('kind', val ?? 'payment')}
-                                            items={[
-                                                { value: 'payment', label: 'Payment Voucher' },
-                                                { value: 'receipt', label: 'Receipt Voucher' },
-                                                { value: 'journal', label: 'Journal Voucher' },
-                                                { value: 'contra', label: 'Contra Voucher' },
-                                            ]}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="mb-1 block text-xs font-semibold text-slate-700">Business Date</label>
-                                        <input
-                                            type="date"
-                                            value={voucherForm.data.business_date}
-                                            onChange={(e) => voucherForm.setData('business_date', e.target.value)}
-                                            className="w-full rounded-xl border border-slate-200 px-3 py-1.5 text-xs"
-                                            required
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="mb-1 block text-xs font-semibold text-slate-700">Description / বিবরণ</label>
-                                        <input
-                                            type="text"
-                                            value={voucherForm.data.description}
-                                            onChange={(e) => voucherForm.setData('description', e.target.value)}
-                                            placeholder="ভাউচারের বিবরণ লিখুন"
-                                            className="w-full rounded-xl border border-slate-200 px-3 py-1.5 text-xs"
-                                            required
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="space-y-2">
-                                    {voucherForm.data.lines.map((line, idx) => (
-                                        <div key={idx} className="grid items-center gap-2 md:grid-cols-12">
-                                            <div className="md:col-span-6">
-                                                <ComboSelect
-                                                    size="sm"
-                                                    value={line.ledger_account_id ? Number(line.ledger_account_id) : null}
-                                                    onChange={(val) => updateLine(idx, 'ledger_account_id', val ?? '')}
-                                                    items={activeAccounts.map((a) => ({
-                                                        value: a.id,
-                                                        label: `${a.code} — ${a.name} (${a.type})`,
-                                                        keywords: `${a.code} ${a.name} ${a.type}`,
-                                                    }))}
-                                                    placeholder="লেজার অ্যাকাউন্ট নির্বাচন করুন"
-                                                />
-                                            </div>
-                                            <div className="md:col-span-2">
-                                                <input
-                                                    type="text"
-                                                    value={line.debit_amount}
-                                                    onChange={(e) => updateLine(idx, 'debit_amount', e.target.value)}
-                                                    placeholder="Debit (৳)"
-                                                    className="w-full rounded-xl border border-slate-200 px-3 py-1.5 text-xs"
-                                                />
-                                            </div>
-                                            <div className="md:col-span-2">
-                                                <input
-                                                    type="text"
-                                                    value={line.credit_amount}
-                                                    onChange={(e) => updateLine(idx, 'credit_amount', e.target.value)}
-                                                    placeholder="Credit (৳)"
-                                                    className="w-full rounded-xl border border-slate-200 px-3 py-1.5 text-xs"
-                                                />
-                                            </div>
-                                            <div className="flex justify-end md:col-span-2">
-                                                {voucherForm.data.lines.length > 2 && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() =>
-                                                            voucherForm.setData(
-                                                                'lines',
-                                                                voucherForm.data.lines.filter((_, i) => i !== idx),
-                                                            )
-                                                        }
-                                                        className="rounded-lg p-1.5 text-rose-500 hover:bg-rose-50"
-                                                    >
-                                                        <Trash2 className="h-3.5 w-3.5" />
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-
-                                {(voucherForm.errors.accounting || voucherForm.errors.voucher) && (
-                                    <p className="text-xs font-medium text-rose-600">
-                                        {voucherForm.errors.accounting || voucherForm.errors.voucher}
-                                    </p>
-                                )}
-
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() =>
-                                            voucherForm.setData('lines', [
-                                                ...voucherForm.data.lines,
-                                                { ledger_account_id: '', debit_amount: '', credit_amount: '' },
-                                            ])
-                                        }
-                                        className="inline-flex items-center gap-1 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
+                            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600">
+                                    Voucher List
+                                </h3>
+                                {canOperateVoucher && (
+                                    <Link
+                                        href="/accounting/vouchers/create"
+                                        className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-3.5 py-1.5 text-xs font-bold text-white hover:bg-brand-dark"
                                     >
                                         <Plus className="h-3.5 w-3.5" />
-                                        Add Line
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        disabled={!totals.balanced || voucherForm.processing}
-                                        className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-4 py-2 text-xs font-bold text-white hover:bg-brand-dark disabled:opacity-50"
-                                    >
-                                        <FilePlus2 className="h-3.5 w-3.5" />
-                                        Submit Voucher
-                                    </button>
-                                </div>
-                            </form>
-                        )}
-
-                        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
-                            <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-600">
-                                সাম্প্রতিক ভাউচারসমূহ (Voucher Queue)
-                            </h3>
+                                        Add New
+                                    </Link>
+                                )}
+                            </div>
                             <div className="overflow-x-auto">
                                 <table className="w-full text-left text-xs">
                                     <thead>
@@ -384,21 +262,25 @@ export default function AccountingIndex({
                                             <th className="py-2">তারিখ</th>
                                             <th className="py-2">ধরন</th>
                                             <th className="py-2">বিবরণ ও লাইন</th>
+                                            <th className="py-2 text-right">Debit (৳)</th>
+                                            <th className="py-2 text-right">Credit (৳)</th>
                                             <th className="py-2">প্রস্তুতকারী</th>
                                             <th className="py-2">স্ট্যাটাস</th>
-                                            <th className="py-2">Action</th>
+                                            <th className="py-2 text-right">Action</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {vouchers.length === 0 ? (
                                             <tr>
-                                                <td colSpan={6} className="py-6 text-center text-slate-400">
+                                                <td colSpan={8} className="py-6 text-center text-slate-400">
                                                     কোনো ভাউচার পাওয়া যায়নি
                                                 </td>
                                             </tr>
                                         ) : (
                                             vouchers.map((v) => {
                                                 const isOwn = v.requested_by === currentUserId;
+                                                const totalDr = v.lines.reduce((s, l) => s + Number(l.debit_paisa || 0), 0);
+                                                const totalCr = v.lines.reduce((s, l) => s + Number(l.credit_paisa || 0), 0);
                                                 return (
                                                     <tr key={v.id} className="border-b border-slate-50 align-top">
                                                         <td className="py-2.5 font-semibold text-slate-800">
@@ -421,6 +303,12 @@ export default function AccountingIndex({
                                                                 })}
                                                             </div>
                                                         </td>
+                                                        <td className="py-2.5 text-right font-semibold text-slate-800">
+                                                            {formatPaisa(totalDr)}
+                                                        </td>
+                                                        <td className="py-2.5 text-right font-semibold text-slate-800">
+                                                            {formatPaisa(totalCr)}
+                                                        </td>
                                                         <td className="py-2.5 text-slate-600">{v.requester?.name ?? '-'}</td>
                                                         <td className="py-2.5">
                                                             <span
@@ -435,8 +323,34 @@ export default function AccountingIndex({
                                                                 {v.status}
                                                             </span>
                                                         </td>
-                                                        <td className="py-2.5">
-                                                            {v.status === 'pending' && canOperateVoucher && !isOwn && (
+                                                        <td className="py-2.5 text-right">
+                                                            <div className="flex flex-wrap items-center justify-end gap-1.5">
+                                                                {isSuperAdmin && (
+                                                                    <>
+                                                                        <Link
+                                                                            href={`/accounting/vouchers/${v.id}/edit`}
+                                                                            className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2 py-1 text-[11px] font-bold text-blue-700 hover:bg-blue-100"
+                                                                            title="Edit Voucher"
+                                                                        >
+                                                                            <Edit className="h-3 w-3" />
+                                                                            Edit
+                                                                        </Link>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => {
+                                                                                if (window.confirm('এই ভাউচার ও সংশ্লিষ্ট জার্নাল ডিলিট করবেন?')) {
+                                                                                    router.delete(`/accounting/vouchers/${v.id}`);
+                                                                                }
+                                                                            }}
+                                                                            className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-bold text-rose-700 hover:bg-rose-100"
+                                                                            title="Delete Voucher"
+                                                                        >
+                                                                            <Trash2 className="h-3 w-3" />
+                                                                            Delete
+                                                                        </button>
+                                                                    </>
+                                                                )}
+                                                                {v.status === 'pending' && canOperateVoucher && !isOwn && (
                                                                 <div className="flex flex-wrap gap-1.5">
                                                                     <button
                                                                         type="button"
@@ -489,6 +403,7 @@ export default function AccountingIndex({
                                                             {v.status === 'pending' && isOwn && (
                                                                 <span className="text-[10px] text-slate-400">অন্যের অনুমোদন প্রয়োজন</span>
                                                             )}
+                                                            </div>
                                                         </td>
                                                     </tr>
                                                 );

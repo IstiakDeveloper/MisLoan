@@ -12,6 +12,7 @@ import {
     ChevronRight,
     LogOut,
     User,
+    Check,
     CheckCircle,
     XCircle,
     AlertCircle,
@@ -31,6 +32,8 @@ import {
     CircleUser,
     Coins,
     FileCheck,
+    FilePlus2,
+    FileText,
     Mail,
     SearchCheck,
     ExternalLink,
@@ -74,11 +77,34 @@ interface Flash {
     info?: string;
 }
 
+interface OfficeBranchNode {
+    id: number;
+    code?: string | null;
+    name: string;
+}
+
+interface OfficeAreaNode {
+    id: number;
+    code?: string | null;
+    name: string;
+    branches: OfficeBranchNode[];
+}
+
+interface OfficeZoneNode {
+    id: number;
+    code?: string | null;
+    name: string;
+    areas: OfficeAreaNode[];
+}
+
 interface PageProps extends Record<string, unknown> {
     auth: { user: User };
     flash: Flash;
     siteMaintenance?: boolean;
     unreadSubmissionsCount?: number;
+    canSwitchOffice?: boolean;
+    activeOffice?: OfficeBranchNode | null;
+    officeTree?: OfficeZoneNode[];
     activeBusinessDay?: {
         has_open_day: boolean;
         business_date: string | null;
@@ -133,11 +159,29 @@ const APPROVER_LOAN_REPORT_HREF = '/head-office/reports/approver-loan-approvals'
 const BRANCH_LOAN_PENDING_REPORT_HREF = '/reports/branch-loan-pending';
 const APP_REGISTRATION_REPORT_HREF = '/reports/app-registrations';
 
-function isNavItemActive(currentPath: string, href: string): boolean {
-    if (currentPath === href) return true;
-    if (href === '/dashboard') return false;
-    if (!currentPath.startsWith(`${href}/`)) return false;
-    if (href === '/head-office/team-based-approvals' && REPORT_PATHS.some((p) => currentPath.startsWith(p))) {
+function isNavItemActive(currentUrl: string, href: string): boolean {
+    const cur = new URL(currentUrl || '/', 'http://localhost');
+    const target = new URL(href, 'http://localhost');
+    const currentPath = cur.pathname;
+    const hrefPath = target.pathname;
+
+    if (target.search) {
+        if (href === '/accounting?tab=vouchers' && currentPath.startsWith('/accounting/vouchers')) {
+            return true;
+        }
+        if (currentPath !== hrefPath) return false;
+        const targetTab = target.searchParams.get('tab');
+        if (targetTab) {
+            const currentTab = cur.searchParams.get('tab') || (hrefPath === '/accounting' ? 'vouchers' : '');
+            return currentTab === targetTab;
+        }
+        return cur.search === target.search;
+    }
+
+    if (currentPath === hrefPath) return true;
+    if (hrefPath === '/dashboard') return false;
+    if (!currentPath.startsWith(`${hrefPath}/`)) return false;
+    if (hrefPath === '/head-office/team-based-approvals' && REPORT_PATHS.some((p) => currentPath.startsWith(p))) {
         return false;
     }
     return true;
@@ -156,6 +200,7 @@ function getPageTitle(currentPath: string): string {
     if (currentPath.includes('/cso-duty-roster')) return 'CSO Duty Roster';
     if (currentPath.includes('/send-cutoff')) return 'Send Deadline';
     if (currentPath.includes('/accounting-periods')) return 'Accounting Periods & Day Initial';
+    if (currentPath.includes('/branch-account-setup')) return 'Branch Account & Bank Setup';
     if (currentPath.includes('/posting-defaults')) return 'GL Posting Defaults';
     if (currentPath.includes('/accounting')) return 'Accounting & Vouchers';
     if (currentPath.includes('/cash-desk')) return 'Cash Desk & Bank Reconciliation';
@@ -165,6 +210,7 @@ function getPageTitle(currentPath: string): string {
     if (currentPath.includes('/legacy-import')) return 'Legacy Opening Balance Import';
     if (currentPath.includes('/branch/process')) return 'Work Process (Day Open / Close)';
     if (currentPath.includes('/loan-workflow-settings')) return 'Loan Workflow & Rules (ঋণ অনুমোদন ও ফরম)';
+    if (currentPath.includes('/nid-ocr-settings')) return 'NID OCR Settings (স্ক্যানার ও সার্ভার)';
     if (currentPath.includes('/cluster-handover')) return 'Cluster Handover';
     if (currentPath.includes('/recent-deletions')) return 'Recent Deletions (মুছে ফেলা ডাটা)';
     if (currentPath.includes('/member-admissions') || currentPath.includes('/admission-members')) return 'Member Admissions';
@@ -195,16 +241,29 @@ function getPageTitle(currentPath: string): string {
 
 export default function AdminLayout({ children }: AdminLayoutProps) {
     const page = usePage<PageProps>();
-    const { auth, flash, siteMaintenance = false, activeBusinessDay = null, badgeCounts = {} } = page.props;
+    const {
+        auth,
+        flash,
+        siteMaintenance = false,
+        activeBusinessDay = null,
+        badgeCounts = {},
+        canSwitchOffice = false,
+        activeOffice = null,
+        officeTree = [],
+    } = page.props;
     const userAvatarSrc = auth.user?.avatar || (auth.user?.profile_photo ? `/storage/${auth.user.profile_photo}` : null);
     const hasMailIssue = !isGmailAddress(auth.user?.email);
-    const path = (() => {
+    const { path, currentUrl } = useMemo(() => {
         try {
-            return new URL(page.url).pathname;
+            const u = new URL(page.url, 'http://localhost');
+            return { path: u.pathname, currentUrl: `${u.pathname}${u.search}` };
         } catch {
-            return typeof window !== 'undefined' ? window.location.pathname : '';
+            if (typeof window !== 'undefined') {
+                return { path: window.location.pathname, currentUrl: `${window.location.pathname}${window.location.search}` };
+            }
+            return { path: '', currentUrl: '' };
         }
-    })();
+    }, [page.url]);
     const isOnProfilePage = path === '/profile' || path.startsWith('/profile/');
     const isMobile = useIsMobile();
     const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
@@ -213,6 +272,37 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     const [flashMessage, setFlashMessage] = useState<{ type: string; message: string } | null>(null);
     const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
     const [navSearch, setNavSearch] = useState('');
+    const [officeModalOpen, setOfficeModalOpen] = useState(false);
+    const [officeSearch, setOfficeSearch] = useState('');
+    const [expandedZones, setExpandedZones] = useState<Record<number, boolean>>({});
+    const [expandedAreas, setExpandedAreas] = useState<Record<number, boolean>>({});
+    const [pendingOfficeId, setPendingOfficeId] = useState<number | null>(activeOffice?.id ?? null);
+    const [switchingOffice, setSwitchingOffice] = useState(false);
+
+    const openOfficeModal = () => {
+        setPendingOfficeId(activeOffice?.id ?? null);
+        setOfficeSearch('');
+        setOfficeModalOpen(true);
+    };
+
+    const handleConfirmOffice = () => {
+        setSwitchingOffice(true);
+        router.post(
+            '/head-office/active-branch',
+            { branch_id: pendingOfficeId },
+            {
+                preserveState: false,
+                onFinish: () => {
+                    setSwitchingOffice(false);
+                    setOfficeModalOpen(false);
+                },
+            },
+        );
+    };
+
+    useEffect(() => {
+        setOpenMenus({});
+    }, [currentUrl]);
 
     // Close user dropdown on outside click
     useEffect(() => {
@@ -384,20 +474,27 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         { name: 'Send Deadline (Cutoff)', href: '/head-office/send-cutoff', icon: Clock },
     ];
 
-    const microfinanceLedgersSubItems: SidebarNavItem[] = [
+    const transactionsAndLedgersSubItems: SidebarNavItem[] = [
         { name: 'Loan Ledger & DCS', href: '/loan-ledger', icon: Banknote },
         { name: 'Savings Ledger & Profit', href: '/savings-ledger', icon: PiggyBank },
+        { name: 'Cash Desk & Bank Recon', href: '/cash-desk', icon: Wallet },
     ];
 
-    const cashAndGeneralLedgerSubItems: SidebarNavItem[] = [
-        { name: 'Cash Desk & Bank Recon', href: '/cash-desk', icon: Wallet },
-        { name: 'Accounting & Vouchers', href: '/accounting', icon: Receipt },
+    const accountsAisSubItems: SidebarNavItem[] = [
+        { name: 'Voucher Entries', href: '/accounting?tab=vouchers', icon: FilePlus2 },
+        { name: 'Journal Register', href: '/accounting?tab=journals', icon: Receipt },
+        { name: 'Reconcile Entries', href: '/cash-desk', icon: Wallet },
+        { name: 'Budget', href: '/accounting/budgets', icon: Coins },
+        { name: 'Note Entries', href: '/accounting/notes', icon: FileText },
+        { name: 'Chart of Accounts (COA)', href: '/accounting?tab=coa', icon: ListTree },
+        { name: 'Target Achievement', href: '/accounting/targets', icon: BarChart3 },
         { name: 'GL Posting Defaults', href: '/head-office/posting-defaults', icon: SlidersHorizontal },
         { name: 'Legacy Balance Import', href: '/head-office/legacy-import', icon: FileSpreadsheet },
     ];
 
     const productsAndRulesSubItems: SidebarSubItem[] = [
         { name: 'Loan Workflow & Rules', href: '/head-office/loan-workflow-settings', icon: SlidersHorizontal },
+        { name: 'NID OCR Settings', href: '/head-office/nid-ocr-settings', icon: SlidersHorizontal },
         { name: 'Loan Categories', href: '/loan-categories', icon: ListTree },
         { name: 'Loan Products', href: '/loan-products', icon: Coins },
         { name: 'Savings Categories', href: '/savings-categories', icon: ListTree },
@@ -406,6 +503,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
     const organizationAndFieldSubItems: SidebarSubItem[] = [
         { name: 'Organizations', href: '/organizations', icon: Landmark },
+        { name: 'Branch Account & Bank', href: '/head-office/branch-account-setup', icon: Wallet },
         { name: 'Samities', href: '/samities', icon: Building2 },
         { name: 'Member Categories', href: '/member-categories', icon: Users },
         { name: 'CSO Duty Roster', href: '/head-office/cso-duty-roster', icon: CalendarDays },
@@ -484,7 +582,10 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                     misItems.push({
                         name: 'Collection & Savings',
                         icon: Banknote,
-                        children: microfinanceLedgersSubItems,
+                        children: [
+                            { name: 'Loan Ledger & DCS', href: '/loan-ledger', icon: Banknote },
+                            { name: 'Savings Ledger & Profit', href: '/savings-ledger', icon: PiggyBank },
+                        ],
                     });
                 } else {
                     misItems.push(
@@ -586,25 +687,12 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
         return [
             {
-                title: 'Overview',
-                items: [{ name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard }],
-            },
-            {
-                title: 'Process & Control',
+                title: 'Operations',
                 items: [
+                    { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
                     {
-                        name: 'Period & Work Process',
-                        icon: CalendarDays,
-                        children: periodAndWorkProcessSubItems,
-                    },
-                ],
-            },
-            {
-                title: 'Member, Loan & Approvals',
-                items: [
-                    {
-                        name: 'Member & Origination',
-                        icon: Banknote,
+                        name: 'Members & Origination',
+                        icon: UserPlus,
                         badge: memberLoanItems.reduce((sum, i) => sum + (i.badge || 0), 0),
                         children: memberLoanItems,
                     },
@@ -614,26 +702,32 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                         badge: approvalAndFinesItems.reduce((sum, i) => sum + (i.badge || 0), 0),
                         children: approvalAndFinesItems,
                     },
-                ],
-            },
-            {
-                title: 'Microfinance Ledgers (MIS)',
-                items: [
                     {
-                        name: 'Loan & Savings Ledger',
-                        icon: PiggyBank,
-                        children: microfinanceLedgersSubItems,
+                        name: 'Transactions & Ledgers',
+                        icon: Banknote,
+                        children: transactionsAndLedgersSubItems,
                     },
                 ],
             },
             {
-                title: 'Accounting (AIS)',
+                title: 'Accounting & Process',
                 items: [
                     {
-                        name: 'Cash & General Ledger',
+                        name: 'Accounts (AIS)',
                         icon: Receipt,
-                        children: cashAndGeneralLedgerSubItems,
+                        children: accountsAisSubItems,
                     },
+                    {
+                        name: 'Process & Control',
+                        icon: CalendarDays,
+                        children: periodAndWorkProcessSubItems,
+                    },
+                ],
+            },
+            {
+                title: 'Settings',
+                items: [
+                    { name: 'Settings', href: '/head-office/nid-ocr-settings', icon: Settings },
                 ],
             },
         ];
@@ -802,20 +896,28 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                         ...menuGroups,
                         ...(showReportSection
                             ? [{
-                                title: 'Reports & Analytics',
-                                items: [
-                                    ...(!isBranchRole ? [{ name: 'Financial & Portfolio', icon: BarChart3, children: financialPortfolioReportItems }] : []),
-                                    { name: 'MIS & Approval Reports', icon: FileSpreadsheet, children: misApprovalReportItems },
-                                ],
+                                title: 'Reports',
+                                items: (isSuperAdmin || isHeadOfficeRole)
+                                    ? [
+                                        {
+                                            name: 'Reports & Analytics',
+                                            icon: BarChart3,
+                                            children: [...financialPortfolioReportItems, ...misApprovalReportItems],
+                                        },
+                                    ]
+                                    : [
+                                        ...(!isBranchRole ? [{ name: 'Financial & Portfolio', icon: BarChart3, children: financialPortfolioReportItems }] : []),
+                                        { name: 'MIS & Approval Reports', icon: FileSpreadsheet, children: misApprovalReportItems },
+                                    ],
                             }]
                             : []),
                         ...(showConfigurationSection
                             ? [{
                                 title: 'Configuration',
                                 items: [
+                                    { name: 'Setup & Offices', icon: Landmark, children: organizationAndFieldSubItems },
                                     { name: 'Products & Rules', icon: Coins, children: productsAndRulesSubItems },
-                                    { name: 'Organization & Field', icon: Landmark, children: organizationAndFieldSubItems },
-                                    { name: 'Users & Security', icon: Shield, children: usersAndSecuritySubItems },
+                                    { name: 'Security & Users', icon: Shield, children: usersAndSecuritySubItems },
                                 ],
                             }]
                             : []),
@@ -842,46 +944,84 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                         })
                         .filter((group) => group.items.length > 0)
                         .map((group) => {
-                        const renderNavItem = (item: SidebarNavItem, depth = 0) => {
-                            const menuKey = `${group.title}:${depth}:${item.name}`;
-                            if (item.children && item.children.length > 0) {
-                                const hasActiveChild = hasActiveDescendant(item, path);
-                                const isSearching = navSearch.trim().length > 0;
-                                const isOpen = isSearching || (openMenus[menuKey] ?? hasActiveChild);
-                                const badge = item.badge;
+                            const renderNavItem = (item: SidebarNavItem, depth = 0) => {
+                                const menuKey = `${group.title}:${depth}:${item.name}`;
+                                if (item.children && item.children.length > 0) {
+                                    const hasActiveChild = hasActiveDescendant(item, currentUrl);
+                                    const isSearching = navSearch.trim().length > 0;
+                                    const isOpen = isSearching || (openMenus[menuKey] ?? hasActiveChild);
+                                    const badge = item.badge;
 
+                                    return (
+                                        <li key={menuKey} className="space-y-0.5">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    if (!sidebarOpen) {
+                                                        setSidebarOpen(true);
+                                                        setOpenMenus({ [menuKey]: true });
+                                                        return;
+                                                    }
+                                                    setOpenMenus(() => ({ [menuKey]: !isOpen }));
+                                                }}
+                                                className={`group relative flex w-full items-center justify-between gap-2 rounded-xl transition-all duration-200 ${depth === 0 ? 'px-2.5 py-2 text-[12.5px]' : 'px-2 py-1.5 text-[11.5px]'
+                                                    } font-medium ${hasActiveChild
+                                                        ? 'bg-brand-softer text-brand-dark font-bold border border-brand/25'
+                                                        : 'text-slate-600 hover:text-brand hover:bg-brand-softer'
+                                                    }`}
+                                            >
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                    <item.icon className={`${depth === 0 ? 'w-4 h-4' : 'w-3.5 h-3.5'} shrink-0 stroke-[1.75] ${hasActiveChild ? 'text-brand' : 'text-slate-400 group-hover:text-brand'}`} />
+                                                    {sidebarOpen && <span className="truncate">{item.name}</span>}
+                                                </div>
+                                                {sidebarOpen && (
+                                                    <div className="flex items-center gap-1.5 shrink-0">
+                                                        {badge !== undefined && badge > 0 && (
+                                                            <span className="text-[9.5px] font-bold px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-600 border border-rose-200">
+                                                                {badge}
+                                                            </span>
+                                                        )}
+                                                        <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${isOpen ? 'rotate-180 text-brand' : ''}`} />
+                                                    </div>
+                                                )}
+                                                {!sidebarOpen && badge !== undefined && badge > 0 && (
+                                                    <span className="absolute top-1 right-2 flex h-2 w-2">
+                                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                                                        <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+                                                    </span>
+                                                )}
+                                            </button>
+                                            {isOpen && sidebarOpen && (
+                                                <ul className="mt-1 ml-3 pl-2.5 border-l-2 border-brand-soft space-y-0.5 animate-in fade-in slide-in-from-top-1 duration-150">
+                                                    {item.children.map((sub) => renderNavItem(sub, depth + 1))}
+                                                </ul>
+                                            )}
+                                        </li>
+                                    );
+                                }
+
+                                const href = item.href || '/dashboard';
+                                const isActive = isNavItemActive(currentUrl, href);
+                                const badge = item.badge;
                                 return (
-                                    <li key={menuKey} className="space-y-0.5">
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                if (!sidebarOpen) {
-                                                    setSidebarOpen(true);
-                                                    setOpenMenus({ [menuKey]: true });
-                                                    return;
-                                                }
-                                                setOpenMenus(() => ({ [menuKey]: !isOpen }));
-                                            }}
-                                            className={`group relative flex w-full items-center justify-between gap-2 rounded-xl transition-all duration-200 ${
-                                                depth === 0 ? 'px-2.5 py-2 text-[12.5px]' : 'px-2 py-1.5 text-[11.5px]'
-                                            } font-medium ${hasActiveChild
-                                                ? 'bg-brand-softer text-brand-dark font-bold border border-brand/25'
-                                                : 'text-slate-600 hover:text-brand hover:bg-brand-softer'
-                                            }`}
+                                    <li key={menuKey}>
+                                        <Link
+                                            href={href}
+                                            onClick={() => isMobile && setSidebarOpen(false)}
+                                            className={`group relative flex items-center justify-between gap-2 rounded-lg transition-all duration-200 ${depth === 0 ? 'px-2.5 py-2 rounded-xl text-[12.5px]' : 'px-2 py-1.5 text-[11.5px]'
+                                                } font-medium ${isActive
+                                                    ? 'bg-gradient-to-r from-brand to-brand-dark text-white shadow-sm shadow-brand/20 font-bold'
+                                                    : 'text-slate-600 hover:text-brand hover:bg-brand-softer'
+                                                }`}
                                         >
                                             <div className="flex items-center gap-2 min-w-0">
-                                                <item.icon className={`${depth === 0 ? 'w-4 h-4' : 'w-3.5 h-3.5'} shrink-0 stroke-[1.75] ${hasActiveChild ? 'text-brand' : 'text-slate-400 group-hover:text-brand'}`} />
+                                                <item.icon className={`${depth === 0 ? 'w-4 h-4' : 'w-3.5 h-3.5'} shrink-0 stroke-[1.75] ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-brand'}`} />
                                                 {sidebarOpen && <span className="truncate">{item.name}</span>}
                                             </div>
-                                            {sidebarOpen && (
-                                                <div className="flex items-center gap-1.5 shrink-0">
-                                                    {badge !== undefined && badge > 0 && (
-                                                        <span className="text-[9.5px] font-bold px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-600 border border-rose-200">
-                                                            {badge}
-                                                        </span>
-                                                    )}
-                                                    <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${isOpen ? 'rotate-180 text-brand' : ''}`} />
-                                                </div>
+                                            {sidebarOpen && badge !== undefined && badge > 0 && (
+                                                <span className={`shrink-0 text-[9.5px] font-bold px-1.5 py-0.5 rounded-full ${isActive ? 'bg-white/25 text-white backdrop-blur-xs' : 'bg-rose-50 text-rose-600 border border-rose-200'}`}>
+                                                    {badge}
+                                                </span>
                                             )}
                                             {!sidebarOpen && badge !== undefined && badge > 0 && (
                                                 <span className="absolute top-1 right-2 flex h-2 w-2">
@@ -889,64 +1029,24 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                                     <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
                                                 </span>
                                             )}
-                                        </button>
-                                        {isOpen && sidebarOpen && (
-                                            <ul className="mt-1 ml-3 pl-2.5 border-l-2 border-brand-soft space-y-0.5 animate-in fade-in slide-in-from-top-1 duration-150">
-                                                {item.children.map((sub) => renderNavItem(sub, depth + 1))}
-                                            </ul>
-                                        )}
+                                        </Link>
                                     </li>
                                 );
-                            }
+                            };
 
-                            const href = item.href || '/dashboard';
-                            const isActive = isNavItemActive(path, href);
-                            const badge = item.badge;
                             return (
-                                <li key={menuKey}>
-                                    <Link
-                                        href={href}
-                                        onClick={() => isMobile && setSidebarOpen(false)}
-                                        className={`group relative flex items-center justify-between gap-2 rounded-lg transition-all duration-200 ${
-                                            depth === 0 ? 'px-2.5 py-2 rounded-xl text-[12.5px]' : 'px-2 py-1.5 text-[11.5px]'
-                                        } font-medium ${isActive
-                                            ? 'bg-gradient-to-r from-brand to-brand-dark text-white shadow-sm shadow-brand/20 font-bold'
-                                            : 'text-slate-600 hover:text-brand hover:bg-brand-softer'
-                                        }`}
-                                    >
-                                        <div className="flex items-center gap-2 min-w-0">
-                                            <item.icon className={`${depth === 0 ? 'w-4 h-4' : 'w-3.5 h-3.5'} shrink-0 stroke-[1.75] ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-brand'}`} />
-                                            {sidebarOpen && <span className="truncate">{item.name}</span>}
-                                        </div>
-                                        {sidebarOpen && badge !== undefined && badge > 0 && (
-                                            <span className={`shrink-0 text-[9.5px] font-bold px-1.5 py-0.5 rounded-full ${isActive ? 'bg-white/25 text-white backdrop-blur-xs' : 'bg-rose-50 text-rose-600 border border-rose-200'}`}>
-                                                {badge}
-                                            </span>
-                                        )}
-                                        {!sidebarOpen && badge !== undefined && badge > 0 && (
-                                            <span className="absolute top-1 right-2 flex h-2 w-2">
-                                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                                                <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
-                                            </span>
-                                        )}
-                                    </Link>
-                                </li>
+                                <div key={group.title} className="space-y-1">
+                                    {sidebarOpen && (
+                                        <span className="px-2.5 text-[9.5px] font-bold text-slate-400 uppercase tracking-wider block select-none mb-1">
+                                            {group.title}
+                                        </span>
+                                    )}
+                                    <ul className="space-y-0.5">
+                                        {group.items.map((item) => renderNavItem(item, 0))}
+                                    </ul>
+                                </div>
                             );
-                        };
-
-                        return (
-                            <div key={group.title} className="space-y-1">
-                                {sidebarOpen && (
-                                    <span className="px-2.5 text-[9.5px] font-bold text-slate-400 uppercase tracking-wider block select-none mb-1">
-                                        {group.title}
-                                    </span>
-                                )}
-                                <ul className="space-y-0.5">
-                                    {group.items.map((item) => renderNavItem(item, 0))}
-                                </ul>
-                            </div>
-                        );
-                    })}
+                        })}
                 </nav>
 
                 {/* Super Admin Maintenance Controls */}
@@ -1065,6 +1165,26 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
                         {/* Header Right Actions */}
                         <div className="flex items-center gap-1.5 sm:gap-2">
+                            {canSwitchOffice && (
+                                <button
+                                    type="button"
+                                    onClick={openOfficeModal}
+                                    className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-[11px] font-bold transition-colors ${
+                                        activeOffice
+                                            ? 'border-brand/30 bg-brand/5 text-brand hover:bg-brand/10'
+                                            : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                                    }`}
+                                    title="Select office to work on"
+                                >
+                                    <Building2 className="w-3.5 h-3.5 shrink-0" />
+                                    <span className="max-w-[170px] truncate">
+                                        {activeOffice
+                                            ? `${activeOffice.code ? `${activeOffice.code} — ` : ''}${activeOffice.name}`
+                                            : 'Head Office (All)'}
+                                    </span>
+                                    <ChevronDown className="w-3 h-3 shrink-0 opacity-70" />
+                                </button>
+                            )}
                             {isBranchRole && branchAccountingEnabled && (
                                 <Link
                                     href="/branch/process"
@@ -1084,11 +1204,10 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                             )}
                             <Link
                                 href="/help"
-                                className={`inline-flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl border text-[11px] font-bold transition-all duration-200 ${
-                                    path.startsWith('/help')
-                                        ? 'border-brand bg-brand text-white shadow-xs'
-                                        : 'border-brand/25 bg-brand-softer text-brand-dark hover:bg-brand hover:text-white'
-                                }`}
+                                className={`inline-flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl border text-[11px] font-bold transition-all duration-200 ${path.startsWith('/help')
+                                    ? 'border-brand bg-brand text-white shadow-xs'
+                                    : 'border-brand/25 bg-brand-softer text-brand-dark hover:bg-brand hover:text-white'
+                                    }`}
                                 title="সহায়তা ও ভিডিও টিউটোরিয়াল (Help)"
                             >
                                 <HelpCircle className="w-3.5 h-3.5 shrink-0" />
@@ -1196,6 +1315,17 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                                                 <User className="w-3.5 h-3.5 text-brand" />
                                                 <span>Profile & Settings</span>
                                             </Link>
+
+                                            {!isBranchRole && !isTeamApproverRole && (
+                                                <Link
+                                                    href="/head-office/nid-ocr-settings"
+                                                    onClick={() => setUserDropdownOpen(false)}
+                                                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-[12px] font-semibold text-slate-700 hover:bg-brand-softer hover:text-brand transition-colors"
+                                                >
+                                                    <Settings className="w-3.5 h-3.5 text-brand" />
+                                                    <span>Settings (NID OCR)</span>
+                                                </Link>
+                                            )}
 
                                             {/* Mobile specific shortcuts inside user menu */}
                                             <a
@@ -1403,7 +1533,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                     <div className="flex items-center justify-around h-13.5 px-1">
                         {mobileBottomNavItems.map((item) => {
                             if (!item) return null;
-                            const isActive = isNavItemActive(path, item.href);
+                            const isActive = isNavItemActive(currentUrl, item.href);
                             const Icon = item.icon;
                             return (
                                 <Link
@@ -1437,6 +1567,181 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                         </button>
                     </div>
                 </nav>
+            )}
+
+            {/* Select Office Modal (gBanker-style) */}
+            {canSwitchOffice && officeModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs">
+                    <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white shadow-xl">
+                        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
+                            <h3 className="text-sm font-bold text-slate-900">Select office to work on.</h3>
+                            <button
+                                type="button"
+                                onClick={() => setOfficeModalOpen(false)}
+                                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                            >
+                                <X className="h-4 w-4" />
+                            </button>
+                        </div>
+
+                        <div className="space-y-3 p-4">
+                            <div className="relative">
+                                <Search className="pointer-events-none absolute top-2.5 left-3 h-3.5 w-3.5 text-slate-400" />
+                                <input
+                                    type="text"
+                                    value={officeSearch}
+                                    onChange={(e) => setOfficeSearch(e.target.value)}
+                                    placeholder="Search office..."
+                                    className="w-full rounded-xl border border-slate-200 bg-slate-50 py-1.5 pr-3 pl-8 text-xs text-slate-800 focus:border-brand focus:bg-white focus:outline-none"
+                                    autoFocus
+                                />
+                            </div>
+
+                            <div className="max-h-80 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 text-xs">
+                                {/* Head Office / All option */}
+                                <button
+                                    type="button"
+                                    onClick={() => setPendingOfficeId(null)}
+                                    className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left font-bold transition-colors ${
+                                        pendingOfficeId === null
+                                            ? 'bg-brand/10 text-brand'
+                                            : 'text-slate-700 hover:bg-slate-50'
+                                    }`}
+                                >
+                                    <Landmark className="h-3.5 w-3.5 shrink-0" />
+                                    <span>0000 — Head Office (All Offices)</span>
+                                </button>
+
+                                <div className="mt-1 space-y-0.5">
+                                    {officeTree.map((zone) => {
+                                        const q = officeSearch.trim().toLowerCase();
+                                        const matchingAreas = zone.areas
+                                            .map((area) => {
+                                                const matchingBranches = area.branches.filter(
+                                                    (b) =>
+                                                        !q ||
+                                                        b.name.toLowerCase().includes(q) ||
+                                                        (b.code || '').toLowerCase().includes(q) ||
+                                                        area.name.toLowerCase().includes(q) ||
+                                                        zone.name.toLowerCase().includes(q),
+                                                );
+                                                return { ...area, branches: matchingBranches };
+                                            })
+                                            .filter((a) => a.branches.length > 0);
+
+                                        if (matchingAreas.length === 0) return null;
+                                        const isZoneOpen = q.length > 0 || Boolean(expandedZones[zone.id]);
+
+                                        return (
+                                            <div key={zone.id} className="select-none">
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        setExpandedZones((prev) => ({ ...prev, [zone.id]: !isZoneOpen }))
+                                                    }
+                                                    className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-left font-semibold text-slate-800 hover:bg-slate-50"
+                                                >
+                                                    <span className="inline-flex h-4 w-4 items-center justify-center rounded border border-slate-300 text-[10px] font-bold text-slate-600">
+                                                        {isZoneOpen ? '−' : '+'}
+                                                    </span>
+                                                    <span>
+                                                        {zone.code ? `${zone.code} - ` : ''}
+                                                        {zone.name}
+                                                    </span>
+                                                </button>
+
+                                                {isZoneOpen && (
+                                                    <div className="ml-4 border-l border-slate-200 pl-2 space-y-0.5">
+                                                        {matchingAreas.map((area) => {
+                                                            const isAreaOpen = q.length > 0 || Boolean(expandedAreas[area.id]);
+                                                            return (
+                                                                <div key={area.id}>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() =>
+                                                                            setExpandedAreas((prev) => ({
+                                                                                ...prev,
+                                                                                [area.id]: !isAreaOpen,
+                                                                            }))
+                                                                        }
+                                                                        className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1 text-left font-medium text-slate-700 hover:bg-slate-50"
+                                                                    >
+                                                                        <span className="inline-flex h-3.5 w-3.5 items-center justify-center rounded border border-slate-300 text-[10px] font-bold text-slate-600">
+                                                                            {isAreaOpen ? '−' : '+'}
+                                                                        </span>
+                                                                        <span>
+                                                                            {area.code ? `${area.code} - ` : ''}
+                                                                            {area.name}
+                                                                        </span>
+                                                                    </button>
+
+                                                                    {isAreaOpen && (
+                                                                        <div className="ml-5 border-l border-slate-100 pl-2 space-y-0.5">
+                                                                            {area.branches.map((branch) => {
+                                                                                const isSelected = pendingOfficeId === branch.id;
+                                                                                return (
+                                                                                    <button
+                                                                                        key={branch.id}
+                                                                                        type="button"
+                                                                                        onClick={() => setPendingOfficeId(branch.id)}
+                                                                                        onDoubleClick={() => {
+                                                                                            setPendingOfficeId(branch.id);
+                                                                                            router.post(
+                                                                                                '/head-office/active-branch',
+                                                                                                { branch_id: branch.id },
+                                                                                                {
+                                                                                                    preserveState: false,
+                                                                                                    onFinish: () => setOfficeModalOpen(false),
+                                                                                                },
+                                                                                            );
+                                                                                        }}
+                                                                                        className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left transition-colors ${
+                                                                                            isSelected
+                                                                                                ? 'bg-brand text-white font-bold'
+                                                                                                : 'text-slate-700 hover:bg-slate-100'
+                                                                                        }`}
+                                                                                    >
+                                                                                        <span>
+                                                                                            {branch.code ? `${branch.code} — ` : ''}
+                                                                                            {branch.name}
+                                                                                        </span>
+                                                                                        {isSelected && <Check className="h-3.5 w-3.5 shrink-0" />}
+                                                                                    </button>
+                                                                                );
+                                                                            })}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-5 py-3">
+                            <button
+                                type="button"
+                                onClick={() => setOfficeModalOpen(false)}
+                                className="rounded-xl border border-slate-200 px-4 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                disabled={switchingOffice}
+                                onClick={handleConfirmOffice}
+                                className="rounded-xl bg-brand px-5 py-1.5 text-xs font-bold text-white hover:opacity-95 disabled:opacity-60"
+                            >
+                                {switchingOffice ? 'Loading...' : 'OK'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );

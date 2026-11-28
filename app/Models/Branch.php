@@ -92,6 +92,11 @@ class Branch extends Model
         return $this->hasMany(TeamBasedApproval::class);
     }
 
+    public function bankAccounts(): HasMany
+    {
+        return $this->hasMany(BranchBankAccount::class);
+    }
+
     public function scopeActive($query)
     {
         return $query->where('is_active', true);
@@ -120,6 +125,13 @@ class Branch extends Model
     {
         if ($preferredBranchId && static::operational()->whereKey($preferredBranchId)->exists()) {
             return $preferredBranchId;
+        }
+
+        if (app()->bound('session') && session()->has('active_branch_id')) {
+            $sessionBranchId = (int) session('active_branch_id');
+            if ($sessionBranchId > 0 && static::operational()->whereKey($sessionBranchId)->exists()) {
+                return $sessionBranchId;
+            }
         }
 
         if (Schema::hasColumn('branches', 'accounting_enabled')) {

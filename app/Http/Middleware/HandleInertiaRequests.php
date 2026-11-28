@@ -2,8 +2,11 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Area;
+use App\Models\Branch;
 use App\Models\Notification;
 use App\Models\Role;
+use App\Models\Zone;
 use App\Services\AccountingPeriodService;
 use App\Services\CsoAllocationService;
 use App\Services\HoSendCutoffService;
@@ -227,6 +230,64 @@ class HandleInertiaRequests extends Middleware
             }
         }
 
+        $canSwitchOffice = false;
+        $activeOffice = null;
+        $officeTree = [];
+
+        if ($user) {
+            $roleName = $userData['role']['name'] ?? null;
+            $canSwitchOffice = (bool) ($user->has_all_access || in_array($roleName, [Role::SUPER_ADMIN, Role::HEAD_OFFICE, Role::ED], true));
+
+            if ($canSwitchOffice) {
+                $sessionBranchId = (int) $request->session()->get('active_branch_id', 0);
+                if ($sessionBranchId > 0) {
+                    $b = Branch::operational()->find($sessionBranchId, ['id', 'code', 'name']);
+                    if ($b) {
+                        $activeOffice = ['id' => $b->id, 'code' => $b->code, 'name' => $b->name];
+                    } else {
+                        $request->session()->forget('active_branch_id');
+                    }
+                }
+
+                $officeTree = Cache::remember('ho_office_tree_v1', 300, function () {
+                    $branchesByArea = Branch::operational()
+                        ->orderedByCode()
+                        ->get(['id', 'area_id', 'code', 'name'])
+                        ->groupBy('area_id');
+
+                    $areasByZone = Area::query()
+                        ->where('is_active', true)
+                        ->orderBy('code')
+                        ->orderBy('name')
+                        ->get(['id', 'zone_id', 'code', 'name'])
+                        ->map(fn ($a) => [
+                            'id' => $a->id,
+                            'zone_id' => $a->zone_id,
+                            'code' => $a->code,
+                            'name' => $a->name,
+                            'branches' => ($branchesByArea->get($a->id) ?? collect())->values()->all(),
+                        ])
+                        ->filter(fn ($a) => count($a['branches']) > 0)
+                        ->groupBy('zone_id');
+
+                    return Zone::query()
+                        ->where('is_active', true)
+                        ->orderBy('code')
+                        ->orderBy('name')
+                        ->get(['id', 'code', 'name'])
+                        ->map(fn ($z) => [
+                            'id' => $z->id,
+                            'code' => $z->code,
+                            'name' => $z->name,
+                            'areas' => ($areasByZone->get($z->id) ?? collect())->values()->all(),
+                        ])
+                        ->filter(fn ($z) => count($z['areas']) > 0)
+                        ->values()
+                        ->all();
+                });
+            }
+        }
+
         return array_merge(parent::share($request), [
             'csrf_token' => csrf_token(),
             'name' => 'MIS Loan',
@@ -245,6 +306,9 @@ class HandleInertiaRequests extends Middleware
             'unreadNotificationsCount' => $unreadNotificationsCount,
             'notifications' => $notifications,
             'siteMaintenance' => Cache::get('site_maintenance', false),
+            'canSwitchOffice' => $canSwitchOffice,
+            'activeOffice' => $activeOffice,
+            'officeTree' => $officeTree,
             'hoSendCutoff' => $request->user()
                 ? app(HoSendCutoffService::class)->toSharedArray()
                 : null,

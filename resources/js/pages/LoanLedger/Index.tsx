@@ -52,8 +52,18 @@ interface LoanTx {
     service_charge_paisa: number;
     total_paisa: number;
     payment_mode: string;
+    bank_reference?: string | null;
+    branch_bank_account?: { id: number; bank_name: string; account_number: string } | null;
     loan_account?: { id: number; account_no: string } | null;
     creator?: { id: number; name: string } | null;
+}
+
+interface BranchBankAccountItem {
+    id: number;
+    bank_name: string;
+    branch_name?: string | null;
+    account_number: string;
+    is_default: boolean;
 }
 
 interface CorrectionReq {
@@ -111,6 +121,7 @@ interface Props {
     dayState: DayState | null;
     accounts: LoanAccount[];
     transactions: LoanTx[];
+    bankAccounts: BranchBankAccountItem[];
     corrections: CorrectionReq[];
     members: MemberItem[];
     samities: SamityItem[];
@@ -131,6 +142,7 @@ export default function LoanLedgerIndex({
     dayState,
     accounts,
     transactions,
+    bankAccounts,
     corrections,
     members,
     samities,
@@ -141,6 +153,7 @@ export default function LoanLedgerIndex({
     canOperate,
 }: Props) {
     const [tab, setTab] = useState<'dcs' | 'accounts' | 'disburse' | 'transactions' | 'corrections'>('dcs');
+    const [txModeFilter, setTxModeFilter] = useState<'all' | 'cash' | 'bank'>('all');
     const [selectedAccount, setSelectedAccount] = useState<LoanAccount | null>(accounts[0] ?? null);
     const [collectAmounts, setCollectAmounts] = useState<Record<number, string>>({});
     const [rebateAmounts, setRebateAmounts] = useState<Record<number, string>>({});
@@ -157,6 +170,8 @@ export default function LoanLedgerIndex({
         setDcsInputs(init);
     }, [dcsRows]);
 
+    const defaultBankId = bankAccounts.find((b) => b.is_default)?.id ?? bankAccounts[0]?.id ?? '';
+
     const disburseForm = useForm({
         branch_id: branch?.id ?? '',
         member_admission_id: '',
@@ -169,6 +184,8 @@ export default function LoanLedgerIndex({
         disbursed_date: dayState?.business_date ?? new Date().toISOString().slice(0, 10),
         first_due_date: dayState?.business_date ?? new Date().toISOString().slice(0, 10),
         payment_mode: 'cash',
+        branch_bank_account_id: defaultBankId ? String(defaultBankId) : '',
+        bank_reference: '',
     });
 
     const bDate = dayState?.business_date ?? new Date().toISOString().slice(0, 10);
@@ -619,6 +636,46 @@ export default function LoanLedgerIndex({
                                 required
                             />
                         </div>
+                        <div>
+                            <label className="mb-1 block text-xs font-semibold text-slate-700">Payment Mode (Cash / Bank)</label>
+                            <ComboSelect
+                                size="sm"
+                                clearable={false}
+                                value={disburseForm.data.payment_mode}
+                                onChange={(val) => disburseForm.setData('payment_mode', val ?? 'cash')}
+                                items={[
+                                    { value: 'cash', label: 'Cash in Hand (নগদ)' },
+                                    { value: 'bank', label: 'Bank (ব্যাংক)' },
+                                ]}
+                            />
+                        </div>
+                        {disburseForm.data.payment_mode === 'bank' && (
+                            <>
+                                <div>
+                                    <label className="mb-1 block text-xs font-semibold text-slate-700">Branch Bank Account</label>
+                                    <ComboSelect
+                                        size="sm"
+                                        value={disburseForm.data.branch_bank_account_id ? Number(disburseForm.data.branch_bank_account_id) : null}
+                                        onChange={(val) => disburseForm.setData('branch_bank_account_id', val ? String(val) : '')}
+                                        items={bankAccounts.map((b) => ({
+                                            value: b.id,
+                                            label: `${b.bank_name} (${b.account_number})${b.is_default ? ' [Default]' : ''}`,
+                                        }))}
+                                        placeholder={bankAccounts.length > 0 ? 'ব্যাংক নির্বাচন করুন' : 'Global Default Bank ব্যবহৃত হবে'}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="mb-1 block text-xs font-semibold text-slate-700">Cheque / Bank Ref No.</label>
+                                    <input
+                                        type="text"
+                                        value={disburseForm.data.bank_reference}
+                                        onChange={(e) => disburseForm.setData('bank_reference', e.target.value)}
+                                        placeholder="ঐচ্ছিক (চেক বা ট্রান্সফার নং)"
+                                        className="w-full rounded-xl border border-slate-200 px-3 py-1.5 text-xs"
+                                    />
+                                </div>
+                            </>
+                        )}
                         <div className="md:col-span-2">
                             <button type="submit" disabled={disburseForm.processing} className="rounded-xl bg-brand px-4 py-2 text-xs font-bold text-white">
                                 Disburse & Generate Schedule
@@ -628,24 +685,60 @@ export default function LoanLedgerIndex({
                 )}
 
                 {tab === 'transactions' && (
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-3">
+                        <div className="flex items-center gap-2">
+                            {(['all', 'cash', 'bank'] as const).map((mode) => (
+                                <button
+                                    key={mode}
+                                    type="button"
+                                    onClick={() => setTxModeFilter(mode)}
+                                    className={`rounded-lg px-2.5 py-1 text-[11px] font-bold uppercase ${
+                                        txModeFilter === mode
+                                            ? 'bg-brand text-white'
+                                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                    }`}
+                                >
+                                    {mode === 'all' ? 'All' : mode}
+                                </button>
+                            ))}
+                        </div>
                         <table className="w-full text-left text-xs">
                             <thead>
                                 <tr className="border-b border-slate-100 text-slate-500">
                                     <th className="py-2">তারিখ</th>
                                     <th className="py-2">অ্যাকাউন্ট</th>
                                     <th className="py-2">ধরন</th>
+                                    <th className="py-2">মাধ্যম (Cash / Bank)</th>
                                     <th className="py-2">Principal / S.Charge</th>
                                     <th className="py-2">Total</th>
                                     <th className="py-2">Action</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {transactions.map((tx) => (
+                                {transactions
+                                    .filter((tx) => txModeFilter === 'all' || tx.payment_mode === txModeFilter)
+                                    .map((tx) => (
                                     <tr key={tx.id} className="border-b border-slate-50">
                                         <td className="py-2 font-semibold">{formatDate(tx.business_date)}</td>
                                         <td className="py-2 font-bold">{tx.loan_account?.account_no}</td>
                                         <td className="py-2 uppercase">{tx.kind}</td>
+                                        <td className="py-2">
+                                            <span
+                                                className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                                                    tx.payment_mode === 'bank'
+                                                        ? 'bg-blue-100 text-blue-800'
+                                                        : 'bg-emerald-100 text-emerald-800'
+                                                }`}
+                                            >
+                                                {tx.payment_mode}
+                                            </span>
+                                            {tx.payment_mode === 'bank' && tx.branch_bank_account && (
+                                                <div className="mt-0.5 text-[10px] text-slate-500">
+                                                    {tx.branch_bank_account.bank_name} ({tx.branch_bank_account.account_number})
+                                                    {tx.bank_reference ? ` • ${tx.bank_reference}` : ''}
+                                                </div>
+                                            )}
+                                        </td>
                                         <td className="py-2">{fmt(tx.principal_paisa)} / {fmt(tx.service_charge_paisa)}</td>
                                         <td className="py-2 font-bold">{fmt(tx.total_paisa)}</td>
                                         <td className="py-2 flex items-center gap-2.5">

@@ -2,6 +2,7 @@
 
 namespace App\Services\Loans;
 
+use App\Models\BranchBankAccount;
 use App\Models\GlPostingDefault;
 use App\Models\LoanAccount;
 use App\Models\LoanApplication;
@@ -41,7 +42,9 @@ class LoanLedgerService
         string $firstDueDate,
         string $paymentMode,
         int $actorId,
-        ?int $loanApplicationId = null
+        ?int $loanApplicationId = null,
+        ?int $branchBankAccountId = null,
+        ?string $bankReference = null
     ): LoanAccount {
         return DB::transaction(function () use (
             $branchId,
@@ -56,7 +59,9 @@ class LoanLedgerService
             $firstDueDate,
             $paymentMode,
             $actorId,
-            $loanApplicationId
+            $loanApplicationId,
+            $branchBankAccountId,
+            $bankReference
         ) {
             $this->journals->assertOpenBusinessDay($branchId, $disbursedDate);
 
@@ -100,8 +105,15 @@ class LoanLedgerService
                 ]);
             }
 
-            $portfolioAccountId = $this->requireAccountId('loan_principal_portfolio', GlPostingDefault::SCOPE_LOAN_PRODUCT, $loanProductId);
-            $cashOrBankId = $this->requireAccountId($paymentMode === 'bank' ? 'bank_account' : 'cash_in_hand');
+            $portfolioAccountId = $this->requireAccountId('loan_principal_portfolio', GlPostingDefault::SCOPE_LOAN_PRODUCT, $loanProductId, $branchId);
+            [$cashOrBankId, $resolvedBankAccountId] = $this->resolvePaymentLedgerAccount(
+                $branchId,
+                $paymentMode,
+                $branchBankAccountId
+            );
+            $resolvedBankRef = $paymentMode === 'bank' && filled($bankReference)
+                ? trim((string) $bankReference)
+                : null;
 
             $journal = $this->journals->postEntry(
                 $branchId,
@@ -125,6 +137,8 @@ class LoanLedgerService
                 'service_charge_paisa' => 0,
                 'total_paisa' => $principalPaisa,
                 'payment_mode' => $paymentMode,
+                'branch_bank_account_id' => $resolvedBankAccountId,
+                'bank_reference' => $resolvedBankRef,
                 'idempotency_key' => "loan-disb:{$account->id}",
                 'journal_entry_id' => $journal->id,
                 'created_by' => $actorId,
@@ -205,9 +219,9 @@ class LoanLedgerService
                 ]);
             }
 
-            $cashOrBankId = $this->requireAccountId($paymentMode === 'bank' ? 'bank_account' : 'cash_in_hand');
-            $portfolioId = $this->requireAccountId('loan_principal_portfolio', GlPostingDefault::SCOPE_LOAN_PRODUCT, $account->loan_product_id);
-            $scIncomeId = $this->requireAccountId('loan_service_charge_income', GlPostingDefault::SCOPE_LOAN_PRODUCT, $account->loan_product_id);
+            $cashOrBankId = $this->requireAccountId($paymentMode === 'bank' ? 'bank_account' : 'cash_in_hand', null, null, (int) $account->branch_id);
+            $portfolioId = $this->requireAccountId('loan_principal_portfolio', GlPostingDefault::SCOPE_LOAN_PRODUCT, $account->loan_product_id, (int) $account->branch_id);
+            $scIncomeId = $this->requireAccountId('loan_service_charge_income', GlPostingDefault::SCOPE_LOAN_PRODUCT, $account->loan_product_id, (int) $account->branch_id);
 
             $lines = [
                 ['ledger_account_id' => $cashOrBankId, 'debit_paisa' => $amountPaisa, 'credit_paisa' => 0],
@@ -385,9 +399,44 @@ class LoanLedgerService
         });
     }
 
-    private function requireAccountId(string $eventKey, ?string $scope = null, ?int $productId = null): int
+    /**
+     * @return array{0: int, 1: int|null} [ledgerAccountId, branchBankAccountId]
+     */
+    private function resolvePaymentLedgerAccount(int $branchId, string $paymentMode, ?int $branchBankAccountId = null): array
     {
-        $id = $this->defaults->resolveAccountId($eventKey, $scope, $productId);
+        if ($paymentMode !== 'bank') {
+            return [$this->requireAccountId('cash_in_hand', null, null, $branchId), null];
+        }
+
+        if ($branchBankAccountId !== null) {
+            $bank = BranchBankAccount::query()
+                ->where('branch_id', $branchId)
+                ->where('is_active', true)
+                ->find($branchBankAccountId);
+
+            if (! $bank) {
+                $this->reject('নির্বাচিত ব্যাংক অ্যাকাউন্টটি এই শাখার জন্য সক্রিয় নয়।');
+            }
+
+            return [(int) $bank->ledger_account_id, (int) $bank->id];
+        }
+
+        $defaultBank = BranchBankAccount::query()
+            ->where('branch_id', $branchId)
+            ->where('is_active', true)
+            ->orderByDesc('is_default')
+            ->first();
+
+        if ($defaultBank) {
+            return [(int) $defaultBank->ledger_account_id, (int) $defaultBank->id];
+        }
+
+        return [$this->requireAccountId('bank_account', null, null, $branchId), null];
+    }
+
+    private function requireAccountId(string $eventKey, ?string $scope = null, ?int $productId = null, ?int $branchId = null): int
+    {
+        $id = $this->defaults->resolveAccountId($eventKey, $scope, $productId, $branchId);
         if (! $id) {
             $this->reject("GL Posting Default-এ '{$eventKey}' অ্যাকাউন্ট ম্যাপ করা নেই।");
         }
@@ -555,9 +604,9 @@ class LoanLedgerService
             }
 
             $netCollected = $remP + ($remSc - $rebatePaisa);
-            $cashOrBankId = $this->requireAccountId($paymentMode === 'bank' ? 'bank_account' : 'cash_in_hand');
-            $portfolioId = $this->requireAccountId('loan_principal_portfolio', GlPostingDefault::SCOPE_LOAN_PRODUCT, $account->loan_product_id);
-            $scIncomeId = $this->requireAccountId('loan_service_charge_income', GlPostingDefault::SCOPE_LOAN_PRODUCT, $account->loan_product_id);
+            $cashOrBankId = $this->requireAccountId($paymentMode === 'bank' ? 'bank_account' : 'cash_in_hand', null, null, (int) $account->branch_id);
+            $portfolioId = $this->requireAccountId('loan_principal_portfolio', GlPostingDefault::SCOPE_LOAN_PRODUCT, $account->loan_product_id, (int) $account->branch_id);
+            $scIncomeId = $this->requireAccountId('loan_service_charge_income', GlPostingDefault::SCOPE_LOAN_PRODUCT, $account->loan_product_id, (int) $account->branch_id);
 
             $lines = [];
             if ($netCollected > 0) {

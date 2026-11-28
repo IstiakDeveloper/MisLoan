@@ -24,6 +24,7 @@ use App\Services\MemberCodeService;
 use App\Services\MemberSamityService;
 use App\Services\NotificationService;
 use App\Support\AdmissionFormVisibility;
+use App\Support\NidOcrSettings;
 use App\Support\LoanFormVisibility;
 use App\Support\RoleListWorkQueue;
 use Illuminate\Http\RedirectResponse;
@@ -784,6 +785,8 @@ class MemberAdmissionController extends Controller
             'availableApprovers' => $approvers,
             'loanCategories' => $loanCategories,
             'suggested_application_no' => MemberAdmission::generateApplicationNumber(),
+            'nid_ocr_enabled' => NidOcrSettings::isEnabled(),
+            'nid_ocr_provider' => NidOcrSettings::getAll()['provider'],
         ]);
     }
 

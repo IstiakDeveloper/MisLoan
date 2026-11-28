@@ -19,7 +19,7 @@ class FinancialReportsController extends Controller
         $user = $request->user();
         $canSelectBranch = $this->isHeadOfficeOrAdmin($user);
         $branchId = $canSelectBranch
-            ? ($request->integer('branch_id') ?: null)
+            ? ($request->integer('branch_id') ?: ((int) $request->session()->get('active_branch_id', 0) ?: null))
             : ($user->branch_id ? (int) $user->branch_id : null);
 
         $today = CarbonImmutable::now('Asia/Dhaka')->toDateString();

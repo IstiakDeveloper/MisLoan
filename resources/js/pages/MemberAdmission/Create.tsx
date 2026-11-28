@@ -42,6 +42,8 @@ import IdentitySection from './sections/IdentitySection';
 import OrganizationSection from './sections/OrganizationSection';
 import OtherAssetsSection from './sections/OtherAssetsSection';
 import PersonalInfoSection from './sections/PersonalInfoSection';
+import NidOcrModal, { NidOcrSuccessPayload } from '@/components/MemberAdmission/NidOcrModal';
+import { matchBangladeshAddress } from '@/utils/nidAddressMatcher';
 
 interface SamityItem {
     id: number;
@@ -62,6 +64,8 @@ interface Props {
         role: { name: string };
     }>;
     suggested_application_no?: string;
+    nid_ocr_enabled?: boolean;
+    nid_ocr_provider?: 'auto' | 'groq' | 'openrouter' | 'gemini' | 'python_service' | 'local';
 }
 
 /** Samity code without branch prefix (first 4 digits). e.g. 00010071 → 0071 */
@@ -84,6 +88,26 @@ function toNumChange(val: string): number | string {
     const en = toEnglishDigits(String(val));
     const num = Number(en);
     return isNaN(num) ? '' : num;
+}
+
+function calculateAgeYearsMonths(dobStr?: string): { years: number; months: number } | null {
+    if (!dobStr) return null;
+    const match = String(dobStr).trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return null;
+    const dob = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+    if (isNaN(dob.getTime())) return null;
+    const today = new Date();
+    let years = today.getFullYear() - dob.getFullYear();
+    let months = today.getMonth() - dob.getMonth();
+    if (today.getDate() < dob.getDate()) {
+        months -= 1;
+    }
+    if (months < 0) {
+        years -= 1;
+        months += 12;
+    }
+    if (years < 0) return { years: 0, months: 0 };
+    return { years, months };
 }
 
 /** DB NOT NULL integer columns — empty input must be 0, never null. */
@@ -278,6 +302,8 @@ export default function Create({
     categories,
     availableApprovers,
     suggested_application_no = '',
+    nid_ocr_enabled = true,
+    nid_ocr_provider = 'auto',
 }: Props) {
     const page = usePage<{
         auth: {
@@ -302,6 +328,8 @@ export default function Create({
     const [availableSamities, setAvailableSamities] = useState(samities);
     const [samitySearchQuery, setSamitySearchQuery] = useState('');
     const [samityDropdownOpen, setSamityDropdownOpen] = useState(false);
+    const [nidOcrCompleted, setNidOcrCompleted] = useState(!nid_ocr_enabled);
+    const [ocrFilledBanner, setOcrFilledBanner] = useState(false);
     const [memberTypeChosen, setMemberTypeChosen] = useState(false);
     const [draftTypeHint, setDraftTypeHint] = useState<'new' | 'old' | null>(null);
 
@@ -352,6 +380,52 @@ export default function Create({
 
     const chooseMemberType = (legacy: boolean) => {
         applyMemberType(legacy);
+    };
+
+    const handleNidOcrSuccess = (payload: NidOcrSuccessPayload) => {
+        const { extracted, frontFile, backFile } = payload;
+        const matchedAddr = matchBangladeshAddress(
+            extracted.address?.district_hint,
+            extracted.address?.upazila_hint,
+            extracted.address?.raw_address_bn
+        );
+
+        if (matchedAddr.districtsList.length > 0) {
+            setPresentDistricts(matchedAddr.districtsList);
+        }
+        if (matchedAddr.upazilasList.length > 0) {
+            setPresentUpazilas(matchedAddr.upazilasList);
+        }
+
+        setData((prev) => ({
+            ...prev,
+            applicant_name_bn: extracted.applicant_name_bn || prev.applicant_name_bn,
+            applicant_name_en: extracted.applicant_name_en || prev.applicant_name_en,
+            father_name_bn: extracted.father_name_bn || prev.father_name_bn,
+            spouse_name_bn: extracted.spouse_name_bn || prev.spouse_name_bn,
+            mother_name_bn: extracted.mother_name_bn || prev.mother_name_bn,
+            marital_status:
+                (extracted.marital_status as MemberAdmissionFormData['marital_status']) ||
+                prev.marital_status,
+            nid_number: extracted.nid_number || prev.nid_number,
+            smart_card_number: extracted.smart_card_number || prev.smart_card_number,
+            date_of_birth: extracted.date_of_birth || prev.date_of_birth,
+            gender:
+                (extracted.gender as MemberAdmissionFormData['gender']) ||
+                prev.gender,
+            present_division: matchedAddr.division || prev.present_division,
+            present_district: matchedAddr.district || prev.present_district,
+            present_upazila: matchedAddr.upazila || prev.present_upazila,
+            present_union: extracted.address?.union_or_ward || prev.present_union,
+            present_village_road: extracted.address?.village_or_road || prev.present_village_road,
+            present_post_code: extracted.address?.post_code || prev.present_post_code,
+            customer_nid_photo: frontFile,
+            customer_nid_back_photo: backFile || prev.customer_nid_back_photo,
+            nid_both_sides: Boolean(backFile) || prev.nid_both_sides,
+        }));
+
+        setOcrFilledBanner(true);
+        setNidOcrCompleted(true);
     };
 
     const handleMemberTypeChange = (legacy: boolean) => {
@@ -465,6 +539,8 @@ export default function Create({
         if (!isConfirmed) return;
 
         clearMemberAdmissionDraftLocal(draftKey);
+        setNidOcrCompleted(!nid_ocr_enabled);
+        setOcrFilledBanner(false);
         setMemberTypeChosen(false);
         setSamitySearchQuery('');
         setPresentDistricts([]);
@@ -493,7 +569,7 @@ export default function Create({
         }
     }, [currentUser?.name, currentUser?.pin, currentUser?.username]);
 
-    // Keep default «নিজ» row first and synced with applicant personal info
+    // Keep default «নিজ» row first and synced with applicant personal info & DOB age
     useEffect(() => {
         setData((prev) => {
             const members = [...(prev.family_members || [])];
@@ -502,14 +578,15 @@ export default function Create({
             const gender = (prev.gender as FamilyMember['gender']) || 'male';
             const marital =
                 (prev.marital_status as FamilyMember['marital_status']) || '';
+            const computedAge = calculateAgeYearsMonths(prev.date_of_birth);
 
             if (selfIdx < 0) {
                 members.unshift({
                     member_name: name,
                     relation_with_head: 'নিজ',
                     gender,
-                    age_years: 0,
-                    age_months: 0,
+                    age_years: computedAge ? computedAge.years : 0,
+                    age_months: computedAge ? computedAge.months : 0,
                     marital_status: marital,
                     education_level: '',
                     occupation: '',
@@ -530,6 +607,8 @@ export default function Create({
                 marital_status: prev.marital_status
                     ? marital
                     : self.marital_status || '',
+                age_years: computedAge ? computedAge.years : (self.age_years ?? 0),
+                age_months: computedAge ? computedAge.months : (self.age_months ?? 0),
             };
 
             const needsMove = selfIdx > 0;
@@ -537,7 +616,9 @@ export default function Create({
                 !needsMove &&
                 nextSelf.member_name === self.member_name &&
                 nextSelf.gender === self.gender &&
-                nextSelf.marital_status === self.marital_status;
+                nextSelf.marital_status === self.marital_status &&
+                nextSelf.age_years === self.age_years &&
+                nextSelf.age_months === self.age_months;
             if (unchanged) return prev;
 
             members[selfIdx] = nextSelf;
@@ -547,7 +628,7 @@ export default function Create({
             }
             return { ...prev, family_members: members };
         });
-    }, [data.applicant_name_bn, data.applicant_name_en, data.gender, data.marital_status]);
+    }, [data.applicant_name_bn, data.applicant_name_en, data.gender, data.marital_status, data.date_of_birth]);
 
     // Sync available samities when branch changes. Large organizations load one branch at a time.
     useEffect(() => {
@@ -873,8 +954,21 @@ export default function Create({
         <AdminLayout>
             <Head title="New Member Admission Application" />
 
-            {/* Member type selection modal */}
-            {!memberTypeChosen && (
+            {/* Step 1: Mobile-first NID OCR & Quality Gate (only when enabled in Settings) */}
+            {nid_ocr_enabled && (
+                <NidOcrModal
+                    open={!nidOcrCompleted}
+                    provider={nid_ocr_provider}
+                    hasExistingDraft={isDraftRestored}
+                    onResumeDraft={() => setNidOcrCompleted(true)}
+                    onSkipManual={() => setNidOcrCompleted(true)}
+                    onSuccess={handleNidOcrSuccess}
+                    onCancel={() => router.visit('/member-admissions')}
+                />
+            )}
+
+            {/* Step 2: Member type selection modal */}
+            {nidOcrCompleted && !memberTypeChosen && (
                 <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
                     <div className="w-full max-w-lg overflow-hidden rounded-3xl bg-white shadow-2xl border border-slate-100">
                         {/* Header */}
@@ -1056,6 +1150,33 @@ export default function Create({
                         </div>
                     </div>
                 </div>
+
+                {/* OCR AUTO-FILLED BANNER */}
+                {ocrFilledBanner && (
+                    <div className="rounded-2xl border border-blue-400/50 bg-blue-50 p-4 shadow-sm flex items-center justify-between gap-3 text-blue-950">
+                        <div className="flex items-center gap-3">
+                            <div className="rounded-xl bg-blue-600 p-2 text-white shrink-0">
+                                <Sparkles className="w-4 h-4" />
+                            </div>
+                            <div>
+                                <p className="text-xs sm:text-sm font-bold">
+                                    NID থেকে পাওয়া তথ্য ফর্মে অটো-ফিল করা হয়েছে (NID ছবিও সংযুক্ত হয়েছে)
+                                </p>
+                                <p className="text-[11px] sm:text-xs text-blue-800 mt-0.5">
+                                    অনুগ্রহ করে তথ্যগুলো যাচাই করুন এবং বাকি প্রয়োজনীয় ঘরগুলো পূরণ করুন।
+                                </p>
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setOcrFilledBanner(false)}
+                            className="p-1 rounded-lg text-blue-700 hover:bg-blue-200/50"
+                            title="বন্ধ করুন"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+                    </div>
+                )}
 
                 {/* RESTORED DRAFT BANNER */}
                 {isDraftRestored && (

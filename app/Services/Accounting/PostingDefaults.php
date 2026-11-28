@@ -96,8 +96,12 @@ class PostingDefaults
         );
     }
 
-    public function resolveAccountId(string $eventKey, ?string $productScope = null, ?int $productId = null): ?int
-    {
+    public function resolveAccountId(
+        string $eventKey,
+        ?string $productScope = null,
+        ?int $productId = null,
+        ?int $branchId = null
+    ): ?int {
         if ($productScope && $productId) {
             $productMapping = GlPostingDefault::query()
                 ->where('scope', $productScope)
@@ -107,6 +111,18 @@ class PostingDefaults
 
             if ($productMapping) {
                 return (int) $productMapping;
+            }
+        }
+
+        if ($branchId) {
+            $branchMapping = GlPostingDefault::query()
+                ->where('scope', GlPostingDefault::SCOPE_BRANCH)
+                ->where('product_id', $branchId)
+                ->where('event_key', $eventKey)
+                ->value('ledger_account_id');
+
+            if ($branchMapping) {
+                return (int) $branchMapping;
             }
         }
 

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Accounting\AccountingController;
+use App\Http\Controllers\Accounting\AccountingModulesController;
 use App\Http\Controllers\AppRegistrationController;
 use App\Http\Controllers\ApprovalController;
 use App\Http\Controllers\BlockedAccountController;
@@ -11,6 +12,8 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\FinancialReportsController;
 use App\Http\Controllers\HeadOffice\AccountingPeriodController;
+use App\Http\Controllers\HeadOffice\ActiveBranchController;
+use App\Http\Controllers\HeadOffice\BranchAccountSetupController;
 use App\Http\Controllers\HeadOffice\LegacyImportController;
 use App\Http\Controllers\HeadOffice\PostingDefaultController;
 use App\Http\Controllers\HelpGuideController;
@@ -138,9 +141,25 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('coa/seed', [AccountingController::class, 'seedStandardCoa'])->name('coa.seed');
         Route::post('coa', [AccountingController::class, 'storeAccount'])->name('coa.store');
         Route::patch('coa/{ledgerAccount}/toggle', [AccountingController::class, 'toggleAccount'])->name('coa.toggle');
+        Route::get('vouchers/create', [AccountingController::class, 'createVoucher'])->name('vouchers.create');
         Route::post('vouchers', [AccountingController::class, 'submitVoucher'])->name('vouchers.submit');
+        Route::get('vouchers/{voucher}/edit', [AccountingController::class, 'editVoucher'])->name('vouchers.edit');
+        Route::put('vouchers/{voucher}', [AccountingController::class, 'updateVoucher'])->name('vouchers.update');
+        Route::delete('vouchers/{voucher}', [AccountingController::class, 'destroyVoucher'])->name('vouchers.destroy');
         Route::post('vouchers/{voucher}/approve', [AccountingController::class, 'approveVoucher'])->name('vouchers.approve');
         Route::post('vouchers/{voucher}/reject', [AccountingController::class, 'rejectVoucher'])->name('vouchers.reject');
+
+        // Budget, Note Entries & Target Achievement
+        Route::get('budgets', [AccountingModulesController::class, 'budgets'])->name('budgets.index');
+        Route::post('budgets', [AccountingModulesController::class, 'storeBudget'])->name('budgets.store');
+        Route::delete('budgets/{budget}', [AccountingModulesController::class, 'destroyBudget'])->name('budgets.destroy');
+
+        Route::get('notes', [AccountingModulesController::class, 'notes'])->name('notes.index');
+        Route::post('notes', [AccountingModulesController::class, 'storeNote'])->name('notes.store');
+        Route::delete('notes/{note}', [AccountingModulesController::class, 'destroyNote'])->name('notes.destroy');
+
+        Route::get('targets', [AccountingModulesController::class, 'targets'])->name('targets.index');
+        Route::post('targets', [AccountingModulesController::class, 'storeTarget'])->name('targets.store');
     });
 
     Route::post('admin/maintenance/toggle', [MaintenanceController::class, 'toggle'])->name('admin.maintenance.toggle');
@@ -311,6 +330,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/', [MemberAdmissionController::class, 'index'])->name('index')->middleware('branch.user');
         Route::get('export/excel', [MemberAdmissionController::class, 'exportExcel'])->name('export.excel')->middleware('branch.user');
         Route::get('create', [MemberAdmissionController::class, 'create'])->name('create')->middleware('branch.user');
+        Route::post('ocr-nid', [App\Http\Controllers\NidOcrController::class, 'extract'])
+            ->name('ocr-nid')
+            ->middleware(['branch.user', 'throttle:30,1']);
         Route::get('check-unique', [MemberAdmissionController::class, 'checkUnique'])->name('check-unique')->middleware('branch.user');
         Route::get('samities', [MemberAdmissionController::class, 'samitiesForBranch'])->name('samities')->middleware('branch.user');
         Route::post('/', [MemberAdmissionController::class, 'store'])->name('store')->middleware('branch.user');
@@ -588,6 +610,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::put('loan-workflow-settings', [LoanWorkflowConfigController::class, 'update'])->name('loan-workflow-settings.update');
         Route::post('loan-workflow-settings/reset', [LoanWorkflowConfigController::class, 'reset'])->name('loan-workflow-settings.reset');
 
+        // External / AI NID OCR Settings
+        Route::get('nid-ocr-settings', [App\Http\Controllers\HeadOffice\NidOcrSettingsController::class, 'index'])->name('nid-ocr-settings');
+        Route::put('nid-ocr-settings', [App\Http\Controllers\HeadOffice\NidOcrSettingsController::class, 'update'])->name('nid-ocr-settings.update');
+        Route::post('nid-ocr-settings/test-connection', [App\Http\Controllers\HeadOffice\NidOcrSettingsController::class, 'testConnection'])->name('nid-ocr-settings.test');
+
         // Accounting Period Controls (Financial Year, Holidays, Manage Day Initial, Monitor, Reopen)
         Route::prefix('accounting-periods')->name('accounting-periods.')->group(function () {
             Route::get('/', [AccountingPeriodController::class, 'index'])->name('index');
@@ -608,6 +635,18 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::prefix('posting-defaults')->name('posting-defaults.')->group(function () {
             Route::get('/', [PostingDefaultController::class, 'index'])->name('index');
             Route::post('/', [PostingDefaultController::class, 'store'])->name('store');
+        });
+
+        // Active Working Branch Switcher (gBanker-style Select Office)
+        Route::post('active-branch', [ActiveBranchController::class, 'update'])->name('active-branch.update');
+
+        // Branch Account & Bank Setup (Branch-wise Cash/Bank & Readiness)
+        Route::prefix('branch-account-setup')->name('branch-account-setup.')->group(function () {
+            Route::get('/', [BranchAccountSetupController::class, 'index'])->name('index');
+            Route::post('bank-accounts', [BranchAccountSetupController::class, 'storeBankAccount'])->name('bank-accounts.store');
+            Route::patch('bank-accounts/{bankAccount}/default', [BranchAccountSetupController::class, 'setDefaultBankAccount'])->name('bank-accounts.default');
+            Route::patch('bank-accounts/{bankAccount}/toggle', [BranchAccountSetupController::class, 'toggleBankAccount'])->name('bank-accounts.toggle');
+            Route::post('posting-defaults', [BranchAccountSetupController::class, 'saveBranchDefault'])->name('posting-defaults.store');
         });
 
         // Legacy Opening Balance Importer

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
     Camera,
     Upload,
@@ -71,6 +71,31 @@ export default function ApproverSelectionStep({
 }: Props) {
     const [uploadStatus, setUploadStatus] = useState<{ [key: string]: string }>({});
     const [previewUrls, setPreviewUrls] = useState<{ [key: string]: string }>({});
+
+    // Generate preview URLs when NID files are pre-attached from OCR scanner
+    useEffect(() => {
+        const created: string[] = [];
+        const updates: Record<string, string> = {};
+
+        if (customerNidPhoto instanceof File) {
+            const url = URL.createObjectURL(customerNidPhoto);
+            created.push(url);
+            updates.customer_nid_photo = url;
+        }
+        if (customerNidBackPhoto instanceof File) {
+            const url = URL.createObjectURL(customerNidBackPhoto);
+            created.push(url);
+            updates.customer_nid_back_photo = url;
+        }
+
+        if (Object.keys(updates).length > 0) {
+            setPreviewUrls((prev) => ({ ...prev, ...updates }));
+        }
+
+        return () => {
+            created.forEach((u) => URL.revokeObjectURL(u));
+        };
+    }, [customerNidPhoto, customerNidBackPhoto]);
 
     const handleFileChange = async (field: string, file: File | null) => {
         if (!file) {

@@ -44,7 +44,7 @@ class PostingDefaultController extends Controller
         abort_unless($this->canManage($request->user()), 403);
 
         $data = $request->validate([
-            'scope' => 'required|in:global,loan_product,savings_product',
+            'scope' => 'required|in:global,loan_product,savings_product,branch',
             'product_id' => 'nullable|integer',
             'event_key' => 'required|string|max:64',
             'ledger_account_id' => 'required|exists:ledger_accounts,id',
