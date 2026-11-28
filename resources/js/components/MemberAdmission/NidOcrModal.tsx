@@ -22,6 +22,7 @@ import {
     NidQualityResult,
     analyzeCanvasQuality,
     captureCroppedCardFromVideo,
+    prepareNidOcrImage,
     validateUploadedNidFile,
 } from '@/utils/nidImageQuality';
 
@@ -88,7 +89,7 @@ export default function NidOcrModal({
     const [liveQuality, setLiveQuality] = useState<NidQualityResult | null>(null);
     const [torchOn, setTorchOn] = useState(false);
     const [torchSupported, setTorchSupported] = useState(false);
-    const [autoCapture, setAutoCapture] = useState(true);
+    const [autoCapture, setAutoCapture] = useState(false);
     const [ocrPayload, setOcrPayload] = useState<NidOcrSuccessPayload | null>(null);
     const [ocrProgress, setOcrProgress] = useState<number>(0);
     const [processingHint, setProcessingHint] = useState<string>('অনুগ্রহ করে অপেক্ষা করুন');
@@ -418,9 +419,10 @@ export default function NidOcrModal({
         const isPdf =
             file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
 
+        let finalFile = file;
         if (!isPdf) {
             // Only reject truly unusable images (corrupt, tiny, or pitch black) on client-side;
-            // send the exact original uncompressed file to OCR for maximum text clarity.
+            // keep high resolution (1800px, q=0.92) if >1.5MB so PHP upload_max_filesize never fails.
             const quality = await validateUploadedNidFile(file);
             if (!quality.ok) {
                 if (navigator.vibrate) navigator.vibrate(100);
@@ -428,25 +430,26 @@ export default function NidOcrModal({
                 setStage('failed');
                 return;
             }
+            finalFile = await prepareNidOcrImage(file);
         }
 
-        const url = file.type.startsWith('image/') ? URL.createObjectURL(file) : '';
+        const url = finalFile.type.startsWith('image/') ? URL.createObjectURL(finalFile) : '';
         if (side === 'front') {
             if (frontPreview) URL.revokeObjectURL(frontPreview);
-            setFrontFile(file);
+            setFrontFile(finalFile);
             setFrontPreview(url);
             if (combinedMode) {
-                void runServerOcr(file, null);
+                void runServerOcr(finalFile, null);
             } else {
                 setScanSide('back');
                 setStage('choose');
             }
         } else {
             if (backPreview) URL.revokeObjectURL(backPreview);
-            setBackFile(file);
+            setBackFile(finalFile);
             setBackPreview(url);
             if (frontFile) {
-                void runServerOcr(frontFile, file);
+                void runServerOcr(frontFile, finalFile);
             } else {
                 setStage('choose');
             }

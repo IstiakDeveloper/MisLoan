@@ -234,3 +234,69 @@ export async function captureCroppedCardFromVideo(
 
     return { file, quality };
 }
+
+/**
+ * Prepare a high-clarity image for OCR without exceeding PHP upload_max_filesize (2MB default).
+ * - Keeps original file untouched if <= 1.5MB.
+ * - For larger phone camera photos (3MB-25MB), resizes to max 1800px at high quality (0.92)
+ *   so Bangla text remains razor-sharp while staying safely under ~1.5MB.
+ */
+export async function prepareNidOcrImage(file: File): Promise<File> {
+    const SAFE_OCR_BYTES = 1.5 * 1024 * 1024;
+    if (file.size <= SAFE_OCR_BYTES) {
+        return file;
+    }
+
+    return new Promise((resolve) => {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = async () => {
+            URL.revokeObjectURL(url);
+            let w = img.naturalWidth || img.width;
+            let h = img.naturalHeight || img.height;
+            const maxDim = 1800;
+            if (Math.max(w, h) > maxDim) {
+                const scale = maxDim / Math.max(w, h);
+                w = Math.round(w * scale);
+                h = Math.round(h * scale);
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                resolve(file);
+                return;
+            }
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, w, h);
+            ctx.drawImage(img, 0, 0, w, h);
+
+            let quality = 0.92;
+            let blob = await new Promise<Blob | null>((r) => canvas.toBlob((b) => r(b), 'image/jpeg', quality));
+            while (blob && blob.size > SAFE_OCR_BYTES && quality > 0.72) {
+                quality -= 0.06;
+                blob = await new Promise<Blob | null>((r) => canvas.toBlob((b) => r(b), 'image/jpeg', quality));
+            }
+
+            if (!blob) {
+                resolve(file);
+                return;
+            }
+
+            const baseName = file.name.replace(/\.[^.]+$/, '') || 'nid';
+            resolve(
+                new File([blob], `${baseName}.jpg`, {
+                    type: 'image/jpeg',
+                    lastModified: Date.now(),
+                })
+            );
+        };
+        img.onerror = () => {
+            URL.revokeObjectURL(url);
+            resolve(file);
+        };
+        img.src = url;
+    });
+}
