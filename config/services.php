@@ -60,6 +60,10 @@ return [
         'model' => env('OPENROUTER_OCR_MODEL', 'google/gemma-4-31b-it:free'),
     ],
 
+    'google_vision' => [
+        'api_key' => env('GOOGLE_VISION_API_KEY'),
+    ],
+
     'nid_ocr' => [
         'url' => env('NID_OCR_URL', 'http://127.0.0.1:8001'),
         'token' => env('NID_OCR_TOKEN'),

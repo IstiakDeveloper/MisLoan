@@ -3,37 +3,45 @@ import { Head, useForm, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import {
     Activity,
+    ArrowDown,
+    ArrowUp,
+    Check,
     CheckCircle2,
-    Cpu,
     KeyRound,
     Link2,
     Power,
     Save,
     ScanLine,
-    Server,
-    Sparkles,
     XCircle,
-    Zap,
 } from 'lucide-react';
 import React, { useState } from 'react';
 
-type OcrProvider = 'auto' | 'groq' | 'openrouter' | 'gemini' | 'python_service' | 'local';
+type EngineId = 'google_vision' | 'openrouter' | 'gemini' | 'groq' | 'python_service' | 'local';
 
 interface Props {
     settings: {
         enabled: boolean;
-        provider: OcrProvider;
+        mode: 'single' | 'multiple';
+        provider: EngineId;
+        providers: EngineId[];
         service_url: string;
         has_token: boolean;
         has_gemini_key: boolean;
-        gemini_model: string;
         has_groq_key: boolean;
-        groq_model: string;
         has_openrouter_key: boolean;
-        openrouter_model: string;
+        has_google_vision_key: boolean;
         timeout: number;
     };
 }
+
+const ENGINES: Array<{ id: EngineId; name: string; subtitle: string; badge?: string }> = [
+    { id: 'google_vision', name: 'Google Cloud Vision', subtitle: 'সবচেয়ে নির্ভুল বাংলা+ইংরেজি (১,০০০/মাস ফ্রি)', badge: 'Best' },
+    { id: 'openrouter', name: 'OpenRouter Free', subtitle: 'ফ্রি ভিশন মডেল অটো-রোটেশন' },
+    { id: 'gemini', name: 'Gemini Vision AI', subtitle: 'ফ্রি টিয়ার ও PDF সাপোর্ট' },
+    { id: 'groq', name: 'Groq Vision', subtitle: 'ফাস্ট ভিশন API (অ্যাকাউন্টে মডেল থাকলে)' },
+    { id: 'python_service', name: 'External Python API', subtitle: 'নিজস্ব হোস্ট করা FastAPI সার্ভার' },
+    { id: 'local', name: 'Local Offline OCR', subtitle: 'কোনো API ছাড়াই ব্রাউজারে অফলাইন' },
+];
 
 export default function NidOcrSettings({ settings }: Props) {
     const page = usePage<{ flash?: { success?: string | null; error?: string | null } }>();
@@ -41,33 +49,57 @@ export default function NidOcrSettings({ settings }: Props) {
 
     const { data, setData, put, processing, errors } = useForm({
         enabled: settings.enabled,
-        provider: settings.provider,
+        mode: settings.mode || 'multiple',
+        provider: settings.provider || 'google_vision',
+        providers: settings.providers?.length ? settings.providers : (['google_vision', 'openrouter', 'gemini'] as EngineId[]),
         service_url: settings.service_url || '',
         service_token: '',
         clear_token: false,
         gemini_api_key: '',
         clear_gemini_key: false,
-        gemini_model: settings.gemini_model || 'gemini-3.8-flash',
         groq_api_key: '',
         clear_groq_key: false,
-        groq_model: settings.groq_model || 'meta-llama/llama-4-scout-17b-16e-instruct',
         openrouter_api_key: '',
         clear_openrouter_key: false,
-        openrouter_model: settings.openrouter_model || 'qwen/qwen2.5-vl-72b-instruct:free',
+        google_vision_api_key: '',
+        clear_google_vision_key: false,
         timeout: settings.timeout || 30,
     });
 
     const [testing, setTesting] = useState(false);
-    const [testResult, setTestResult] = useState<{
-        ok: boolean;
-        message: string;
-    } | null>(null);
+    const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+    const activeEngines: EngineId[] =
+        data.mode === 'single' ? [data.provider] : data.providers;
+
+    const isSelected = (id: EngineId) => activeEngines.includes(id);
+
+    const toggleProvider = (id: EngineId) => {
+        if (data.mode === 'single') {
+            setData('provider', id);
+            return;
+        }
+        const exists = data.providers.includes(id);
+        if (exists) {
+            if (data.providers.length === 1) return; // keep at least 1
+            setData('providers', data.providers.filter((p) => p !== id));
+        } else {
+            setData('providers', [...data.providers, id]);
+        }
+    };
+
+    const moveProvider = (id: EngineId, dir: -1 | 1) => {
+        const idx = data.providers.indexOf(id);
+        const nextIdx = idx + dir;
+        if (idx < 0 || nextIdx < 0 || nextIdx >= data.providers.length) return;
+        const next = [...data.providers];
+        [next[idx], next[nextIdx]] = [next[nextIdx], next[idx]];
+        setData('providers', next);
+    };
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        put('/head-office/nid-ocr-settings', {
-            preserveScroll: true,
-        });
+        put('/head-office/nid-ocr-settings', { preserveScroll: true });
     };
 
     const handleTestConnection = async () => {
@@ -78,10 +110,7 @@ export default function NidOcrSettings({ settings }: Props) {
                 service_url: data.service_url,
                 service_token: data.service_token || undefined,
             });
-            setTestResult({
-                ok: Boolean(res.data?.ok),
-                message: res.data?.message || 'কানেকশন সফল!',
-            });
+            setTestResult({ ok: Boolean(res.data?.ok), message: res.data?.message || 'কানেকশন সফল!' });
         } catch (err: any) {
             setTestResult({
                 ok: false,
@@ -92,447 +121,394 @@ export default function NidOcrSettings({ settings }: Props) {
         }
     };
 
-    const showGroqSection = data.provider === 'groq' || data.provider === 'auto';
-    const showOpenRouterSection = data.provider === 'openrouter' || data.provider === 'auto';
-    const showGeminiSection = data.provider === 'gemini' || data.provider === 'auto';
-    const showPythonSection = data.provider === 'python_service' || data.provider === 'auto';
-
     return (
         <AdminLayout>
             <Head title="Settings — NID OCR" />
 
-            <div className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
-                {/* Header */}
-                <div className="rounded-2xl bg-slate-900 p-6 text-white shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div className="flex items-center gap-3.5">
-                        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500/20 border border-blue-400/30 text-blue-300">
-                            <ScanLine className="h-6 w-6" />
+            <div className="mx-auto max-w-3xl space-y-5 p-4 sm:p-6">
+                {/* Minimal Header + Master ON/OFF */}
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white shrink-0">
+                            <ScanLine className="h-5 w-5" />
                         </div>
                         <div>
-                            <h1 className="text-xl font-extrabold tracking-tight">
-                                Settings — NID OCR ও ফ্রি API রোটেশন
+                            <h1 className="text-base sm:text-lg font-extrabold text-slate-900">
+                                NID OCR Settings
                             </h1>
-                            <p className="text-xs sm:text-sm text-slate-300 mt-0.5">
-                                Groq → OpenRouter → Gemini অটো-সুইচিং অথবা External Python / Local OCR সেট করুন
+                            <p className="text-xs text-slate-500">
+                                Single অথবা Multiple OCR ইঞ্জিন ও ক্রেডেনশিয়াল সেট করুন
                             </p>
                         </div>
                     </div>
 
-                    <div
-                        className={`inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-xs font-bold ${
+                    <button
+                        type="button"
+                        role="switch"
+                        aria-checked={data.enabled}
+                        onClick={() => setData('enabled', !data.enabled)}
+                        className={`inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-xs font-bold transition ${
                             data.enabled
-                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/30'
-                                : 'bg-rose-500/20 text-rose-300 border border-rose-400/30'
+                                ? 'bg-emerald-600 text-white'
+                                : 'bg-slate-200 text-slate-600'
                         }`}
                     >
                         <Power className="h-3.5 w-3.5" />
-                        <span>{data.enabled ? 'OCR চালু আছে (ON)' : 'OCR বন্ধ আছে (OFF)'}</span>
-                    </div>
+                        <span>{data.enabled ? 'ON' : 'OFF'}</span>
+                    </button>
                 </div>
 
                 {flashSuccess && (
-                    <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900 flex items-center gap-2">
-                        <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs sm:text-sm font-semibold text-emerald-900 flex items-center gap-2">
+                        <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
                         <span>{flashSuccess}</span>
                     </div>
                 )}
 
-                <form onSubmit={handleSubmit} className="space-y-6">
-                    {/* Master ON/OFF Toggle */}
-                    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs flex items-center justify-between gap-4">
-                        <div>
-                            <h2 className="text-sm sm:text-base font-bold text-slate-900">
-                                Member Admission-এ NID OCR চালু রাখুন
-                            </h2>
-                            <p className="text-xs text-slate-500 mt-0.5">
-                                বন্ধ (OFF) করলে Field Officer সরাসরি আগের মতো নতুন/পুরাতন ফর্ম পূরণ করতে পারবেন, NID স্ক্যান ধাপ আসবে না।
-                            </p>
-                        </div>
-                        <button
-                            type="button"
-                            role="switch"
-                            aria-checked={data.enabled}
-                            onClick={() => setData('enabled', !data.enabled)}
-                            className={`relative inline-flex h-7 w-13 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ${
-                                data.enabled ? 'bg-emerald-600' : 'bg-slate-300'
-                            }`}
-                        >
-                            <span
-                                className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md transition duration-200 ${
-                                    data.enabled ? 'translate-x-6' : 'translate-x-0'
-                                }`}
-                            />
-                        </button>
-                    </div>
-
-                    {/* Provider Mode */}
+                <form onSubmit={handleSubmit} className="space-y-5">
+                    {/* Mode Toggle + Engine Picker */}
                     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
-                        <div>
-                            <h2 className="text-sm sm:text-base font-bold text-slate-900">
-                                OCR ইঞ্জিন মোড নির্বাচন করুন
-                            </h2>
-                            <p className="text-xs text-slate-500 mt-0.5">
-                                <strong>Auto</strong> মোডে একটি API কাজ না করলে বা কোটা শেষ হলে সাথে সাথেই পরেরটিতে (1. Groq → 2. OpenRouter → 3. Gemini) সুইচ করবে।
-                            </p>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                            {[
-                                {
-                                    id: 'auto' as const,
-                                    title: 'Auto Rotation (Recommended)',
-                                    desc: '1. Groq → 2. OpenRouter → 3. Gemini (একটি ব্যর্থ হলে পরেরটিতে সুইচ)',
-                                },
-                                {
-                                    id: 'groq' as const,
-                                    title: '1. Groq Vision Only',
-                                    desc: 'শুধু Groq ফ্রি Vision API ব্যবহার করবে (~০.৮s)',
-                                },
-                                {
-                                    id: 'openrouter' as const,
-                                    title: '2. OpenRouter Free Only',
-                                    desc: 'শুধু OpenRouter ফ্রি Vision মডেল ব্যবহার করবে',
-                                },
-                                {
-                                    id: 'gemini' as const,
-                                    title: '3. Gemini Free Only',
-                                    desc: 'শুধু Gemini Vision AI ব্যবহার করবে (PDF সাপোর্টসহ)',
-                                },
-                                {
-                                    id: 'python_service' as const,
-                                    title: 'External Python API',
-                                    desc: 'আপনার আলাদা হোস্ট করা Python OCR সার্ভার ব্যবহার করবে',
-                                },
-                                {
-                                    id: 'local' as const,
-                                    title: 'Local OCR (Offline)',
-                                    desc: 'কোনো API ছাড়াই ব্রাউজারে অফলাইন OCR চালাবে',
-                                },
-                            ].map((opt) => (
-                                <button
-                                    key={opt.id}
-                                    type="button"
-                                    onClick={() => setData('provider', opt.id)}
-                                    className={`rounded-xl border-2 p-3.5 text-left transition ${
-                                        data.provider === opt.id
-                                            ? 'border-blue-600 bg-blue-50/70'
-                                            : 'border-slate-200 hover:border-slate-300'
-                                    }`}
-                                >
-                                    <div className="text-xs sm:text-sm font-extrabold text-slate-900">
-                                        {opt.title}
-                                    </div>
-                                    <div className="text-[11px] text-slate-600 mt-1 leading-relaxed">
-                                        {opt.desc}
-                                    </div>
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* 1. Groq Vision Section */}
-                    {showGroqSection && (
-                        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
-                            <div className="flex items-center justify-between gap-2">
-                                <div className="flex items-center gap-2">
-                                    <Zap className="h-5 w-5 text-orange-600" />
-                                    <h2 className="text-sm sm:text-base font-bold text-slate-900">
-                                        ১. Groq Vision API (ফ্রি — console.groq.com)
-                                    </h2>
-                                </div>
-                                <span className="rounded-full bg-orange-100 px-2.5 py-0.5 text-[11px] font-bold text-orange-800">
-                                    Priority #1
-                                </span>
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div>
+                                <h2 className="text-sm font-bold text-slate-900">১. মোড ও ইঞ্জিন নির্বাচন</h2>
+                                <p className="text-xs text-slate-500">
+                                    {data.mode === 'single'
+                                        ? 'শুধু নির্বাচিত ১টি ইঞ্জিনই কাজ করবে'
+                                        : 'একাধিক ইঞ্জিন সিলেক্ট করলে ক্রমানুসারে অটো-সুইচ করবে'}
+                                </p>
                             </div>
 
-                            <div className="space-y-2">
-                                <label className="mb-1 block text-xs font-bold text-slate-700">
-                                    Groq API Key{' '}
-                                    {settings.has_groq_key && !data.clear_groq_key && (
-                                        <span className="text-emerald-600 font-semibold">(সংরক্ষিত আছে)</span>
+                            <div className="inline-flex rounded-xl bg-slate-100 p-1 self-start">
+                                <button
+                                    type="button"
+                                    onClick={() => setData('mode', 'single')}
+                                    className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                                        data.mode === 'single'
+                                            ? 'bg-white text-slate-900 shadow-xs'
+                                            : 'text-slate-600 hover:text-slate-900'
+                                    }`}
+                                >
+                                    Single
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setData('mode', 'multiple')}
+                                    className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                                        data.mode === 'multiple'
+                                            ? 'bg-white text-slate-900 shadow-xs'
+                                            : 'text-slate-600 hover:text-slate-900'
+                                    }`}
+                                >
+                                    Multiple
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            {ENGINES.map((engine) => {
+                                const selected = isSelected(engine.id);
+                                const orderIdx = data.mode === 'multiple' ? data.providers.indexOf(engine.id) : -1;
+                                return (
+                                    <div
+                                        key={engine.id}
+                                        onClick={() => toggleProvider(engine.id)}
+                                        className={`cursor-pointer rounded-xl border p-3 transition flex items-center justify-between gap-2 ${
+                                            selected
+                                                ? 'border-blue-600 bg-blue-50/50'
+                                                : 'border-slate-200 hover:border-slate-300'
+                                        }`}
+                                    >
+                                        <div className="flex items-center gap-2.5 min-w-0">
+                                            <div
+                                                className={`flex h-5 w-5 shrink-0 items-center justify-center ${
+                                                    data.mode === 'single' ? 'rounded-full' : 'rounded-md'
+                                                } border ${
+                                                    selected
+                                                        ? 'border-blue-600 bg-blue-600 text-white'
+                                                        : 'border-slate-300 bg-white'
+                                                }`}
+                                            >
+                                                {selected && <Check className="h-3 w-3" />}
+                                            </div>
+                                            <div className="min-w-0">
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="text-xs font-bold text-slate-900 truncate">
+                                                        {engine.name}
+                                                    </span>
+                                                    {engine.badge && (
+                                                        <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">
+                                                            {engine.badge}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <p className="text-[11px] text-slate-500 truncate">{engine.subtitle}</p>
+                                            </div>
+                                        </div>
+
+                                        {data.mode === 'multiple' && selected && (
+                                            <div
+                                                className="flex items-center gap-1 shrink-0"
+                                                onClick={(e) => e.stopPropagation()}
+                                            >
+                                                <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-800">
+                                                    #{orderIdx + 1}
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    disabled={orderIdx === 0}
+                                                    onClick={() => moveProvider(engine.id, -1)}
+                                                    className="p-1 text-slate-400 hover:text-slate-700 disabled:opacity-30"
+                                                    title="উপরে নিন"
+                                                >
+                                                    <ArrowUp className="h-3.5 w-3.5" />
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    disabled={orderIdx === data.providers.length - 1}
+                                                    onClick={() => moveProvider(engine.id, 1)}
+                                                    className="p-1 text-slate-400 hover:text-slate-700 disabled:opacity-30"
+                                                    title="নিচে নিন"
+                                                >
+                                                    <ArrowDown className="h-3.5 w-3.5" />
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        {errors.providers && (
+                            <p className="text-xs font-medium text-red-600">{errors.providers}</p>
+                        )}
+                    </div>
+
+                    {/* Credentials for ONLY selected engines */}
+                    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
+                        <h2 className="text-sm font-bold text-slate-900">২. নির্বাচিত ইঞ্জিনের ক্রেডেনশিয়াল</h2>
+
+                        {isSelected('google_vision') && (
+                            <div className="space-y-1.5 rounded-xl border border-slate-200 p-3.5">
+                                <label className="block text-xs font-bold text-slate-700">
+                                    Google Cloud Vision API Key{' '}
+                                    {settings.has_google_vision_key && !data.clear_google_vision_key && (
+                                        <span className="text-emerald-600 font-semibold">(সংরক্ষিত)</span>
                                     )}
                                 </label>
                                 <div className="relative">
                                     <KeyRound className="h-4 w-4 text-slate-400 absolute left-3 top-2.5" />
                                     <input
                                         type="password"
-                                        placeholder={
-                                            settings.has_groq_key
-                                                ? 'পরিবর্তন করতে চাইলে নতুন Key দিন'
-                                                : 'gsk_...'
-                                        }
-                                        value={data.groq_api_key}
+                                        placeholder={settings.has_google_vision_key ? 'নতুন Key দিলে পরিবর্তন হবে' : 'AIzaSy...'}
+                                        value={data.google_vision_api_key}
                                         onChange={(e) => {
-                                            setData('groq_api_key', e.target.value);
-                                            if (e.target.value) setData('clear_groq_key', false);
+                                            setData('google_vision_api_key', e.target.value);
+                                            if (e.target.value) setData('clear_google_vision_key', false);
                                         }}
-                                        className="w-full rounded-xl border border-slate-300 pl-9 pr-3 py-2 text-xs sm:text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                                        className="w-full rounded-lg border border-slate-300 pl-9 pr-3 py-2 text-xs sm:text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                                     />
                                 </div>
-                                <p className="text-[11px] text-slate-500">
-                                    সেরা Vision মডেল সিস্টেম নিজেই অটো সিলেক্ট করে নেবে।
-                                </p>
-                                {settings.has_groq_key && (
-                                    <label className="inline-flex items-center gap-1.5 text-[11px] text-slate-600 cursor-pointer">
+                                {settings.has_google_vision_key && (
+                                    <label className="inline-flex items-center gap-1.5 text-[11px] text-slate-500 cursor-pointer">
                                         <input
                                             type="checkbox"
-                                            checked={data.clear_groq_key}
-                                            onChange={(e) => setData('clear_groq_key', e.target.checked)}
+                                            checked={data.clear_google_vision_key}
+                                            onChange={(e) => setData('clear_google_vision_key', e.target.checked)}
                                             className="rounded border-slate-300"
                                         />
-                                        <span>Groq API Key মুছে ফেলুন</span>
+                                        <span>সংরক্ষিত Key মুছে ফেলুন</span>
                                     </label>
                                 )}
                             </div>
-                        </div>
-                    )}
+                        )}
 
-                    {/* 2. OpenRouter Vision Section */}
-                    {showOpenRouterSection && (
-                        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
-                            <div className="flex items-center justify-between gap-2">
-                                <div className="flex items-center gap-2">
-                                    <Sparkles className="h-5 w-5 text-purple-600" />
-                                    <h2 className="text-sm sm:text-base font-bold text-slate-900">
-                                        ২. OpenRouter Free Vision (openrouter.ai)
-                                    </h2>
-                                </div>
-                                <span className="rounded-full bg-purple-100 px-2.5 py-0.5 text-[11px] font-bold text-purple-800">
-                                    Priority #2
-                                </span>
-                            </div>
-
-                            <div className="space-y-2">
-                                <label className="mb-1 block text-xs font-bold text-slate-700">
+                        {isSelected('openrouter') && (
+                            <div className="space-y-1.5 rounded-xl border border-slate-200 p-3.5">
+                                <label className="block text-xs font-bold text-slate-700">
                                     OpenRouter API Key{' '}
                                     {settings.has_openrouter_key && !data.clear_openrouter_key && (
-                                        <span className="text-emerald-600 font-semibold">(সংরক্ষিত আছে)</span>
+                                        <span className="text-emerald-600 font-semibold">(সংরক্ষিত)</span>
                                     )}
                                 </label>
                                 <div className="relative">
                                     <KeyRound className="h-4 w-4 text-slate-400 absolute left-3 top-2.5" />
                                     <input
                                         type="password"
-                                        placeholder={
-                                            settings.has_openrouter_key
-                                                ? 'পরিবর্তন করতে চাইলে নতুন Key দিন'
-                                                : 'sk-or-v1-...'
-                                        }
+                                        placeholder={settings.has_openrouter_key ? 'নতুন Key দিলে পরিবর্তন হবে' : 'sk-or-v1-...'}
                                         value={data.openrouter_api_key}
                                         onChange={(e) => {
                                             setData('openrouter_api_key', e.target.value);
                                             if (e.target.value) setData('clear_openrouter_key', false);
                                         }}
-                                        className="w-full rounded-xl border border-slate-300 pl-9 pr-3 py-2 text-xs sm:text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                                        className="w-full rounded-lg border border-slate-300 pl-9 pr-3 py-2 text-xs sm:text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                                     />
                                 </div>
-                                <p className="text-[11px] text-slate-500">
-                                    ফ্রি Vision মডেল সিস্টেম নিজেই অটো সিলেক্ট ও রোটেট করবে।
-                                </p>
                                 {settings.has_openrouter_key && (
-                                    <label className="inline-flex items-center gap-1.5 text-[11px] text-slate-600 cursor-pointer">
+                                    <label className="inline-flex items-center gap-1.5 text-[11px] text-slate-500 cursor-pointer">
                                         <input
                                             type="checkbox"
                                             checked={data.clear_openrouter_key}
                                             onChange={(e) => setData('clear_openrouter_key', e.target.checked)}
                                             className="rounded border-slate-300"
                                         />
-                                        <span>OpenRouter API Key মুছে ফেলুন</span>
+                                        <span>সংরক্ষিত Key মুছে ফেলুন</span>
                                     </label>
                                 )}
                             </div>
-                        </div>
-                    )}
+                        )}
 
-                    {/* 3. Gemini Vision AI Section */}
-                    {showGeminiSection && (
-                        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
-                            <div className="flex items-center justify-between gap-2">
-                                <div className="flex items-center gap-2">
-                                    <Sparkles className="h-5 w-5 text-blue-600" />
-                                    <h2 className="text-sm sm:text-base font-bold text-slate-900">
-                                        ৩. Gemini Vision AI (aistudio.google.com)
-                                    </h2>
-                                </div>
-                                <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-bold text-blue-800">
-                                    Priority #3
-                                </span>
-                            </div>
-
-                            <div className="space-y-2">
-                                <label className="mb-1 block text-xs font-bold text-slate-700">
+                        {isSelected('gemini') && (
+                            <div className="space-y-1.5 rounded-xl border border-slate-200 p-3.5">
+                                <label className="block text-xs font-bold text-slate-700">
                                     Gemini API Key{' '}
                                     {settings.has_gemini_key && !data.clear_gemini_key && (
-                                        <span className="text-emerald-600 font-semibold">(সংরক্ষিত আছে)</span>
+                                        <span className="text-emerald-600 font-semibold">(সংরক্ষিত)</span>
                                     )}
                                 </label>
                                 <div className="relative">
                                     <KeyRound className="h-4 w-4 text-slate-400 absolute left-3 top-2.5" />
                                     <input
                                         type="password"
-                                        placeholder={
-                                            settings.has_gemini_key
-                                                ? 'পরিবর্তন করতে চাইলে নতুন Key দিন'
-                                                : 'AIzaSy... (খালি রাখলে .env ব্যবহার হবে)'
-                                        }
+                                        placeholder={settings.has_gemini_key ? 'নতুন Key দিলে পরিবর্তন হবে' : 'AIzaSy...'}
                                         value={data.gemini_api_key}
                                         onChange={(e) => {
                                             setData('gemini_api_key', e.target.value);
                                             if (e.target.value) setData('clear_gemini_key', false);
                                         }}
-                                        className="w-full rounded-xl border border-slate-300 pl-9 pr-3 py-2 text-xs sm:text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                                        className="w-full rounded-lg border border-slate-300 pl-9 pr-3 py-2 text-xs sm:text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                                     />
                                 </div>
-                                <p className="text-[11px] text-slate-500">
-                                    সেরা Gemini Flash মডেল সিস্টেম নিজেই অটো সিলেক্ট ও ফলব্যাক করবে।
-                                </p>
                                 {settings.has_gemini_key && (
-                                    <label className="inline-flex items-center gap-1.5 text-[11px] text-slate-600 cursor-pointer">
+                                    <label className="inline-flex items-center gap-1.5 text-[11px] text-slate-500 cursor-pointer">
                                         <input
                                             type="checkbox"
                                             checked={data.clear_gemini_key}
                                             onChange={(e) => setData('clear_gemini_key', e.target.checked)}
                                             className="rounded border-slate-300"
                                         />
-                                        <span>ডাটাবেজের Key মুছে .env ব্যবহার করুন</span>
+                                        <span>সংরক্ষিত Key মুছে ফেলুন</span>
                                     </label>
                                 )}
                             </div>
-                        </div>
-                    )}
+                        )}
 
-                    {/* External Python Service Connection */}
-                    {showPythonSection && (
-                        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
-                            <div className="flex items-center gap-2">
-                                <Server className="h-5 w-5 text-indigo-600" />
-                                <h2 className="text-sm sm:text-base font-bold text-slate-900">
-                                    External Python NID OCR API কানেকশন (ঐচ্ছিক)
-                                </h2>
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <div className="sm:col-span-2">
-                                    <label className="mb-1 block text-xs font-bold text-slate-700">
-                                        Service Base URL <span className="text-slate-400 font-normal">(শেষে `/` ছাড়া)</span>
-                                    </label>
-                                    <div className="relative">
-                                        <Link2 className="h-4 w-4 text-slate-400 absolute left-3 top-2.5" />
-                                        <input
-                                            type="url"
-                                            placeholder="https://ocr.yourdomain.com অথবা http://127.0.0.1:8001"
-                                            value={data.service_url}
-                                            onChange={(e) => setData('service_url', e.target.value)}
-                                            className="w-full rounded-xl border border-slate-300 pl-9 pr-3 py-2 text-xs sm:text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
-                                        />
-                                    </div>
-                                    {errors.service_url && (
-                                        <p className="mt-1 text-xs text-red-600 font-medium">{errors.service_url}</p>
+                        {isSelected('groq') && (
+                            <div className="space-y-1.5 rounded-xl border border-slate-200 p-3.5">
+                                <label className="block text-xs font-bold text-slate-700">
+                                    Groq API Key{' '}
+                                    {settings.has_groq_key && !data.clear_groq_key && (
+                                        <span className="text-emerald-600 font-semibold">(সংরক্ষিত)</span>
                                     )}
+                                </label>
+                                <div className="relative">
+                                    <KeyRound className="h-4 w-4 text-slate-400 absolute left-3 top-2.5" />
+                                    <input
+                                        type="password"
+                                        placeholder={settings.has_groq_key ? 'নতুন Key দিলে পরিবর্তন হবে' : 'gsk_...'}
+                                        value={data.groq_api_key}
+                                        onChange={(e) => {
+                                            setData('groq_api_key', e.target.value);
+                                            if (e.target.value) setData('clear_groq_key', false);
+                                        }}
+                                        className="w-full rounded-lg border border-slate-300 pl-9 pr-3 py-2 text-xs sm:text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                                    />
                                 </div>
-
-                                <div>
-                                    <label className="mb-1 block text-xs font-bold text-slate-700">
-                                        Bearer Secret Token{' '}
-                                        {settings.has_token && !data.clear_token && (
-                                            <span className="text-emerald-600 font-semibold">(সংরক্ষিত আছে)</span>
-                                        )}
+                                {settings.has_groq_key && (
+                                    <label className="inline-flex items-center gap-1.5 text-[11px] text-slate-500 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={data.clear_groq_key}
+                                            onChange={(e) => setData('clear_groq_key', e.target.checked)}
+                                            className="rounded border-slate-300"
+                                        />
+                                        <span>সংরক্ষিত Key মুছে ফেলুন</span>
                                     </label>
-                                    <div className="relative">
-                                        <KeyRound className="h-4 w-4 text-slate-400 absolute left-3 top-2.5" />
+                                )}
+                            </div>
+                        )}
+
+                        {isSelected('python_service') && (
+                            <div className="space-y-3 rounded-xl border border-slate-200 p-3.5">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div className="sm:col-span-2">
+                                        <label className="mb-1 block text-xs font-bold text-slate-700">
+                                            External Python API URL
+                                        </label>
+                                        <div className="relative">
+                                            <Link2 className="h-4 w-4 text-slate-400 absolute left-3 top-2.5" />
+                                            <input
+                                                type="url"
+                                                placeholder="http://127.0.0.1:8001"
+                                                value={data.service_url}
+                                                onChange={(e) => setData('service_url', e.target.value)}
+                                                className="w-full rounded-lg border border-slate-300 pl-9 pr-3 py-2 text-xs sm:text-sm"
+                                            />
+                                        </div>
+                                        {errors.service_url && (
+                                            <p className="mt-1 text-xs text-red-600">{errors.service_url}</p>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <label className="mb-1 block text-xs font-bold text-slate-700">
+                                            Bearer Token {settings.has_token && <span className="text-emerald-600">(সংরক্ষিত)</span>}
+                                        </label>
                                         <input
                                             type="password"
-                                            placeholder={
-                                                settings.has_token
-                                                    ? 'পরিবর্তন করতে চাইলে নতুন টোকেন দিন'
-                                                    : 'NID_OCR_TOKEN দিন'
-                                            }
+                                            placeholder={settings.has_token ? 'নতুন টোকেন দিলে পরিবর্তন হবে' : 'NID_OCR_TOKEN'}
                                             value={data.service_token}
                                             onChange={(e) => {
                                                 setData('service_token', e.target.value);
                                                 if (e.target.value) setData('clear_token', false);
                                             }}
-                                            className="w-full rounded-xl border border-slate-300 pl-9 pr-3 py-2 text-xs sm:text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                                            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs sm:text-sm"
                                         />
                                     </div>
-                                    {settings.has_token && (
-                                        <label className="mt-1.5 inline-flex items-center gap-1.5 text-[11px] text-slate-600 cursor-pointer">
-                                            <input
-                                                type="checkbox"
-                                                checked={data.clear_token}
-                                                onChange={(e) => setData('clear_token', e.target.checked)}
-                                                className="rounded border-slate-300"
-                                            />
-                                            <span>সংরক্ষিত টোকেন মুছে ফেলুন</span>
-                                        </label>
-                                    )}
-                                </div>
-
-                                <div>
-                                    <label className="mb-1 block text-xs font-bold text-slate-700">
-                                        Request Timeout (সেকেন্ড)
-                                    </label>
-                                    <input
-                                        type="number"
-                                        min={5}
-                                        max={120}
-                                        value={data.timeout}
-                                        onChange={(e) => setData('timeout', Number(e.target.value) || 30)}
-                                        className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs sm:text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
-                                    />
-                                    {errors.timeout && (
-                                        <p className="mt-1 text-xs text-red-600 font-medium">{errors.timeout}</p>
-                                    )}
-                                </div>
-                            </div>
-
-                            <div className="pt-2 flex flex-wrap items-center gap-3 border-t border-slate-100">
-                                <button
-                                    type="button"
-                                    onClick={handleTestConnection}
-                                    disabled={testing || !data.service_url}
-                                    className="inline-flex items-center gap-2 rounded-xl border border-indigo-300 bg-indigo-50 hover:bg-indigo-100 px-4 py-2 text-xs font-bold text-indigo-800 disabled:opacity-50 transition"
-                                >
-                                    <Activity className={`h-4 w-4 ${testing ? 'animate-pulse' : ''}`} />
-                                    <span>{testing ? 'চেক করা হচ্ছে...' : 'Test Connection (/health)'}</span>
-                                </button>
-
-                                {testResult && (
-                                    <div
-                                        className={`inline-flex items-center gap-1.5 text-xs font-bold ${
-                                            testResult.ok ? 'text-emerald-700' : 'text-red-600'
-                                        }`}
-                                    >
-                                        {testResult.ok ? (
-                                            <CheckCircle2 className="h-4 w-4" />
-                                        ) : (
-                                            <XCircle className="h-4 w-4" />
-                                        )}
-                                        <span>{testResult.message}</span>
+                                    <div>
+                                        <label className="mb-1 block text-xs font-bold text-slate-700">Timeout (sec)</label>
+                                        <input
+                                            type="number"
+                                            min={5}
+                                            max={120}
+                                            value={data.timeout}
+                                            onChange={(e) => setData('timeout', Number(e.target.value) || 30)}
+                                            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs sm:text-sm"
+                                        />
                                     </div>
-                                )}
+                                </div>
+                                <div className="flex flex-wrap items-center gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={handleTestConnection}
+                                        disabled={testing || !data.service_url}
+                                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-slate-50 hover:bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-700 disabled:opacity-50"
+                                    >
+                                        <Activity className={`h-3.5 w-3.5 ${testing ? 'animate-pulse' : ''}`} />
+                                        <span>{testing ? 'চেক হচ্ছে...' : 'Test Connection'}</span>
+                                    </button>
+                                    {testResult && (
+                                        <span className={`inline-flex items-center gap-1 text-xs font-bold ${testResult.ok ? 'text-emerald-700' : 'text-red-600'}`}>
+                                            {testResult.ok ? <CheckCircle2 className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
+                                            {testResult.message}
+                                        </span>
+                                    )}
+                                </div>
                             </div>
-                        </div>
-                    )}
+                        )}
 
-                    {/* Local Offline Note */}
-                    {data.provider === 'local' && (
-                        <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 flex items-start gap-3 text-amber-950">
-                            <Cpu className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
-                            <div className="text-xs leading-relaxed">
-                                <strong>Local OCR (Offline)</strong> মোডে কোনো এক্সটার্নাল সার্ভার বা API Key ছাড়াই ব্যবহারকারীর ব্রাউজারে Tesseract (`ben+eng`) রান হবে। সর্বোচ্চ বাংলা নির্ভুলতার জন্য Auto Rotation (Groq / OpenRouter / Gemini) ব্যবহারের পরামর্শ দেওয়া হয়।
-                            </div>
-                        </div>
-                    )}
+                        {activeEngines.length === 1 && activeEngines[0] === 'local' && (
+                            <p className="text-xs text-slate-500">
+                                Local Offline OCR-এ কোনো API Key প্রয়োজন নেই।
+                            </p>
+                        )}
+                    </div>
 
                     <div className="flex justify-end">
                         <button
                             type="submit"
                             disabled={processing}
-                            className="inline-flex items-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 px-6 py-2.5 text-sm font-extrabold text-white shadow-md disabled:opacity-50 transition"
+                            className="inline-flex items-center gap-2 rounded-xl bg-slate-900 hover:bg-slate-800 px-5 py-2.5 text-xs sm:text-sm font-bold text-white shadow-sm disabled:opacity-50 transition"
                         >
                             <Save className="h-4 w-4" />
-                            <span>{processing ? 'সংরক্ষণ হচ্ছে...' : 'সেটিংস সংরক্ষণ করুন'}</span>
+                            <span>{processing ? 'সংরক্ষণ হচ্ছে...' : 'সেটিংস সেভ করুন'}</span>
                         </button>
                     </div>
                 </form>

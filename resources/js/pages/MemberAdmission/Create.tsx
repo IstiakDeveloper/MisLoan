@@ -65,7 +65,7 @@ interface Props {
     }>;
     suggested_application_no?: string;
     nid_ocr_enabled?: boolean;
-    nid_ocr_provider?: 'auto' | 'groq' | 'openrouter' | 'gemini' | 'python_service' | 'local';
+    nid_ocr_provider?: 'auto' | 'google_vision' | 'groq' | 'openrouter' | 'gemini' | 'python_service' | 'local';
 }
 
 /** Samity code without branch prefix (first 4 digits). e.g. 00010071 → 0071 */

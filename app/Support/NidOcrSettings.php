@@ -8,7 +8,9 @@ use Illuminate\Support\Facades\Crypt;
 class NidOcrSettings
 {
     public const KEY_ENABLED = 'nid_ocr_enabled';
+    public const KEY_MODE = 'nid_ocr_mode';
     public const KEY_PROVIDER = 'nid_ocr_provider';
+    public const KEY_PROVIDERS = 'nid_ocr_providers';
     public const KEY_SERVICE_URL = 'nid_ocr_service_url';
     public const KEY_SERVICE_TOKEN = 'nid_ocr_service_token';
     public const KEY_TIMEOUT = 'nid_ocr_timeout';
@@ -18,6 +20,16 @@ class NidOcrSettings
     public const KEY_GROQ_MODEL = 'nid_ocr_groq_model';
     public const KEY_OPENROUTER_API_KEY = 'nid_ocr_openrouter_api_key';
     public const KEY_OPENROUTER_MODEL = 'nid_ocr_openrouter_model';
+    public const KEY_GOOGLE_VISION_API_KEY = 'nid_ocr_google_vision_api_key';
+
+    public const ALL_PROVIDERS = [
+        'google_vision',
+        'openrouter',
+        'gemini',
+        'groq',
+        'python_service',
+        'local',
+    ];
 
     public static function getAll(): array
     {
@@ -25,7 +37,9 @@ class NidOcrSettings
             $rows = Setting::query()
                 ->whereIn('key', [
                     self::KEY_ENABLED,
+                    self::KEY_MODE,
                     self::KEY_PROVIDER,
+                    self::KEY_PROVIDERS,
                     self::KEY_SERVICE_URL,
                     self::KEY_SERVICE_TOKEN,
                     self::KEY_TIMEOUT,
@@ -35,6 +49,7 @@ class NidOcrSettings
                     self::KEY_GROQ_MODEL,
                     self::KEY_OPENROUTER_API_KEY,
                     self::KEY_OPENROUTER_MODEL,
+                    self::KEY_GOOGLE_VISION_API_KEY,
                 ])
                 ->pluck('value', 'key');
         } catch (\Throwable) {
@@ -45,8 +60,24 @@ class NidOcrSettings
         $enabled = $enabledRaw === null ? true : in_array((string) $enabledRaw, ['1', 'true', 'yes', 'on'], true);
 
         $provider = (string) ($rows->get(self::KEY_PROVIDER) ?: 'auto');
-        if (! in_array($provider, ['auto', 'groq', 'openrouter', 'gemini', 'python_service', 'local'], true)) {
+        if (! in_array($provider, array_merge(['auto'], self::ALL_PROVIDERS), true)) {
             $provider = 'auto';
+        }
+
+        $mode = (string) ($rows->get(self::KEY_MODE) ?: ($provider === 'auto' ? 'multiple' : 'single'));
+        if (! in_array($mode, ['single', 'multiple'], true)) {
+            $mode = 'multiple';
+        }
+
+        $providersRaw = json_decode((string) ($rows->get(self::KEY_PROVIDERS) ?: '[]'), true);
+        $providers = is_array($providersRaw)
+            ? array_values(array_unique(array_filter($providersRaw, static fn ($p): bool => is_string($p) && in_array($p, self::ALL_PROVIDERS, true))))
+            : [];
+        if ($providers === []) {
+            $providers = ['google_vision', 'openrouter', 'gemini'];
+            if (trim((string) config('services.nid_ocr.url', '')) !== '') {
+                $providers[] = 'python_service';
+            }
         }
 
         $serviceUrl = trim((string) ($rows->get(self::KEY_SERVICE_URL) ?? ''));
@@ -66,6 +97,7 @@ class NidOcrSettings
         if (in_array($openrouterModel, ['qwen/qwen2.5-vl-72b-instruct:free', 'google/gemini-2.0-flash-exp:free', 'meta-llama/llama-3.2-11b-vision-instruct:free'], true)) {
             $openrouterModel = 'google/gemma-4-31b-it:free';
         }
+        $googleVisionApiKey = self::decryptOrFallback((string) ($rows->get(self::KEY_GOOGLE_VISION_API_KEY) ?? ''), (string) config('services.google_vision.api_key', ''));
 
         $timeout = (int) ($rows->get(self::KEY_TIMEOUT) ?: config('services.nid_ocr.timeout', 30));
         if ($timeout < 5 || $timeout > 120) {
@@ -74,7 +106,9 @@ class NidOcrSettings
 
         return [
             'enabled' => $enabled,
-            'provider' => $provider,
+            'mode' => $mode,
+            'provider' => $mode === 'multiple' ? 'auto' : $provider,
+            'providers' => $providers,
             'service_url' => rtrim($serviceUrl, '/'),
             'service_token' => $token,
             'gemini_api_key' => $geminiApiKey,
@@ -83,6 +117,7 @@ class NidOcrSettings
             'groq_model' => $groqModel,
             'openrouter_api_key' => $openrouterApiKey,
             'openrouter_model' => $openrouterModel,
+            'google_vision_api_key' => $googleVisionApiKey,
             'timeout' => $timeout,
         ];
     }
@@ -107,8 +142,25 @@ class NidOcrSettings
 
     public static function save(array $input): void
     {
+        $mode = ($input['mode'] ?? 'multiple') === 'single' ? 'single' : 'multiple';
+        $provider = (string) ($input['provider'] ?? 'google_vision');
+        if (! in_array($provider, self::ALL_PROVIDERS, true)) {
+            $provider = 'google_vision';
+        }
+
+        $providers = is_array($input['providers'] ?? null)
+            ? array_values(array_unique(array_filter($input['providers'], static fn ($p): bool => is_string($p) && in_array($p, self::ALL_PROVIDERS, true))))
+            : [];
+        if ($mode === 'multiple' && $providers === []) {
+            $providers = [$provider];
+        }
+
         self::put(self::KEY_ENABLED, ! empty($input['enabled']) ? '1' : '0');
-        self::put(self::KEY_PROVIDER, (string) ($input['provider'] ?? 'auto'));
+        self::put(self::KEY_MODE, $mode);
+        self::put(self::KEY_PROVIDER, $mode === 'multiple' ? 'auto' : $provider);
+        if ($providers !== []) {
+            self::put(self::KEY_PROVIDERS, json_encode($providers));
+        }
         self::put(self::KEY_SERVICE_URL, rtrim(trim((string) ($input['service_url'] ?? '')), '/'));
         self::put(self::KEY_TIMEOUT, (string) max(5, min(120, (int) ($input['timeout'] ?? 30))));
         self::put(self::KEY_GEMINI_MODEL, trim((string) ($input['gemini_model'] ?? 'gemini-3.8-flash')) ?: 'gemini-3.8-flash');
@@ -137,6 +189,12 @@ class NidOcrSettings
             self::put(self::KEY_OPENROUTER_API_KEY, '');
         } elseif (! empty($input['openrouter_api_key'])) {
             self::put(self::KEY_OPENROUTER_API_KEY, Crypt::encryptString((string) $input['openrouter_api_key']));
+        }
+
+        if (! empty($input['clear_google_vision_key'])) {
+            self::put(self::KEY_GOOGLE_VISION_API_KEY, '');
+        } elseif (! empty($input['google_vision_api_key'])) {
+            self::put(self::KEY_GOOGLE_VISION_API_KEY, Crypt::encryptString((string) $input['google_vision_api_key']));
         }
     }
 

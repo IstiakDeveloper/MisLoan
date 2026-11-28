@@ -20,15 +20,17 @@ class NidOcrSettingsController extends Controller
         return Inertia::render('HeadOffice/NidOcrSettings', [
             'settings' => [
                 'enabled' => $config['enabled'],
-                'provider' => $config['provider'],
+                'mode' => $config['mode'],
+                'provider' => $config['provider'] === 'auto'
+                    ? ($config['providers'][0] ?? 'google_vision')
+                    : $config['provider'],
+                'providers' => $config['providers'],
                 'service_url' => $config['service_url'],
                 'has_token' => $config['service_token'] !== '',
                 'has_gemini_key' => $config['gemini_api_key'] !== '',
-                'gemini_model' => $config['gemini_model'],
                 'has_groq_key' => $config['groq_api_key'] !== '',
-                'groq_model' => $config['groq_model'],
                 'has_openrouter_key' => $config['openrouter_api_key'] !== '',
-                'openrouter_model' => $config['openrouter_model'],
+                'has_google_vision_key' => $config['google_vision_api_key'] !== '',
                 'timeout' => $config['timeout'],
             ],
         ]);
@@ -38,21 +40,25 @@ class NidOcrSettingsController extends Controller
     {
         $validated = $request->validate([
             'enabled' => ['required', 'boolean'],
-            'provider' => ['required', 'in:auto,groq,openrouter,gemini,python_service,local'],
+            'mode' => ['required', 'in:single,multiple'],
+            'provider' => ['required_if:mode,single', 'in:google_vision,groq,openrouter,gemini,python_service,local'],
+            'providers' => ['required_if:mode,multiple', 'array', 'min:1'],
+            'providers.*' => ['in:google_vision,groq,openrouter,gemini,python_service,local'],
             'service_url' => ['nullable', 'url', 'max:500'],
             'service_token' => ['nullable', 'string', 'max:500'],
             'clear_token' => ['nullable', 'boolean'],
             'gemini_api_key' => ['nullable', 'string', 'max:500'],
             'clear_gemini_key' => ['nullable', 'boolean'],
-            'gemini_model' => ['nullable', 'string', 'max:100'],
             'groq_api_key' => ['nullable', 'string', 'max:500'],
             'clear_groq_key' => ['nullable', 'boolean'],
-            'groq_model' => ['nullable', 'string', 'max:150'],
             'openrouter_api_key' => ['nullable', 'string', 'max:500'],
             'clear_openrouter_key' => ['nullable', 'boolean'],
-            'openrouter_model' => ['nullable', 'string', 'max:150'],
+            'google_vision_api_key' => ['nullable', 'string', 'max:500'],
+            'clear_google_vision_key' => ['nullable', 'boolean'],
             'timeout' => ['required', 'integer', 'min:5', 'max:120'],
         ], [
+            'providers.required_if' => 'Multiple মোডে কমপক্ষে ১টি OCR ইঞ্জিন নির্বাচন করুন।',
+            'providers.min' => 'Multiple মোডে কমপক্ষে ১টি OCR ইঞ্জিন নির্বাচন করুন।',
             'service_url.url' => 'সার্ভিস URL সঠিক ফরম্যাটে দিন (যেমন: http://127.0.0.1:8001 বা https://ocr.example.com)।',
             'timeout.min' => 'Timeout কমপক্ষে ৫ সেকেন্ড হতে হবে।',
             'timeout.max' => 'Timeout সর্বোচ্চ ১২০ সেকেন্ড হতে পারবে।',

@@ -152,4 +152,42 @@ class NidOcrServiceTest extends TestCase
         $this->assertSame('হাবিবুর রহমান', $result['data']['applicant_name_bn']);
         $this->assertSame('3314089875', $result['data']['smart_card_number']);
     }
+
+    public function test_extracts_bangla_and_back_address_via_google_cloud_vision(): void
+    {
+        config()->set('services.google_vision.api_key', 'gv-test-key');
+
+        Http::fake([
+            'vision.googleapis.com/*' => Http::response([
+                'responses' => [
+                    [
+                        'fullTextAnnotation' => [
+                            'text' => "গণপ্রজাতন্ত্রী বাংলাদেশ সরকার\nNational ID Card\nনাম\nমোঃ রুহুল আমিন\nName\nMD. RUHUL AMIN\nপিতা\nআককাচ আলী\nমাতা\nমোছাঃ রাহিমা খাতুন\nDate of Birth 21 Jan 1985\nNID No. 326 848 3744",
+                        ],
+                    ],
+                    [
+                        'fullTextAnnotation' => [
+                            'text' => "ঠিকানা: বাসা/হোল্ডিং: ৩৬, গ্রাম/রাস্তা: রোড নং-২, ধানমন্ডি, ডাকঘর: জিগাতলা - ১২০৯, ঢাকা\nBlood Group: AB+",
+                        ],
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $service = new NidOcrService();
+        $result = $service->extract(
+            UploadedFile::fake()->image('front.jpg', 1000, 630),
+            UploadedFile::fake()->image('back.jpg', 1000, 630)
+        );
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame('মোঃ রুহুল আমিন', $result['data']['applicant_name_bn']);
+        $this->assertSame('MD. RUHUL AMIN', $result['data']['applicant_name_en']);
+        $this->assertSame('আককাচ আলী', $result['data']['father_name_bn']);
+        $this->assertSame('মোছাঃ রাহিমা খাতুন', $result['data']['mother_name_bn']);
+        $this->assertSame('3268483744', $result['data']['smart_card_number']);
+        $this->assertSame('1985-01-21', $result['data']['date_of_birth']);
+        $this->assertSame('ঢাকা', $result['data']['address']['district_hint']);
+        $this->assertSame('1209', $result['data']['address']['post_code']);
+    }
 }

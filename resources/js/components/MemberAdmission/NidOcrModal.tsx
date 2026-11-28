@@ -59,7 +59,7 @@ export interface NidOcrSuccessPayload {
 
 interface Props {
     open: boolean;
-    provider?: 'auto' | 'groq' | 'openrouter' | 'gemini' | 'python_service' | 'local';
+    provider?: 'auto' | 'google_vision' | 'groq' | 'openrouter' | 'gemini' | 'python_service' | 'local';
     hasExistingDraft: boolean;
     onResumeDraft: () => void;
     onSkipManual: () => void;

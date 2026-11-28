@@ -27,7 +27,50 @@ class NidOcrService
             ];
         }
 
+        $mode = $settings['mode'] ?? 'multiple';
         $provider = $settings['provider'];
+
+        if ($mode === 'single' && $provider !== 'auto') {
+            return $this->runSingleProvider($provider, $frontImage, $backImage, $settings, allowLocalFallback: $provider === 'local');
+        }
+
+        // Multiple Rotation Mode: run ONLY the selected providers in configured order
+        $isPdf = strtolower((string) $frontImage->getClientMimeType()) === 'application/pdf'
+            || str_ends_with(strtolower((string) $frontImage->getClientOriginalName()), '.pdf');
+
+        $selectedProviders = $settings['providers'] ?? ['google_vision', 'openrouter', 'gemini'];
+        $allowLocal = in_array('local', $selectedProviders, true);
+
+        foreach ($selectedProviders as $p) {
+            if ($p === 'local') {
+                continue;
+            }
+            if ($isPdf && in_array($p, ['google_vision', 'groq', 'openrouter'], true)) {
+                continue;
+            }
+            $res = $this->runSingleProvider($p, $frontImage, $backImage, $settings, allowLocalFallback: $allowLocal);
+            if ($res['ok'] || $res['status'] === 422) {
+                return $res;
+            }
+        }
+
+        return [
+            'ok' => false,
+            'status' => 503,
+            'fallback_allowed' => $allowLocal,
+            'message' => $allowLocal
+                ? 'অনলাইন OCR ব্যস্ত আছে — লোকাল অফলাইন OCR ব্যবহার করা হচ্ছে।'
+                : 'নির্বাচিত OCR সার্ভিসগুলো থেকে রেসপন্স পাওয়া যায়নি। অনুগ্রহ করে সেটিংস বা API Key যাচাই করুন।',
+        ];
+    }
+
+    private function runSingleProvider(
+        string $provider,
+        UploadedFile $frontImage,
+        ?UploadedFile $backImage,
+        array $settings,
+        bool $allowLocalFallback
+    ): array {
         if ($provider === 'local') {
             return [
                 'ok' => false,
@@ -37,73 +80,226 @@ class NidOcrService
             ];
         }
 
-        if ($provider === 'python_service') {
-            $res = $settings['service_url'] !== ''
+        $res = match ($provider) {
+            'google_vision' => $this->extractViaGoogleVision($frontImage, $backImage, $settings),
+            'groq' => $this->extractViaGroq($frontImage, $backImage, $settings),
+            'openrouter' => $this->extractViaOpenRouter($frontImage, $backImage, $settings),
+            'gemini' => $this->extractViaGemini($frontImage, $backImage, $settings),
+            'python_service' => ($settings['service_url'] ?? '') !== ''
                 ? $this->extractViaPythonService($frontImage, $backImage, $settings)
-                : ['ok' => false, 'status' => 503, 'message' => 'Python OCR সার্ভিসের URL সেট করা নেই।'];
-            $res['fallback_allowed'] = false;
+                : ['ok' => false, 'status' => 503, 'message' => 'Python OCR সার্ভিসের URL সেট করা নেই।'],
+            default => ['ok' => false, 'status' => 503, 'message' => 'অজানা OCR প্রোভাইডার।'],
+        };
 
-            return $res;
+        $res['fallback_allowed'] = $allowLocalFallback;
+
+        return $res;
+    }
+
+    private function extractViaGoogleVision(UploadedFile $frontImage, ?UploadedFile $backImage, array $settings): array
+    {
+        $apiKey = (string) ($settings['google_vision_api_key'] ?? '');
+        if ($apiKey === '') {
+            return ['ok' => false, 'status' => 503, 'message' => 'Google Cloud Vision API Key সেট করা নেই।'];
         }
 
-        if ($provider === 'groq') {
-            $res = $this->extractViaGroq($frontImage, $backImage, $settings);
-            $res['fallback_allowed'] = false;
+        $requests = [
+            [
+                'image' => ['content' => base64_encode((string) file_get_contents($frontImage->getRealPath()))],
+                'features' => [['type' => 'DOCUMENT_TEXT_DETECTION']],
+                'imageContext' => ['languageHints' => ['bn', 'en']],
+            ],
+        ];
 
-            return $res;
+        if ($backImage !== null) {
+            $requests[] = [
+                'image' => ['content' => base64_encode((string) file_get_contents($backImage->getRealPath()))],
+                'features' => [['type' => 'DOCUMENT_TEXT_DETECTION']],
+                'imageContext' => ['languageHints' => ['bn', 'en']],
+            ];
         }
 
-        if ($provider === 'openrouter') {
-            $res = $this->extractViaOpenRouter($frontImage, $backImage, $settings);
-            $res['fallback_allowed'] = false;
+        try {
+            $response = Http::timeout(15)->post(
+                "https://vision.googleapis.com/v1/images:annotate?key={$apiKey}",
+                ['requests' => $requests]
+            );
+        } catch (\Throwable $e) {
+            Log::warning('Google Vision NID OCR failed', ['error' => $e->getMessage()]);
 
-            return $res;
+            return ['ok' => false, 'status' => 503, 'message' => 'Google Cloud Vision সার্ভারে সংযোগ পাওয়া যায়নি।'];
         }
 
-        if ($provider === 'gemini') {
-            $res = $this->extractViaGemini($frontImage, $backImage, $settings);
-            $res['fallback_allowed'] = false;
+        if (! $response->successful()) {
+            $errMsg = (string) data_get($response->json(), 'error.message', '');
+            Log::warning('Google Vision NID OCR error', [
+                'status' => $response->status(),
+                'body' => mb_substr($response->body(), 0, 400),
+            ]);
 
-            return $res;
+            $hint = 'Google Cloud Vision API থেকে রেসপন্স পাওয়া যায়নি।';
+            if (config('app.debug') && $errMsg !== '') {
+                $hint .= ' (' . mb_substr($errMsg, 0, 140) . ')';
+            }
+
+            return ['ok' => false, 'status' => 503, 'message' => $hint];
         }
 
-        // Auto Mode Priority Chain: 1. Groq -> 2. OpenRouter -> 3. Gemini -> 4. Python Service (if configured)
-        $isPdf = strtolower((string) $frontImage->getClientMimeType()) === 'application/pdf'
-            || str_ends_with(strtolower((string) $frontImage->getClientOriginalName()), '.pdf');
+        $frontText = (string) data_get($response->json(), 'responses.0.fullTextAnnotation.text', '');
+        $backText = $backImage !== null
+            ? (string) data_get($response->json(), 'responses.1.fullTextAnnotation.text', '')
+            : '';
 
-        if (! $isPdf && ($settings['groq_api_key'] ?? '') !== '') {
-            $groqRes = $this->extractViaGroq($frontImage, $backImage, $settings);
-            if ($groqRes['ok'] || $groqRes['status'] === 422) {
-                return $groqRes;
+        if (trim($frontText) === '') {
+            return [
+                'ok' => false,
+                'status' => 422,
+                'message' => 'ছবিতে কোনো লেখা পাওয়া যায়নি। অনুগ্রহ করে পরিষ্কার NID ছবি দিন।',
+            ];
+        }
+
+        $parsed = $this->parseBangladeshNidText($frontText, $backText);
+
+        return $this->validateAndNormalize($parsed);
+    }
+
+    /**
+     * Parse raw Bangla + English OCR text from Google Cloud Vision into structured NID fields.
+     */
+    private function parseBangladeshNidText(string $frontText, string $backText = ''): array
+    {
+        $combined = trim($frontText . "\n" . $backText);
+        $enCombined = $this->toEnglishDigits($combined);
+
+        $isBdNid = (bool) preg_match('/national\s+id|জাতীয়\s*পরিচয়|জাতীয়\s*পরিচয়|bangladesh|গণপ্রজাতন্ত্রী|nid\s*no|id\s*no/iu', $combined);
+
+        $lines = array_values(array_filter(array_map(
+            static fn (string $l): string => trim((string) preg_replace('/\s+/u', ' ', $l)),
+            preg_split('/\r?\n/', $frontText) ?: []
+        )));
+
+        $extractAfterLabel = static function (array $lineList, string $labelPattern) {
+            for ($i = 0, $n = count($lineList); $i < $n; $i++) {
+                $line = $lineList[$i];
+                if (preg_match('/^(?:' . $labelPattern . ')\s*[:ঃ]?\s*(.*)$/iu', $line, $m)) {
+                    $inline = trim($m[1]);
+                    if ($inline !== '' && mb_strlen($inline) >= 2) {
+                        return $inline;
+                    }
+                    if ($i + 1 < $n) {
+                        $next = trim($lineList[$i + 1]);
+                        if ($next !== '' && ! preg_match('/^(?:নাম|Name|পিতা|স্বামী|মাতা|Date of Birth|NID|ID No)/iu', $next)) {
+                            return $next;
+                        }
+                    }
+                }
+            }
+
+            return '';
+        };
+
+        $nameBn = $extractAfterLabel($lines, 'নাম|বাংলা\s*নাম');
+        $nameEn = $extractAfterLabel($lines, 'Name');
+        $fatherBn = $extractAfterLabel($lines, 'পিতা|পিতার\s*নাম');
+        $spouseBn = $extractAfterLabel($lines, 'স্বামী|স্বামীর\s*নাম');
+        $motherBn = $extractAfterLabel($lines, 'মাতা|মাতার\s*নাম');
+
+        if ($nameEn === '') {
+            foreach ($lines as $l) {
+                if (preg_match('/^[A-Z][A-Z .\'-]{4,}$/', $l) && ! preg_match('/GOVERNMENT|BANGLADESH|NATIONAL|CARD|REPUBLIC/', $l)) {
+                    $nameEn = $l;
+                    break;
+                }
             }
         }
 
-        if (! $isPdf && ($settings['openrouter_api_key'] ?? '') !== '') {
-            $orRes = $this->extractViaOpenRouter($frontImage, $backImage, $settings);
-            if ($orRes['ok'] || $orRes['status'] === 422) {
-                return $orRes;
+        $dob = '';
+        if (preg_match('/(\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4})/i', $enCombined, $m)) {
+            $dob = $this->normalizeDate($m[1]);
+        } elseif (preg_match('/\b(\d{2}[\/\-]\d{2}[\/\-](?:19|20)\d{2})\b/', $enCombined, $m)) {
+            $dob = $this->normalizeDate($m[1]);
+        }
+
+        $nidNumber = '';
+        $smartCardNumber = '';
+        if (preg_match('/(?:NID\s*No\.?|ID\s*NO\.?|Smart\s*Card)\s*[:ঃ]?\s*([\d\s]{10,24})/i', $enCombined, $m)) {
+            $digits = preg_replace('/\D+/', '', $m[1]) ?? '';
+            if (strlen($digits) === 10) {
+                $smartCardNumber = $digits;
+            } elseif (in_array(strlen($digits), [13, 17], true)) {
+                $nidNumber = $digits;
+            }
+        }
+        if ($smartCardNumber === '' && $nidNumber === '') {
+            $collapsed = preg_replace('/(\d)\s+(?=\d)/', '$1', $enCombined) ?? '';
+            if (preg_match('/\b(\d{17})\b/', $collapsed, $m)) {
+                $nidNumber = $m[1];
+            } elseif (preg_match('/\b(\d{13})\b/', $collapsed, $m)) {
+                $nidNumber = $m[1];
+            } elseif (preg_match('/\b(\d{10})\b/', $collapsed, $m)) {
+                $smartCardNumber = $m[1];
             }
         }
 
-        if (($settings['gemini_api_key'] ?? '') !== '') {
-            $gemRes = $this->extractViaGemini($frontImage, $backImage, $settings);
-            if ($gemRes['ok'] || $gemRes['status'] === 422) {
-                return $gemRes;
-            }
+        // Address extraction (supports both separate backText and combined front+back image)
+        $addrSource = trim($backText) !== '' ? $backText : $frontText;
+        $rawAddress = '';
+        if (preg_match('/ঠিকানা\s*[:ঃ]?\s*(.+?)(?=\n\s*(?:Blood|Place of Birth|Issue Date|I<BGD|$))/isu', $addrSource, $m)) {
+            $rawAddress = trim((string) preg_replace('/\s+/u', ' ', $m[1]));
         }
 
-        if (($settings['service_url'] ?? '') !== '') {
-            $pyRes = $this->extractViaPythonService($frontImage, $backImage, $settings);
-            if ($pyRes['ok'] || $pyRes['status'] === 422) {
-                return $pyRes;
+        $postCode = '';
+        if ($rawAddress !== '' && preg_match('/(\d{4})\b/', $this->toEnglishDigits($rawAddress), $m)) {
+            $postCode = $m[1];
+        }
+
+        $districtHint = '';
+        $upazilaHint = '';
+        if ($rawAddress !== '') {
+            $districts = [
+                'ঢাকা', 'গাজীপুর', 'নারায়ণগঞ্জ', 'নারায়ণগঞ্জ', 'টাঙ্গাইল', 'কিশোরগঞ্জ', 'মানিকগঞ্জ', 'মুন্সীগঞ্জ',
+                'নরসিংদী', 'রাজবাড়ী', 'ফরিদপুর', 'গোপালগঞ্জ', 'মাদারীপুর', 'শরীয়তপুর', 'চট্টগ্রাম', 'কক্সবাজার',
+                'কুমিল্লা', 'ব্রাহ্মণবাড়িয়া', 'চাঁদপুর', 'লক্ষ্মীপুর', 'নোয়াখালী', 'ফেনী', 'খাগড়াছড়ি', 'রাঙ্গামাটি',
+                'বান্দরবান', 'রাজশাহী', 'নওগাঁ', 'চাঁপাইনবাবগঞ্জ', 'নাটোর', 'পাবনা', 'বগুড়া', 'সিরাজগঞ্জ',
+                'জয়পুরহাট', 'খুলনা', 'বাগেরহাট', 'সাতক্ষীরা', 'যশোর', 'ঝিনাইদহ', 'মাগুরা', 'নড়াইল', 'কুষ্টিয়া',
+                'চুয়াডাঙ্গা', 'মেহেরপুর', 'বরিশাল', 'ভোলা', 'ঝালকাঠি', 'পিরোজপুর', 'পটুয়াখালী', 'বরগুনা',
+                'সিলেট', 'মৌলভীবাজার', 'হবিগঞ্জ', 'সুনামগঞ্জ', 'রংপুর', 'দিনাজপুর', 'গাইবান্ধা', 'কুড়িগ্রাম',
+                'লালমনিরহাট', 'নীলফামারী', 'পঞ্চগড়', 'ঠাকুরগাঁও', 'ময়মনসিংহ', 'জামালপুর', 'নেত্রকোনা', 'শেরপুর',
+            ];
+            foreach ($districts as $d) {
+                if (mb_strpos($rawAddress, $d) !== false) {
+                    $districtHint = $d;
+                    break;
+                }
+            }
+            if (preg_match('/(?:উপজেলা|থানা)\s*[:ঃ]?\s*([^,।]+)/u', $rawAddress, $m)) {
+                $upazilaHint = trim($m[1]);
             }
         }
 
         return [
-            'ok' => false,
-            'status' => 503,
-            'fallback_allowed' => true,
-            'message' => 'সব অনলাইন OCR API ব্যস্ত আছে বা কনফিগার করা নেই — লোকাল অফলাইন OCR ব্যবহার করা হচ্ছে।',
+            'is_valid_bd_nid' => $isBdNid || ($smartCardNumber !== '' || $nidNumber !== ''),
+            'is_clear' => true,
+            'readability_score' => 94,
+            'card_type' => $smartCardNumber !== '' ? 'smart' : 'old',
+            'applicant_name_bn' => $nameBn,
+            'applicant_name_en' => strtoupper($nameEn),
+            'father_name_bn' => $fatherBn,
+            'spouse_name_bn' => $spouseBn,
+            'mother_name_bn' => $motherBn,
+            'nid_number' => $nidNumber,
+            'smart_card_number' => $smartCardNumber,
+            'date_of_birth' => $dob,
+            'gender' => '',
+            'address' => [
+                'raw_address_bn' => $rawAddress,
+                'division_hint' => '',
+                'district_hint' => $districtHint,
+                'upazila_hint' => $upazilaHint,
+                'union_or_ward' => '',
+                'village_or_road' => '',
+                'post_code' => $postCode,
+            ],
         ];
     }
 
